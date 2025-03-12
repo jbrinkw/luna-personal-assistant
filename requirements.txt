@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+langchain-openai
+psycopg2-binary
+pydantic>=2.0.0
+langchain
