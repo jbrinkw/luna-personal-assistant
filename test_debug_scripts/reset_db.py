@@ -1,4 +1,4 @@
-from db_functions import clear_table, get_all_table_names, run_query
+from app.db_functions import clear_table, get_all_table_names, run_query
 from datetime import datetime, timedelta
 from meal_suggestions.in_stock_checker import InStockChecker
 

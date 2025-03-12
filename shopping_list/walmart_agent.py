@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from langchain.output_parsers import PydanticOutputParser
-import config
+import app.config as config
 
 class GroceryItem(BaseModel):
     name: str = Field(..., description="Normalized grocery item name")

@@ -1,4 +1,4 @@
-from db_functions import get_daily_notes_range
+from app.db_functions import get_daily_notes_range
 from meal_planning.meal_plan_in_stock_checker import MealPlanInStockChecker
 from datetime import datetime
 

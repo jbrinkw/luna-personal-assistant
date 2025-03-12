@@ -1,4 +1,4 @@
-from db_functions import get_inventory, get_taste_profile, get_saved_meals, clear_table
+from app.db_functions import get_inventory, get_taste_profile, get_saved_meals, clear_table
 
 def handle_command(command):
     command = command.lower().strip()

@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from app import LunaAssistant
+from app.app import LunaAssistant
 
 app = FastAPI(title="Luna Personal Assistant API")
 luna = LunaAssistant()

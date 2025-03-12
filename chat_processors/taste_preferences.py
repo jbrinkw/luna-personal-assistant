@@ -1,11 +1,11 @@
 #!/usr/bin/env python
-import config
+import app.config as config
 from typing import List, Optional
 from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from langchain.output_parsers import PydanticOutputParser
-from db_functions import run_query, create_table
+from app.db_functions import run_query, create_table
 
 # Define models for taste preferences extraction.
 class TastePreference(BaseModel):

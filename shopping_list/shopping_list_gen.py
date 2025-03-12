@@ -1,4 +1,4 @@
-from db_functions import get_daily_notes_range
+from app.db_functions import get_daily_notes_range
 from meal_planning.meal_plan_in_stock_checker import MealPlanInStockChecker
 from datetime import datetime, timedelta
 from langchain_openai import ChatOpenAI
@@ -6,7 +6,7 @@ from langchain.prompts import ChatPromptTemplate
 from langchain.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 from typing import List
-import config
+import app.config as config
 
 class ShoppingItem(BaseModel):
     name: str = Field(..., description="Shopping item name")
