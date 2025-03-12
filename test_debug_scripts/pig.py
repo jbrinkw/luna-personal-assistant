@@ -1,5 +1,5 @@
 from db_functions import get_daily_notes_range
-from meal_plan_in_stock_checker import MealPlanInStockChecker
+from meal_planning.meal_plan_in_stock_checker import MealPlanInStockChecker
 from datetime import datetime
 
 # Initialize checker and get current date

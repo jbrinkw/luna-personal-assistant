@@ -1,5 +1,5 @@
 from db_functions import get_daily_notes_range
-from meal_plan_in_stock_checker import MealPlanInStockChecker
+from meal_planning.meal_plan_in_stock_checker import MealPlanInStockChecker
 from datetime import datetime, timedelta
 from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
@@ -101,5 +101,5 @@ if __name__ == "__main__":
     shopping_items = " ".join([item.name for item in optimized_list])
     
     # Generate Walmart links
-    from walmart_agent import get_walmart_links
+    from shopping_list.walmart_agent import get_walmart_links
     get_walmart_links(shopping_items)
