@@ -1,0 +1,6 @@
+OPENAI_API_KEY = ""
+DB_HOST = ""
+DB_NAME = ""
+DB_USER = ""
+DB_PASS = ""
+DB_PORT = ""
