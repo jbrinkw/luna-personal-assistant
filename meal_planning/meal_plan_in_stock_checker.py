@@ -1,7 +1,7 @@
 from typing import List
-from db_functions import get_inventory
+from app.db_functions import get_inventory
 from langchain_openai import ChatOpenAI
-import config
+import app.config as config
 
 class MealPlanInStockChecker:
     def __init__(self):

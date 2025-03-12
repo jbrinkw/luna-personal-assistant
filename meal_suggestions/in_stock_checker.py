@@ -1,7 +1,7 @@
 from typing import List, Tuple
-from db_functions import get_saved_meals, get_meal_ideas, get_inventory, run_query, create_table, clear_table
+from app.db_functions import get_saved_meals, get_meal_ideas, get_inventory, run_query, create_table, clear_table
 from langchain_openai import ChatOpenAI
-import config
+import app.config as config
 
 class InStockChecker:
     def __init__(self, new: bool = False):

@@ -1,6 +1,6 @@
 import re
-import config
-from db_functions import (
+import app.config as config
+from app.db_functions import (
     get_saved_meals,
     get_meal_ideas,
     get_meal_ideas_in_stock,

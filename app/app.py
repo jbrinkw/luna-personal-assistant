@@ -1,4 +1,4 @@
-import config
+import app.config as config
 from langchain_openai import ChatOpenAI
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
 
@@ -6,7 +6,7 @@ from chat_processors.request_router import Router
 from chat_processors.taste_preferences import update_taste_preferences_in_db
 from chat_processors.inventory_manager import update_inventory_in_db
 from meal_suggestions.adhoc_meal_recs import MealPlanner
-from db_functions import get_inventory, get_taste_profile
+from app.db_functions import get_inventory, get_taste_profile
 
 class LunaAssistant:
     def __init__(self):

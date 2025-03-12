@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import psycopg2
-import config
+import app.config as config
 
 def get_db_connection():
     try:

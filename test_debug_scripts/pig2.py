@@ -1,4 +1,4 @@
-from db_functions import run_query, get_daily_notes_range
+from app.db_functions import run_query, get_daily_notes_range
 
 # Verify updates using get_daily_notes_range
 results = get_daily_notes_range('2025-01-01', '2025-01-07')

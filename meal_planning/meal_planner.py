@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
-from db_functions import get_daily_notes_range, get_db_connection, run_query
-from process_meal_suggestions import MealPlanner
+from app.db_functions import get_daily_notes_range, get_db_connection, run_query
+from meal_suggestions.adhoc_meal_recs import MealPlanner
 
 class MealPlanningSystem:
     def __init__(self, days_to_plan: int = 3):

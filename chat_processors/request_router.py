@@ -1,4 +1,4 @@
-import config
+import app.config as config
 
 from langchain_openai import ChatOpenAI  # Updated import per deprecation warning
 from langchain.prompts import ChatPromptTemplate

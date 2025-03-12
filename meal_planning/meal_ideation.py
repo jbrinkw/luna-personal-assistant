@@ -1,9 +1,9 @@
 #!/usr/bin/env python
-import config
+import app.config as config
 from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
-from db_functions import get_inventory, get_taste_profile, get_saved_meals
-from process_meal_db_updates import MealDBUpdater
+from app.db_functions import get_inventory, get_taste_profile, get_saved_meals
+from chat_processors.meal_database_manager import MealDBUpdater
 
 class MealPreGenEngine:
     def __init__(self):
