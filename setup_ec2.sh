@@ -1,17 +1,16 @@
 #!/bin/bash
+set -e
 
-# Update system
-sudo yum update -y
+# Install essentials
+sudo apt-get update
+sudo apt-get install -y git docker.io
 
-# Install Docker
-sudo yum install docker -y
-sudo service docker start
-sudo usermod -a -G docker ec2-user
+# Setup Docker
+sudo systemctl start docker
+sudo systemctl enable docker
 
-# Clone the repository
-git clone https://github.com/jbrinkw/luna-personal-assistant.git
+# Deploy application
+sudo git clone https://github.com/jbrinkw/luna-personal-assistant.git
 cd luna-personal-assistant
-
-# Build and run Docker container
 sudo docker build -t luna-personal-assistant .
-sudo docker run -d -p 80:8000 luna-personal-assistant
+sudo docker run -d -p 8000:8000 --name luna luna-personal-assistant
