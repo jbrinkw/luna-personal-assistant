@@ -18,6 +18,7 @@ from typing import List
 from datetime import date, datetime, timedelta
 from dotenv import load_dotenv
 from db.db_functions import Database, Inventory, TasteProfile, SavedMeals, ShoppingList, IngredientsFood, DailyPlanner, NewMealIdeas, SavedMealsInStockIds, NewMealIdeasInStockIds
+import traceback
 
 # Load environment variables
 load_dotenv()
@@ -34,8 +35,12 @@ class PullRouterDecision(BaseModel):
     needs_ingredients_info: bool = Field(..., description="Whether ingredients information is needed")
 
 class PullRouter:
-    def __init__(self, router_model):
+    def __init__(self, router_model, db, tables):
+        """Initialize PullRouter with the main router model and database objects."""
         self.router_model = router_model
+        self.db = db  # Store the passed Database object
+        self.tables = tables # Store the passed dictionary of table objects
+        
         self.output_parser = PydanticOutputParser(pydantic_object=PullRouterDecision)
         self.format_instructions = self.output_parser.get_format_instructions()
         
@@ -254,343 +259,237 @@ Most recent user message: {message}
             return ""
     
     def get_inventory_context(self):
-        """Retrieve the current inventory from the database"""
+        """Get inventory context using the shared database connection."""
         try:
-            # Initialize database connection
-            db = Database()
-            inventory = Inventory(db)
+            inventory_table = self.tables['inventory'] # Get Inventory object from dict
+            current_items = inventory_table.read()
+            if not current_items:
+                return "The inventory is currently empty."
             
-            # Get all inventory items
-            items = inventory.read()
-            
-            # Format inventory items for context
-            if not items:
-                inventory_context = "The inventory is currently empty."
-            else:
-                inventory_lines = []
-                for item in items:
-                    # Format: Name | Quantity | Expiration (if any)
-                    expiration = item[3].strftime("%Y-%m-%d") if item[3] else "N/A"
-                    inventory_lines.append(f"{item[1]} | {item[2]} | Expires: {expiration}")
-                
-                inventory_context = "\n".join(inventory_lines)
-                
-            db.disconnect()
-            return inventory_context
-            
+            context = ""
+            for item in current_items:
+                # Access by column name using self.db.conn.row_factory
+                name = item['name']
+                quantity = item['quantity']
+                expiration = item['expiration'] or 'N/A' # Use string directly
+                context += f"- {name}: {quantity} (Expires: {expiration})\n"
+            return context
         except Exception as e:
-            print(f"[ERROR] Pull router error retrieving inventory: {e}")
-            return "Error retrieving inventory information."
+            print(f"[ERROR] PullRouter failed to get inventory context: {e}")
+            return "Error retrieving inventory."
     
     def get_taste_profile_context(self):
-        """Retrieve the taste profile from the database"""
+        """Get taste profile context using the shared database connection."""
         try:
-            # Initialize database connection
-            db = Database()
-            taste_profile = TasteProfile(db)
-            
-            # Get taste profile
-            profiles = taste_profile.read()
-            
-            # Format taste profile for context
-            if not profiles or len(profiles) == 0:
-                taste_profile_context = "No taste profile has been set."
+            taste_profile_table = self.tables['taste_profile'] # Get TasteProfile object
+            profile = taste_profile_table.read() # read() now returns the string or None
+            if profile:
+                return profile
             else:
-                # Use the profile text directly
-                taste_profile_context = profiles[0][0]
-                
-            db.disconnect()
-            return taste_profile_context
-            
+                return "No taste profile set."
         except Exception as e:
-            print(f"[ERROR] Pull router error retrieving taste profile: {e}")
-            return "Error retrieving taste profile information."
+            print(f"[ERROR] PullRouter failed to get taste profile context: {e}")
+            return "Error retrieving taste profile."
             
     def get_saved_meals_context(self):
-        """Retrieve saved meals from the database"""
+        """Get saved meals context using the shared database connection."""
         try:
-            # Initialize database connection
-            db = Database()
-            saved_meals = SavedMeals(db)
+            saved_meals_table = self.tables['saved_meals'] # Get SavedMeals object
+            all_meals = saved_meals_table.read()
+            if not all_meals:
+                return "No saved meals found."
             
-            # Get all saved meals
-            meals = saved_meals.read()
-            
-            if not meals:
-                return "You don't have any saved meals yet."
-            
-            # Simply return the meals data directly
-            meals_data = []
-            for meal in meals:
-                meals_data.append({
-                    "id": meal[0],
-                    "name": meal[1],
-                    "prep_time": meal[2],
-                    "ingredients": meal[3],
-                    "recipe": meal[4]
-                })
-            
-            # Format as simple string
-            meals_text = "\n".join([
-                f"ID: {m['id']}, Name: {m['name']}, Prep Time: {m['prep_time']} minutes"
-                for m in meals_data
-            ])
-            
-            db.disconnect()
-            return meals_text
-            
+            context = ""
+            for meal in all_meals:
+                meal_id = meal['id']
+                name = meal['name']
+                prep_time = meal['prep_time_minutes']
+                ingredients_json = meal['ingredients'] # Already a JSON string
+                recipe = meal['recipe']
+                
+                # Shorten recipe for context if needed
+                recipe_snippet = recipe[:100] + '...' if len(recipe) > 100 else recipe
+                
+                # Format ingredients string for context
+                ingredients_str = "[See details]" # Keep context concise
+                try:
+                    ingredients_list = json.loads(ingredients_json) if isinstance(ingredients_json, str) else ingredients_json
+                    if isinstance(ingredients_list, list):
+                        ingredients_str = ", ".join([f"{ing.get('name', '?')}" for ing in ingredients_list])
+                    else:
+                        ingredients_str = str(ingredients_list)
+                except (json.JSONDecodeError, TypeError):
+                     ingredients_str = "[Error parsing ingredients]"
+
+                context += f"ID: {meal_id}, Name: {name}, Prep: {prep_time}m, Ingredients: {ingredients_str}, Recipe: {recipe_snippet}\n"
+            return context
         except Exception as e:
-            print(f"[ERROR] Pull router error retrieving saved meals: {e}")
-            return "Error retrieving saved meals information."
+            print(f"[ERROR] PullRouter failed to get saved meals context: {e}")
+            return "Error retrieving saved meals."
             
     def get_shopping_list_context(self):
-        """Retrieve the shopping list from the database"""
+        """Get shopping list context using the shared database connection."""
         try:
-            # Initialize database connection
-            db = Database()
-            shopping_list = ShoppingList(db)
-            ingredients_food = IngredientsFood(db)
+            shopping_list_table = self.tables['shopping_list']
+            ingredients_table = self.tables['ingredients_foods']
             
-            # Get all shopping list items
-            items = shopping_list.read()
+            shopping_items = shopping_list_table.read()
+            if not shopping_items:
+                return "Shopping list is empty."
             
-            # Format shopping list items for context
-            if not items:
-                return "Your shopping list is currently empty."
+            # Get food names for IDs
+            all_food_items = ingredients_table.read()
+            food_dict = {item['id']: item['name'] for item in all_food_items} if all_food_items else {}
             
-            # Get all food items for lookup
-            food_items = ingredients_food.read()
-            food_dict = {item[0]: item[1] for item in food_items} if food_items else {}
-            
-            # Simply return the data as is
-            shopping_items = []
-            for item in items:
-                item_id = item[0]
-                amount = item[1]
-                name = food_dict.get(item_id, f"Unknown item (ID: {item_id})")
-                shopping_items.append(f"ID: {item_id}, Name: {name}, Amount: {amount}")
-            
-            db.disconnect()
-            return "\n".join(shopping_items)
-            
+            context = ""
+            for item in shopping_items:
+                item_id = item['id']
+                amount = item['amount']
+                name = food_dict.get(item_id, f"Unknown (ID: {item_id})")
+                amount_str = f"{amount:.2f}" if isinstance(amount, float) and amount % 1 != 0 else str(amount)
+                context += f"- {name}: {amount_str}\n"
+            return context
         except Exception as e:
-            print(f"[ERROR] Pull router error retrieving shopping list: {e}")
-            return "Error retrieving shopping list information."
+            print(f"[ERROR] PullRouter failed to get shopping list context: {e}")
+            return "Error retrieving shopping list."
 
     def get_daily_notes_context(self):
-        """Retrieve daily planner notes for a 2-week window (past week and upcoming week)"""
+        """Get daily notes context for the upcoming week."""
         try:
-            # Initialize database connection
-            db = Database()
-            daily_planner = DailyPlanner(db)
-            saved_meals = SavedMeals(db)
-            new_meal_ideas = NewMealIdeas(db)
+            daily_planner_table = self.tables['daily_planner']
+            saved_meals_table = self.tables['saved_meals']
             
-            # Calculate date range (today +/- 7 days)
             today = date.today()
-            start_date = today - timedelta(days=7)
             end_date = today + timedelta(days=7)
             
-            # Get all daily planner entries
-            all_entries = daily_planner.read()
-            
-            # Format daily planner entries for the date range
+            all_entries = daily_planner_table.read() # Reads all, ordered by date
             if not all_entries:
-                db.disconnect()
-                return "No meal plans have been set for any days."
-            
-            # Get saved meals AND new meal ideas for reference (meal ID lookup)
-            all_saved_meals = saved_meals.read()
-            all_new_ideas = new_meal_ideas.read()
-            
-            # Combine into one dictionary for lookup
-            meals_dict = {}
-            if all_saved_meals:
-                meals_dict.update({meal[0]: meal[1] for meal in all_saved_meals})
-            if all_new_ideas:
-                meals_dict.update({meal[0]: meal[1] for meal in all_new_ideas})
-            
-            # Filter entries within our date range and sort by date
-            filtered_entries = []
+                return "No meal plans found for the upcoming week."
+                
+            context = ""
+            found_entries = False
             for entry in all_entries:
-                entry_date = entry[0]
-                if start_date <= entry_date <= end_date:
-                    filtered_entries.append(entry)
-            
-            # Sort entries by date
-            filtered_entries.sort(key=lambda x: x[0])
-            
-            if not filtered_entries:
-                db.disconnect()
-                return f"No meal plans found between {start_date} and {end_date}."
-            
-            # Format entries
-            planner_items = []
-            for entry in filtered_entries:
-                entry_date = entry[0]
-                notes = entry[1] or "No notes"
+                entry_date_str = entry['day']
+                try:
+                    entry_date = datetime.strptime(entry_date_str, '%Y-%m-%d').date()
+                except (ValueError, TypeError):
+                    continue # Skip invalid date format
                 
-                # Format date nicely with day of week
-                formatted_date = entry_date.strftime("%A, %B %d, %Y")
-                
-                # Handle meal IDs if present
-                meal_ids_json = entry[2]
-                meal_text = "No meals planned"
-                
-                if meal_ids_json:
+                # Filter for the next 7 days
+                if today <= entry_date <= end_date:
+                    found_entries = True
+                    notes = entry['notes'] or "No notes"
+                    meal_ids_json = entry['meal_ids']
+                    
+                    meal_names = []
                     try:
-                        # Handle if meal_ids_json is already a list or needs parsing
-                        if isinstance(meal_ids_json, list):
-                             meal_ids = meal_ids_json
-                        elif isinstance(meal_ids_json, str):
-                             meal_ids = json.loads(meal_ids_json or '[]')
-                        else:
-                             meal_ids = []
-                             
-                        meal_names = []
+                        meal_ids = json.loads(meal_ids_json) if meal_ids_json and isinstance(meal_ids_json, str) else []
                         if isinstance(meal_ids, list):
-                            for meal_id in meal_ids:
-                                # Use the combined meals_dict for lookup
-                                meal_name = meals_dict.get(meal_id, f"Unknown meal (ID: {meal_id})") 
-                                meal_names.append(meal_name)
-                            
-                            if meal_names:
-                                meal_text = ", ".join(meal_names)
+                             for mid in meal_ids:
+                                try:
+                                    meal_id_int = int(mid)
+                                    meal_result = saved_meals_table.read(meal_id_int)
+                                    if meal_result and meal_result[0]:
+                                        meal_names.append(meal_result[0]['name'])
+                                    else:
+                                        meal_names.append(f"Unknown (ID:{meal_id_int})")
+                                except (ValueError, TypeError):
+                                     meal_names.append(f"Invalid ID ({mid})")
                         else:
-                             meal_text = "Error: Meal IDs not a list"
-                             
-                    except json.JSONDecodeError:
-                        meal_text = "Error parsing meals JSON"
-                    except Exception as e:
-                        print(f"[ERROR] Unexpected error processing meal IDs for {entry_date}: {e}")
-                        meal_text = "Error processing meals"
-                
-                # Mark today's entry
-                date_prefix = "TODAY: " if entry_date == today else ""
-                
-                planner_items.append(f"{date_prefix}{formatted_date}\nMeals: {meal_text}\nNotes: {notes}")
+                            meal_names.append("[Invalid meal data]")
+                    except (json.JSONDecodeError, TypeError):
+                        meal_names.append("[Error parsing meal data]")
+                        
+                    meal_text = ", ".join(meal_names) if meal_names else "No meals planned"
+                    formatted_date = entry_date.strftime("%A, %B %d")
+                    context += f"{formatted_date}: {meal_text} (Notes: {notes})\n"
             
-            db.disconnect()
-            return "\n\n".join(planner_items)
-            
+            if not found_entries:
+                 return "No meal plans found for the upcoming week."
+                 
+            return context.strip()
         except Exception as e:
-            print(f"[ERROR] Pull router error retrieving daily notes: {e}")
-            # Ensure disconnection on error too
-            if 'db' in locals() and db.conn:
-                db.disconnect()
-            return "Error retrieving daily planner information."
-    
+            print(f"[ERROR] PullRouter failed to get daily notes context: {e}")
+            print(traceback.format_exc()) # Print stack trace for debugging
+            return "Error retrieving daily meal plans."
+
     def get_new_meal_ideas_context(self):
-        """Retrieve new meal ideas from the database"""
+        """Get new meal ideas context using the shared database connection."""
         try:
-            # Initialize database connection
-            db = Database()
-            new_meal_ideas = NewMealIdeas(db)
+            new_ideas_table = self.tables['new_meal_ideas']
+            all_ideas = new_ideas_table.read()
+            if not all_ideas:
+                return "No new meal ideas found."
             
-            # Get all new meal ideas
-            meals = new_meal_ideas.read()
-            
-            if not meals:
-                return "You don't have any suggested meal ideas yet."
-            
-            # Format meal ideas data
-            meals_data = []
-            for meal in meals:
-                meals_data.append({
-                    "id": meal[0],
-                    "name": meal[1],
-                    "prep_time": meal[2],
-                    "ingredients": meal[3],
-                    "recipe": meal[4]
-                })
-            
-            # Format as simple string
-            meals_text = "\n".join([
-                f"ID: {m['id']}, Name: {m['name']}, Prep Time: {m['prep_time']} minutes"
-                for m in meals_data
-            ])
-            
-            db.disconnect()
-            return meals_text
-            
+            context = ""
+            for idea in all_ideas:
+                idea_id = idea['id']
+                name = idea['name']
+                prep_time = idea['prep_time']
+                # Keep context concise
+                context += f"ID: {idea_id}, Name: {name}, Prep: {prep_time}m\n"
+            return context
         except Exception as e:
-            print(f"[ERROR] Pull router error retrieving new meal ideas: {e}")
-            return "Error retrieving new meal ideas information."
-    
+            print(f"[ERROR] PullRouter failed to get new meal ideas context: {e}")
+            return "Error retrieving new meal ideas."
+            
     def get_instock_meals_context(self):
-        """Retrieve meals that can be made with current ingredients"""
+        """Get context about meals (saved and new) that can be made with current inventory."""
         try:
-            # Initialize database connection
-            db = Database()
-            saved_meals_instock = SavedMealsInStockIds(db)
-            new_meals_instock = NewMealIdeasInStockIds(db)
-            saved_meals = SavedMeals(db)
-            new_meal_ideas = NewMealIdeas(db)
+            saved_instock_table = self.tables['saved_meals_instock_ids']
+            new_instock_table = self.tables['new_meal_ideas_instock_ids']
+            saved_meals_table = self.tables['saved_meals']
+            new_ideas_table = self.tables['new_meal_ideas']
             
-            # Get all in-stock meal IDs
-            saved_instock_ids = [item[0] for item in saved_meals_instock.read()] if saved_meals_instock.read() else []
-            new_instock_ids = [item[0] for item in new_meals_instock.read()] if new_meals_instock.read() else []
+            saved_ids = [row['id'] for row in saved_instock_table.read() or []]
+            new_ids = [row['id'] for row in new_instock_table.read() or []]
             
-            if not saved_instock_ids and not new_instock_ids:
-                return "There are no meals you can make with your current ingredients."
-            
-            # Get meal details for in-stock meals
-            instock_meals_text = []
-            
-            # Get saved meals that are in stock
-            if saved_instock_ids:
-                instock_meals_text.append("SAVED MEALS YOU CAN MAKE:")
-                for meal_id in saved_instock_ids:
-                    meal = saved_meals.read(meal_id)
-                    if meal and meal[0]:
-                        instock_meals_text.append(f"ID: {meal[0][0]}, Name: {meal[0][1]}, Prep Time: {meal[0][2]} minutes")
-            
-            # Get new meal ideas that are in stock
-            if new_instock_ids:
-                if instock_meals_text:  # Add separator if we already have saved meals
-                    instock_meals_text.append("")
-                instock_meals_text.append("NEW MEAL IDEAS YOU CAN MAKE:")
-                for meal_id in new_instock_ids:
-                    meal = new_meal_ideas.read(meal_id)
-                    if meal and meal[0]:
-                        instock_meals_text.append(f"ID: {meal[0][0]}, Name: {meal[0][1]}, Prep Time: {meal[0][2]} minutes")
-            
-            db.disconnect()
-            return "\n".join(instock_meals_text)
-            
+            context = ""
+            context += "Saved Meals You Can Make:\n"
+            if saved_ids:
+                 for meal_id in saved_ids:
+                     meal_result = saved_meals_table.read(meal_id)
+                     if meal_result and meal_result[0]:
+                         name = meal_result[0]['name']
+                         prep = meal_result[0]['prep_time_minutes']
+                         context += f"- ID {meal_id}: {name} ({prep} mins)\n"
+            else:
+                 context += "(None)\n"
+                 
+            context += "\nNew Meal Ideas You Can Make:\n"
+            if new_ids:
+                 for idea_id in new_ids:
+                     idea_result = new_ideas_table.read(idea_id)
+                     if idea_result and idea_result[0]:
+                         name = idea_result[0]['name']
+                         prep = idea_result[0]['prep_time']
+                         context += f"- ID {idea_id}: {name} ({prep} mins)\n"
+            else:
+                 context += "(None)\n"
+                 
+            return context.strip()
         except Exception as e:
-            print(f"[ERROR] Pull router error retrieving in-stock meals: {e}")
-            return "Error retrieving information about meals you can make now."
-    
+            print(f"[ERROR] PullRouter failed to get in-stock meals context: {e}")
+            return "Error retrieving in-stock meals."
+            
     def get_ingredients_info_context(self):
-        """Retrieve ingredients information from the database"""
+        """Get ingredients information context using the shared database connection."""
         try:
-            # Initialize database connection
-            db = Database()
-            ingredients = IngredientsFood(db)
+            ingredients_table = self.tables['ingredients_foods']
+            all_ingredients = ingredients_table.read()
+            if not all_ingredients:
+                return "No ingredients information available."
             
-            # Get all ingredients
-            items = ingredients.read()
-            
-            if not items:
-                return "No ingredients information is available."
-            
-            # Format ingredients for context
-            ingredients_text = []
-            for item in items:
-                item_id = item[0]
-                name = item[1]
-                min_amount = item[2]
-                walmart_link = item[3] if item[3] else "No link available"
-                
-                ingredients_text.append(f"ID: {item_id}, Name: {name}")
-                ingredients_text.append(f"  Minimum Purchase: {min_amount}")
-                ingredients_text.append(f"  Purchase Link: {walmart_link}")
-            
-            db.disconnect()
-            return "\n".join(ingredients_text)
-            
+            context = ""
+            for ingredient in all_ingredients:
+                ing_id = ingredient['id']
+                name = ingredient['name']
+                min_buy = ingredient['min_amount_to_buy']
+                link = ingredient['walmart_link']
+                link_text = f" | Link: {link}" if link else ""
+                context += f"ID: {ing_id}, Name: {name}, Min Buy: {min_buy}{link_text}\n"
+            return context
         except Exception as e:
-            print(f"[ERROR] Pull router error retrieving ingredients info: {e}")
+            print(f"[ERROR] PullRouter failed to get ingredients info context: {e}")
             return "Error retrieving ingredients information."
    

@@ -21,6 +21,7 @@ import json
 from typing import List, Optional, Dict, Tuple, Any, Union
 import re
 from helpers.meal_suggestion_context_builder import MealSuggestionContextBuilder, MealSuggestion
+import traceback
 
 # Load environment variables
 load_dotenv()
@@ -36,13 +37,12 @@ class MealIntent(BaseModel):
     dinner: str = Field(..., description="Intent for dinner")
 
 class OriginalGenerator:
-    def __init__(self, llm_model="gpt-4o-mini"):
+    def __init__(self, db: Database, tables: dict, llm_model="gpt-4o-mini"):
+        self.db = db
+        self.tables = tables
         self.api_key = os.getenv("OPENAI_API_KEY")
         self.llm_model = llm_model
         self.chat = ChatOpenAI(model=self.llm_model, openai_api_key=self.api_key)
-        
-        # Initialize database and tables
-        self.db, self.tables = init_tables()
         
         # Initialize the Pydantic output parsers
         self.date_range_parser = PydanticOutputParser(pydantic_object=DateRangeExtraction)
@@ -211,11 +211,12 @@ class SelectedMeal(BaseModel):
     reasoning: Optional[str] = Field(None, description="Brief reasoning for selecting this meal")
 
 class MealPlannerSelector:
-    def __init__(self, llm_model="gpt-4o-mini"):
+    def __init__(self, db: Database, tables: dict, llm_model="gpt-4o-mini"):
+        self.db = db
+        self.tables = tables
         self.api_key = os.getenv("OPENAI_API_KEY")
         self.llm_model = llm_model
         self.chat = ChatOpenAI(model=self.llm_model, openai_api_key=self.api_key)
-        self.db, self.tables = init_tables()
         self.context_builder = MealSuggestionContextBuilder(llm_model=llm_model)
         self.meal_selector_parser = PydanticOutputParser(pydantic_object=SelectedMeal)
 
@@ -473,7 +474,9 @@ class MealNoteIntentGenerator(OriginalGenerator):
 
 class MealPlanningRouter:
     """Internal router for the meal planner tool."""
-    def __init__(self, llm_model="gpt-4o-mini"):
+    def __init__(self, db: Database, tables: dict, llm_model="gpt-4o-mini"):
+        self.db = db
+        self.tables = tables
         self.api_key = os.getenv("OPENAI_API_KEY")
         self.llm_model = llm_model
         self.chat = ChatOpenAI(model=self.llm_model, openai_api_key=self.api_key)
@@ -505,157 +508,100 @@ class MealPlanningRouter:
         else:
             return "GENERAL_CHAT"
 
+# --- Main Tool Class ---
 class MealPlanningTool:
-    """Handles the meal planning process, routing between Layer 1 and Layer 2."""
-    def __init__(self):
-        self.planning_router = MealPlanningRouter()
-        self.meal_intent_generator = MealNoteIntentGenerator()
-        self.meal_selector = MealPlannerSelector()
-        # Use a simple in-memory store for chat history for this tool instance
-        self.chat_history: List[Union[AIMessage, HumanMessage, SystemMessage]] = [] 
-
-    def _get_full_message_history_str(self, current_history) -> str:
-        conversation = ""
-        for message in current_history:
-            if isinstance(message, HumanMessage):
-                conversation += f"User: {message.content}\n"
-            elif isinstance(message, AIMessage):
-                conversation += f"Assistant: {message.content}\n"
-        return conversation
-    
-    def _format_intent_generation_response(self, result: Dict[str, Any]) -> str:
-        response = "I've updated your meal plan with the following intents:\n\n"
-        for day in result["days"]:
-            date_obj = datetime.strptime(day["date"], "%Y-%m-%d")
-            day_name = date_obj.strftime("%A")
-            response += f"**{day_name}, {day['date']}**\n"
-            response += f"- Breakfast: {day['meal_intent']['breakfast']}\n"
-            response += f"- Lunch: {day['meal_intent']['lunch']}\n"
-            response += f"- Dinner: {day['meal_intent']['dinner']}\n\n"
-        response += "These intents have been saved to your meal planner. Would you like to:\n"
-        response += "1. Make changes to these meal intents\n"
-        response += "2. Proceed with selecting actual meals based on these intents"
-        return response
-
-    def _process_meal_planning_without_clearing(self, user_message: str, date_range: DateRangeExtraction) -> Dict[str, Any]:
-        """Re-implementation of the logic from pig3.py"""
-        end_date = date_range.start_date + timedelta(days=date_range.days_count - 1)
-        message_lower = user_message.lower()
-        single_day_terms = ["tomorrow", "today", "saturday", "sunday", "monday", "tuesday", "wednesday", "thursday", "friday"]
+    def __init__(self, db: Database, tables: dict, llm_model="gpt-4o-mini"):
+        """Initialize the MealPlanningTool with shared DB objects."""
+        self.db = db
+        self.tables = tables
+        self.llm_model = llm_model
+        self.api_key = os.getenv("OPENAI_API_KEY")
+        self.chat = ChatOpenAI(model=self.llm_model, openai_api_key=self.api_key)
         
-        for day_term in single_day_terms:
-            if day_term in message_lower and "everything for " + day_term in message_lower:
-                print(f"[INFO] Detected specific request for day: {day_term}")
-                specific_date = date_range.start_date # Default
-                if day_term == "tomorrow":
-                    if specific_date == date(2025, 3, 29): # Today's date
-                        specific_date += timedelta(days=1)
-                elif day_term == "today":
-                    specific_date = date(2025, 3, 29)
-                else:
-                    day_of_week_map = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6}
-                    if day_term in day_of_week_map:
-                        target_weekday = day_of_week_map[day_term]
-                        days_ahead = (target_weekday - specific_date.weekday() + 7) % 7
-                        specific_date = specific_date + timedelta(days=days_ahead)
-                
-                results = {"date_range": {"start_date": specific_date.strftime("%Y-%m-%d"), "end_date": specific_date.strftime("%Y-%m-%d"), "days_count": 1}, "days": []}
-                meal_intent = self.meal_intent_generator.generate_meal_intent(user_message, specific_date)
-                self.meal_intent_generator.save_meal_intent_to_db(specific_date, meal_intent)
-                results["days"].append({"date": specific_date.strftime("%Y-%m-%d"), "day_of_week": specific_date.strftime("%A"), "meal_intent": meal_intent.dict()})
-                return results
+        # Initialize internal components, passing db and tables
+        self.router = MealPlanningRouter(db, tables, llm_model)
+        self.intent_generator = OriginalGenerator(db, tables, llm_model) # Assuming this needs db/tables too
+        self.meal_selector = MealPlannerSelector(db, tables, llm_model) # Assuming this needs db/tables too
+        self.note_intent_generator = MealNoteIntentGenerator(db, tables, llm_model) # Assuming this needs db/tables too
+        
+        print("[MealPlanningTool] Initialized")
 
-        # Process full date range if no specific day found
-        results = {"date_range": {"start_date": date_range.start_date.strftime("%Y-%m-%d"), "end_date": end_date.strftime("%Y-%m-%d"), "days_count": date_range.days_count}, "days": []}
-        current_date = date_range.start_date
-        for _ in range(date_range.days_count):
-            meal_intent = self.meal_intent_generator.generate_meal_intent(user_message, current_date)
-            self.meal_intent_generator.save_meal_intent_to_db(current_date, meal_intent)
-            results["days"].append({"date": current_date.strftime("%Y-%m-%d"), "day_of_week": current_date.strftime("%A"), "meal_intent": meal_intent.dict()})
-            current_date += timedelta(days=1)
-        return results
-
-    def handle_intent_generation(self, message_history: List) -> str:
-        """Handle Layer 1: Meal Intent Generation."""
-        full_history_str = self._get_full_message_history_str(message_history)
-        date_range = self.meal_intent_generator.extract_date_range(full_history_str)
-        if not date_range:
-            return "I need more information about when you want to plan meals for. Please specify a time period, like 'for the next 3 days' or 'this weekend'."
-        result = self._process_meal_planning_without_clearing(full_history_str, date_range)
-        response = self._format_intent_generation_response(result)
-        return response
-
-    def handle_meal_selection(self, message_history: List) -> str:
-        """Handle Layer 2: Meal Selection based on intents."""
+    def execute(self, chat_history: List) -> str:
+        """Execute the meal planning process based on conversation history."""
+        print("[MealPlanningTool] Executing...")
         try:
-            full_history_str = self._get_full_message_history_str(message_history)
-            date_range = self.meal_intent_generator.extract_date_range(full_history_str)
-            if not date_range:
-                return "I couldn't determine which days to select meals for. Please specify a date range like 'next 3 days' or 'this weekend'."
-
-            start_date = date_range.start_date
-            days_count = date_range.days_count
-            end_date = start_date + timedelta(days=days_count - 1)
-            db, tables = init_tables()
-            current_date = start_date
-            while current_date <= end_date:
-                entry = tables["daily_planner"].read(current_date)
-                if entry:
-                    notes = entry[0][1] or ""
-                    tables["daily_planner"].update(day=current_date, notes=notes, meal_ids=json.dumps([]))
-                current_date += timedelta(days=1)
-
-            self.meal_selector.plan_meals_for_range(start_date, days_count)
+            # Use the internal router to decide the current state/action
+            state, user_message, history_context = self.router.route(chat_history)
+            print(f"[MealPlanningTool] Router state: {state}")
             
-            response = f"I've selected meals for {days_count} days based on your meal intents. Here's what I picked:\n\n"
-            current_date = start_date
-            while current_date <= end_date:
-                formatted_date = current_date.strftime("%A, %B %d, %Y")
-                entry = tables["daily_planner"].read(current_date)
-                if entry and entry[0]:
-                    # Parse meal IDs, handling cases where it might already be a list
-                    meal_ids_data = entry[0][2]
-                    meal_ids = []
-                    try:
-                        if isinstance(meal_ids_data, list): # Already a list?
-                            meal_ids = meal_ids_data
-                        elif isinstance(meal_ids_data, str): # String to be parsed?
-                            meal_ids = json.loads(meal_ids_data or '[]')
-                        # Ensure it's a list after processing
-                        if not isinstance(meal_ids, list):
-                            print(f"[WARN] meal_ids for {formatted_date} is not a list after processing: {type(meal_ids)}. Resetting.")
-                            meal_ids = []
-                    except json.JSONDecodeError:
-                        print(f"[WARN] Could not decode meal IDs JSON for {formatted_date}. Resetting.")
-                        meal_ids = []
-                    except Exception as e:
-                        print(f"[ERROR] Unexpected error processing meal IDs for {formatted_date}: {e}. Resetting.")
-                        meal_ids = []
+            response_content = ""
+
+            if state == "generate_intents":
+                print("[MealPlanningTool] Generating meal intents...")
+                # Layer 1: Extract date range and generate intents
+                date_range = self.intent_generator.extract_date_range(user_message)
+                start_date = date_range.start_date
+                days_count = date_range.days_count
+                
+                # Clear existing plans in the range (or adjust logic as needed)
+                self.intent_generator.clear_date_range(start_date, days_count)
+                
+                all_intents = []
+                current_planning_date = start_date
+                for _ in range(days_count):
+                    meal_intent = self.intent_generator.generate_meal_intent(user_message, current_planning_date)
+                    self.intent_generator.save_meal_intent_to_db(current_planning_date, meal_intent)
+                    all_intents.append((current_planning_date, meal_intent))
+                    current_planning_date += timedelta(days=1)
                     
-                    meal_names = []
-                    for meal_id in meal_ids:
-                        meal = tables["saved_meals"].read(meal_id)
-                        if meal and meal[0]:
-                            meal_names.append(f"{meal[0][1]} (ID: {meal_id})")
-                        else:
-                            meal = tables["new_meal_ideas"].read(meal_id)
-                            if meal and meal[0]:
-                                meal_names.append(f"{meal[0][1]} (ID: {meal_id})")
-                            else:
-                                meal_names.append(f"Unknown meal (ID: {meal_id})")
-                    response += f"**{formatted_date}**\n"
-                    if meal_names:
-                        response += "Selected meals:\n" + "\n".join([f"- {name}" for name in meal_names]) + "\n"
-                    else:
-                        response += "No meals selected for this day.\n"
-                    response += "\n"
-                current_date += timedelta(days=1)
-            response += "These meals have been saved to your meal planner. Would you like to make any adjustments or regenerate these meal selections?"
-            return response
-        except ImportError as e:
-            return f"I couldn't access the meal selection functionality. Error: {str(e)}"
+                # Format response for the user
+                response_content = "Okay, I've created initial meal intents based on your request:\n\n"
+                for plan_date, intent in all_intents:
+                    response_content += f"**{plan_date.strftime('%Y-%m-%d, %A')}**:\n"
+                    response_content += f"  - Breakfast: {intent.breakfast}\n"
+                    response_content += f"  - Lunch: {intent.lunch}\n"
+                    response_content += f"  - Dinner: {intent.dinner}\n"
+                response_content += "\nWould you like me to select specific meals based on these intents?"
+            
+            elif state == "select_meals":
+                print("[MealPlanningTool] Selecting specific meals...")
+                # Layer 2: Select meals based on existing intents
+                planned_meals = self.meal_selector.plan_meals_for_range(start_date, days_count)
+                
+                if not planned_meals:
+                    response_content = "I couldn't find any suitable meals based on the planned intents. You might need to add more recipes or adjust the intents."
+                else:
+                    response_content = "Here are the specific meals selected for your plan:\n\n"
+                    for plan_date_str, meals in planned_meals.items():
+                        plan_date = datetime.strptime(plan_date_str, '%Y-%m-%d').date()
+                        response_content += f"**{plan_date.strftime('%Y-%m-%d, %A')}**:\n"
+                        response_content += f"  - Breakfast: {meals.get('breakfast', 'Not selected')}\n"
+                        response_content += f"  - Lunch: {meals.get('lunch', 'Not selected')}\n"
+                        response_content += f"  - Dinner: {meals.get('dinner', 'Not selected')}\n"
+                    response_content += "\nYour daily planner has been updated."
+
+            elif state == "handle_notes":
+                 print("[MealPlanningTool] Handling notes/intents...")
+                 # Layer 2.5: Handle specific notes or intent changes for a day
+                 date_to_update, updated_intent = self.note_intent_generator.generate_notes_and_intents(user_message, history_context)
+                 
+                 if date_to_update and updated_intent:
+                     self.note_intent_generator.save_notes_and_intents_to_db(date_to_update, updated_intent)
+                     response_content = f"Okay, I've updated the plan notes/intents for {date_to_update.strftime('%Y-%m-%d')}."
+                     # Optionally, ask if they want to re-select meals for that day
+                     response_content += " Would you like me to select specific meals for this updated day?"
+                 else:
+                     response_content = "Sorry, I couldn't figure out which date or notes to update. Could you please clarify?"
+
+            else: # Default or error state
+                response_content = "I'm ready to help with meal planning. What period would you like to plan for?"
+
+            return response_content
+
         except Exception as e:
-            return f"An error occurred while selecting meals: {str(e)}. Please try again later."
+            print(f"[ERROR] MealPlanningTool execution failed: {e}")
+            print(traceback.format_exc())
+            return "Sorry, I encountered an error during meal planning."
 
 # --- Main function called by tool_router.py --- 
 
@@ -663,17 +609,17 @@ def handle_meal_planning_request(message_history: List) -> str:
     """Processes a meal planning request based on the conversation history."""
     # Create an instance of the meal planning tool
     # In a real application, this might manage state across turns, but here we create a fresh one
-    planner = MealPlanningTool()
+    planner = MealPlanningTool(init_tables()[0], init_tables()[1])
     
     # The tool router has already decided this is a meal planning request.
     # Now, use the internal router to decide between Layer 1 and Layer 2.
-    intent = planner.planning_router.determine_intent(message_history)
+    intent = planner.router.determine_intent(message_history)
     print(f"[INFO - Meal Planner Tool] Determined internal intent: {intent}")
     
     if intent == "LAYER_1_INTENT_GENERATION":
-        response_content = planner.handle_intent_generation(message_history)
+        response_content = planner.execute(message_history)
     elif intent == "LAYER_2_MEAL_SELECTION":
-        response_content = planner.handle_meal_selection(message_history)
+        response_content = planner.execute(message_history)
     else:
         # Should ideally not happen if tool_router routes correctly, but handle defensively
         response_content = "I seem to be confused about the meal planning step. Could you clarify what you'd like to do?"

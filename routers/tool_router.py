@@ -16,160 +16,134 @@ from langchain.output_parsers import PydanticOutputParser
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, Union, Tuple
-from tools.new_meal_ideation import generate_meal_ideas
-from tools.meal_planner import handle_meal_planning_request
-from tools.meal_suggestion_gen import generate_meal_suggestions
+import traceback
+
+# Corrected imports based on actual filenames and identified entry points
+from tools.meal_suggestion_gen import generate_meal_suggestions # Function
+from tools.meal_planner import MealPlanningTool # Class
+from tools.new_meal_ideation import MealIdeationEngine # Class
+# from tools.shopping_list_gen import ShoppingListGeneratorTool # Assumed class - File seems incomplete
+
+from db.db_functions import Database # Keep for type hinting
 
 # Load environment variables
 load_dotenv()
 
+# Router decision model (can likely be simplified if LLM just returns tool name)
 class ToolRouterDecision(BaseModel):
-    needs_meal_generation: bool = Field(False, description="Whether general meal generation/recipe suggestion is needed")
-    needs_meal_planning: bool = Field(False, description="Whether structured meal planning (intent generation or meal selection) is needed")
-    needs_meal_suggestion: bool = Field(False, description="Whether meal suggestion filtering based on user preferences is needed")
+    needs_meal_suggestion: bool = Field(False, description="Whether the user wants meal suggestions")
+    needs_meal_planning: bool = Field(False, description="Whether the user wants structured meal planning")
+    needs_shopping_list_generation: bool = Field(False, description="Whether the user wants a shopping list generated")
+    needs_recipe_generation: bool = Field(False, description="Whether the user wants new recipe ideas generated")
 
 class ToolRouter:
-    def __init__(self, router_model):
+    def __init__(self, router_model, db: Database, tables: dict):
+        """Initialize ToolRouter with the router model and shared DB objects."""
         self.router_model = router_model
-        self.output_parser = PydanticOutputParser(pydantic_object=ToolRouterDecision)
-        self.format_instructions = self.output_parser.get_format_instructions()
+        self.db = db 
+        self.tables = tables
         
-        # Router prompt template - updated to include meal suggestions
-        self.router_prompt_template = """\
-Analyze the most recent user message and conversation context to determine if it requires:
-1. Meal generation/recipe suggestions (needs_meal_generation)
-2. Structured meal planning (needs_meal_planning) - generating intents or selecting meals based on prior intents
-3. Meal suggestions based on preferences (needs_meal_suggestion)
+        print("Initializing Tools...")
+        # Initialize tools, passing db/tables ONLY to classes that require them
+        # Store functions directly, instantiate classes
+        self.meal_suggestion_func = generate_meal_suggestions
+        self.meal_planning_instance = MealPlanningTool(db, tables)
+        # self.shopping_list_instance = ShoppingListGeneratorTool(db, tables) # Commented out - needs implementation
+        # MealIdeationEngine needs db/tables - assumes it will be refactored to accept them
+        self.recipe_generator_instance = MealIdeationEngine(db, tables)
+        print("Tools Initialized.")
+        
+        self.tools = {
+            "meal_suggestion": self.meal_suggestion_func,
+            "meal_planning": self.meal_planning_instance,
+            # "shopping_list_generator": self.shopping_list_instance, # Commented out
+            "recipe_generator": self.recipe_generator_instance,
+        }
+        
+        # Router prompt template - Consider simplifying this to just output the tool name
+        self.router_prompt_template = """
+Based on the latest user query in the conversation history, which specialized tool is most appropriate?
 
-Meal Generation/Recipe Suggestions Examples (needs_meal_generation=True):
-- "What should I cook tonight?"
-- "I need some meal ideas"
-- "Suggest some recipes I can make"
-- "What meals can I make with what I have?"
-- "I want to try a new dish"
-- "Give me some dinner options"
-- User selecting options from a previously generated list of meal *descriptions* or *recipes* (not intents)
+Available Tools:
+- meal_suggestion: Use for general meal ideas, recommendations, or suggestions based on preferences/inventory.
+- meal_planning: Use for structured planning of meals for specific dates or periods (e.g., 'plan my week').
+- recipe_generator: Use for generating entirely new recipes or novel meal concepts.
+- shopping_list_generator: Use to create a shopping list based on planned meals or needed items.
+- none: Use if no specialized tool is needed (e.g., simple DB query, general chat).
 
-Structured Meal Planning Examples (needs_meal_planning=True):
-- "Let's meal plan for next week"
-- "I want to start meal planning"
-- "Plan meals for the next 3 days"
-- "Change my meal plan for tomorrow to be quick and easy"
-- User interacting after being shown *meal intents* (e.g., "Breakfast: quick and easy")
-- "Select meals based on these intents"
-- "Proceed with selecting actual meals"
-
-Meal Suggestion Examples (needs_meal_suggestion=True):
-- "Suggest meals based on my preferences"
-- "What meals would I like?"
-- "Give me 5 meal suggestions"
-- "What meals can I make with my current inventory?"
-- "What are my best meal options?"
-- "Show me meals that match my taste"
-- "I'm looking for quick dinner ideas"
-
-CRITICAL DISTINCTIONS:
-- Meal Generation creates new recipe ideas from scratch → needs_meal_generation = True
-- Meal Planning creates a structured plan with intents for specific days → needs_meal_planning = True  
-- Meal Suggestion filters existing meals based on preferences → needs_meal_suggestion = True
-
-It is possible for all to be false if the user is just chatting or asking a general question.
-
-Return your decision as a JSON object following this schema:
-{format_instructions}
-
-User message history:
+Conversation History (Last 5 messages):
 {message_history}
 
-Most recent user message: 
-{message}
-"""
+Latest User Query: {query}
 
-    def route_tool(self, message_history: List) -> Dict[str, Any]:
+Respond with ONLY the name of the single most appropriate tool from the list above (meal_suggestion, meal_planning, recipe_generator, shopping_list_generator, none).
+Tool Selection:"""
+
+    def route_tool(self, chat_history):
         """
-        Routes user input to appropriate tools based on the latest message.
-        Returns a dictionary with tool results or empty if no tools needed.
+        Routes the user query to the appropriate tool based on the conversation history.
+        Returns a dictionary indicating if a tool was activated and its output.
         """
-        # For tracking routing decisions (for debugging)
-        routing_decisions = []
-        
-        # Get the most recent user message
-        if not message_history:
-            return {"tool_activated": False, "tool_output": ""}
-            
-        # Find the most recent user message
-        user_messages = [msg for msg in message_history if isinstance(msg, HumanMessage)]
+        if not chat_history:
+             return {"tool_activated": False, "tool_output": ""}
+             
+        user_messages = [msg for msg in chat_history if isinstance(msg, HumanMessage)]
         if not user_messages:
-            return {"tool_activated": False, "tool_output": ""}
-            
+             return {"tool_activated": False, "tool_output": ""}
+             
         recent_user_message = user_messages[-1].content
         
         # Format message history for the prompt
-        history_text = ""
-        for i, message in enumerate(message_history[-5:]):  # Only use last 5 messages for context
-            role = "User" if isinstance(message, HumanMessage) else "Assistant"
-            history_text += f"{role}: {message.content}\n"
+        history_text = "\n".join([
+            f"{'User' if isinstance(msg, HumanMessage) else 'Assistant'}: {msg.content}"
+            for msg in chat_history[-5:] # Use last 5 messages
+        ])
         
-        # Create the routing decision using the prompt template
-        prompt = ChatPromptTemplate.from_template(template=self.router_prompt_template)
-        messages = prompt.format_messages(
-            message=recent_user_message,
-            message_history=history_text,
-            format_instructions=self.format_instructions
-        )
+        # Format the prompt
+        prompt = self.router_prompt_template.format(message_history=history_text, query=recent_user_message)
+        messages = [HumanMessage(content=prompt)]
         
+        # Use the router model to decide which tool to use
         response = self.router_model.invoke(messages)
+        # Decision is expected to be just the tool name now
+        decision = response.content.strip().lower()
+        # Basic validation, remove potential quotes or formatting
+        decision = decision.replace("'", "").replace("\"", "").replace("`", "").split(":")[-1].strip()
         
-        try:
-            # Parse the decision
-            decision = self.output_parser.parse(response.content)
-            needs_meal_generation = decision.needs_meal_generation
-            needs_meal_planning = decision.needs_meal_planning
-            needs_meal_suggestion = decision.needs_meal_suggestion
-            
-            # Add to routing decisions for tracking
-            routing_decisions.append({
-                "meal_generation": needs_meal_generation, 
-                "meal_planning": needs_meal_planning,
-                "meal_suggestion": needs_meal_suggestion
-            })
-            print(f"[DEBUG] Tool router decisions: {routing_decisions}")
-            
-            # --- Tool Activation Logic ---
-            # Prioritize meal planning if detected
-            if needs_meal_planning:
-                print("[INFO] Activating structured meal planning tool")
-                # Pass the full message history to the meal planner
-                meal_plan_response = handle_meal_planning_request(message_history)
-                return {
-                    "tool_activated": True,
-                    "tool_name": "meal_planning",
-                    "tool_output": meal_plan_response 
-                }
-            
-            # Handle meal suggestion if needed
-            elif needs_meal_suggestion:
-                print("[INFO] Activating meal suggestion tool")
-                meal_suggestion_response = generate_meal_suggestions(message_history)
-                return {
-                    "tool_activated": True,
-                    "tool_name": "meal_suggestion",
-                    "tool_output": meal_suggestion_response
-                }
+        print(f"[DEBUG] Tool router decision: '{decision}'")
+        
+        # Get the selected tool (function or instance) from the dictionary
+        selected_tool_object = self.tools.get(decision)
+        tool_name = decision if selected_tool_object else "none"
 
-            # Handle meal generation/recipe suggestions if needed (and not meal planning)
-            elif needs_meal_generation:
-                print("[INFO] Activating meal generation/recipe suggestion tool")
-                meal_content = generate_meal_ideas(message_history)
-                return {
-                    "tool_activated": True,
-                    "tool_name": "meal_generation",
-                    "tool_output": meal_content
-                }
-            
-            # No tools needed
-            return {"tool_activated": False, "tool_output": ""}
-            
-        except Exception as e:
-            print(f"[ERROR] Tool router error: {e}")
+        if selected_tool_object and tool_name != "none":
+            print(f"[INFO] Activating tool: {tool_name}")
+            try:
+                tool_output = ""
+                # Check if the retrieved object is a function or a class instance
+                # Need to import types for isinstance check
+                import types 
+                if isinstance(selected_tool_object, types.FunctionType):
+                    # Call the function (generate_meal_suggestions)
+                    # Assuming it takes chat_history as input
+                    tool_output = selected_tool_object(chat_history)
+                elif hasattr(selected_tool_object, 'execute'):
+                    # Call the execute method on the instance (MealPlanningTool, MealIdeationEngine)
+                    # Assuming execute takes chat_history
+                    # TODO: Verify execute method signature for each tool class
+                    tool_output = selected_tool_object.execute(chat_history)
+                else:
+                     print(f"[WARN] Selected tool object '{tool_name}' is neither a known function nor has an execute method.")
+                     return {"tool_activated": False, "tool_output": ""}
+
+                return {"tool_activated": True, "tool_name": tool_name, "tool_output": tool_output}
+            except Exception as e:
+                print(f"[ERROR] Error executing tool '{tool_name}': {e}")
+                print(traceback.format_exc())
+                # Provide a user-friendly error message
+                error_msg = f"Sorry, I encountered an error while trying to run the {tool_name.replace('_', ' ')} tool. Please try again later or ask differently."
+                return {"tool_activated": True, "tool_name": tool_name, "tool_output": error_msg} # Return error as output
+        else:
+            # No tool matched or decision was 'none'
+            print(f"[INFO] No specialized tool activated for decision: '{decision}'")
             return {"tool_activated": False, "tool_output": ""}
