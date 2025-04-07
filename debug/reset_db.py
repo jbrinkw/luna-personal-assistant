@@ -2,11 +2,16 @@ import sys
 import os
 import json
 from datetime import datetime, timedelta
+import traceback
+
+# Add project root to sys.path to allow importing db_functions
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, project_root)
 
 # Import the database functions
 from db.db_functions import Database, Inventory, TasteProfile, SavedMeals
 from db.db_functions import NewMealIdeas, SavedMealsInStockIds, NewMealIdeasInStockIds
-from db.db_functions import DailyPlanner, ShoppingList, IngredientsFood, init_tables
+from db.db_functions import DailyPlanner, ShoppingList, IngredientsFood, init_tables, DB_PATH
 from db.meal_availability import MealAvailabilityUpdater, update_all_meal_availability
 from db.ingredient_matcher import IngredientMatcher
 
@@ -659,29 +664,70 @@ Dislikes:
         """Legacy method: Runs the complete reset process."""
         self.reload_all()
 
+def reset_database():
+    """Resets the SQLite database by clearing data and reloading sample data."""
+    print(f"Attempting to reset data in database: {DB_PATH}")
+    db = None # Initialize db to None
+    try:
+        # Initialize db connection and ensure tables exist
+        # This also ensures the db file exists for the ResetDB class later
+        db, tables = init_tables()
+        
+        if not db or not tables:
+            print("[ERROR] Failed to initialize database connection or tables. Cannot reset.")
+            return
+            
+        print("Clearing data from tables...")
+        success_count = 0
+        fail_count = 0
+        for table_name, table_obj in tables.items():
+            print(f"  Clearing table: {table_name}...")
+            try:
+                if hasattr(table_obj, 'table_name'):
+                    delete_query = f"DELETE FROM {table_obj.table_name};"
+                    db.execute_query(delete_query)
+                    print(f"    Table '{table_name}' cleared.")
+                    success_count += 1
+                else:
+                     print(f"    Skipping {table_name}: Cannot determine table name from object.")
+                     fail_count += 1
+            except Exception as table_e:
+                print(f"    [ERROR] Failed to clear table '{table_name}': {table_e}")
+                fail_count += 1
+                
+        # Optional: Reclaim space
+        if fail_count == 0:
+             print("All tables cleared successfully. Vacuuming database...")
+             try:
+                  db.execute_query("VACUUM;")
+                  print("Database vacuumed.")
+             except Exception as vac_e:
+                  print(f"[WARN] Failed to vacuum database: {vac_e}")
+        else:
+             print(f"Finished clearing tables with {fail_count} errors.")
+
+        # --- Load Sample Data --- 
+        print("\nLoading sample data...")
+        # Instantiate the ResetDB class to use its loading methods
+        # Pass add_to_shopping_list=False by default, or make it configurable
+        reset_db_loader = ResetDB(add_to_shopping_list=False) 
+        reset_db_loader.load_all() # Use the method that loads all sample data
+        # ------------------------
+
+        print("\nDatabase reset and sample data loading complete.")
+            
+    except Exception as e:
+        print(f"[ERROR] An error occurred during database reset/load: {e}")
+        print(traceback.format_exc())
+    finally:
+         # Ensure connection is closed (init_tables connects, load_all might too)
+         if db and db.conn:
+              db.disconnect()
+         # Also ensure the loader's connection is closed if it's separate
+         if 'reset_db_loader' in locals() and reset_db_loader.db and reset_db_loader.db.conn:
+              if reset_db_loader.db != db: # Only disconnect if it's a different connection object
+                   reset_db_loader.db.disconnect()
+
 if __name__ == "__main__":
-    # Create instance with shopping list population enabled
-    # Set to True to automatically add missing ingredients to shopping list
-    resetdb = ResetDB(add_to_shopping_list=False)  # Change to True to enable
-    
-    # To run the complete reload process:
-    resetdb.reload_all()
-    
-    # Alternatively, you can call individual functions:
-    # Clear functions:
-    # resetdb.clear_saved_meals()
-    # resetdb.clear_taste_profile()
-    # resetdb.clear_inventory()
-    # resetdb.clear_all()
-    
-    # Load functions:
-    # resetdb.load_saved_meals()
-    # resetdb.load_taste_profile()
-    # resetdb.load_inventory()
-    # resetdb.load_all()
-    
-    # Reload functions (clear + load):
-    # resetdb.reload_saved_meals()
-    # resetdb.reload_taste_profile()
-    # resetdb.reload_inventory()
-    # resetdb.reload_all()
+    # Reset and load directly without confirmation
+    reset_database()

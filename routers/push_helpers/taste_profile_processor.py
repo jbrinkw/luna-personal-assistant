@@ -20,7 +20,10 @@ class TasteProfileUpdate(BaseModel):
     updated_profile: str = Field(..., description="The updated taste profile text")
 
 class TasteProfileProcessor:
-    def __init__(self):
+    def __init__(self, taste_profile_table: TasteProfile):
+        """Initialize processor with shared TasteProfile table object."""
+        self.taste_profile_table = taste_profile_table # Store passed object
+        
         self.api_key = os.getenv("OPENAI_API_KEY")
         self.llm_model = "gpt-4o-mini"  # Using a simpler model for efficiency
         self.chat = ChatOpenAI(temperature=0, model=self.llm_model, api_key=self.api_key)
@@ -51,24 +54,22 @@ Return the updated taste profile as a JSON object with the field "updated_profil
 """
 
     def get_current_profile(self):
-        """Get the current taste profile from the database"""
-        db = Database()
-        taste_profile = TasteProfile(db)
+        """Get the current taste profile using the shared table object."""
+        # No db connection needed here, use self.taste_profile_table
         try:
-            result = taste_profile.read()
-            if result and result[0] and result[0][0]:
-                return result[0][0]
-            return "No taste profile found."
-        finally:
-            db.disconnect()
+            profile = self.taste_profile_table.read()
+            return profile if profile else "No taste profile found."
+        except Exception as e:
+            print(f"[ERROR] Failed to get current taste profile in processor: {e}")
+            return "Error retrieving current taste profile."
+        # No disconnect needed
     
     def update_taste_profile(self, user_request):
-        """Update the taste profile based on the user request"""
+        """Update the taste profile based on the user request using the shared table object."""
         current_profile = self.get_current_profile()
         
-        # Initialize database connection
-        db = Database()
-        taste_profile = TasteProfile(db)
+        # No need to initialize database connection, use self.taste_profile_table
+        taste_profile = self.taste_profile_table
         
         try:
             # Create the prompt
@@ -88,22 +89,24 @@ Return the updated taste profile as a JSON object with the field "updated_profil
             updated_profile = parsed_response.updated_profile
             
             # Compare profiles to see if any changes were made
-            if updated_profile == current_profile:
-                return False, "No changes were made to your taste profile."
+            # Handle None case for current_profile
+            if updated_profile == (current_profile if current_profile != "No taste profile found." else None):
+                print("[INFO] Taste profile unchanged.")
+                return False, "No changes were detected or applied to your taste profile."
             
-            # Update the database
+            # Update the database using shared table object
             taste_profile.update(updated_profile)
             
             # Create confirmation message
-            confirmation = "TASTE PROFILE UPDATED:\n"
-            confirmation += f"Your taste profile has been updated based on: '{user_request}'\n\n"
-            confirmation += "CURRENT TASTE PROFILE:\n"
+            confirmation = "TASTE PROFILE UPDATE CONFIRMATION\n-------------------------------------\n"
+            # confirmation += f"Your taste profile has been updated based on: '{user_request}'\n\n"
+            confirmation += "NEW TASTE PROFILE:\n"
             confirmation += updated_profile
             
             return True, confirmation
         except Exception as e:
             print(f"[ERROR] Taste profile processor error: {e}")
+            import traceback
+            print(traceback.format_exc())
             return False, f"Failed to update taste profile: {e}"
-        finally:
-            # Disconnect from database
-            db.disconnect() 
+        # No disconnect needed 

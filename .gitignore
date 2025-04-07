@@ -2,3 +2,7 @@
 __pycache__/
 .pytest_cache/
 .env
+pig.py
+pig2.py
+pig3.py
+pig4.py

@@ -28,9 +28,14 @@ class ShoppingListItems(BaseModel):
     items: List[ShoppingListItem] = Field(..., description="List of shopping list items to be processed")
 
 class ShoppingListProcessor:
-    def __init__(self):
+    def __init__(self, shopping_list_table: ShoppingList, ingredients_table: IngredientsFood, db: Database):
+        """Initialize processor with shared ShoppingList, IngredientsFood table objects and DB connection."""
+        self.shopping_list_table = shopping_list_table # Store passed object
+        self.ingredients_table = ingredients_table # Store passed object
+        self.db = db # Store passed DB connection (needed for get_item_name etc)
+        
         self.api_key = os.getenv("OPENAI_API_KEY")
-        self.llm_model = "gpt-4o-mini"  # Using a simpler model for efficiency
+        self.llm_model = "gpt-4o-mini" 
         self.chat = ChatOpenAI(temperature=0, model=self.llm_model, api_key=self.api_key)
         self.output_parser = PydanticOutputParser(pydantic_object=ShoppingListItems)
         self.format_instructions = self.output_parser.get_format_instructions()
@@ -77,19 +82,12 @@ Return the results as a JSON object following this schema:
 User Input: {user_input}
 """
 
-    def get_shopping_and_food_info(self, db=None):
-        """Get the current shopping list and available food items as formatted text strings for the prompt"""
-        if not db:
-            db = Database()
-            close_after = True
-        else:
-            close_after = False
-        
+    def get_shopping_and_food_info(self):
+        """Get the current shopping list and available food items using shared objects."""
+        # Use self.shopping_list_table and self.ingredients_table
+        shopping_list = self.shopping_list_table
+        ingredients_food = self.ingredients_table
         try:
-            # Initialize tables
-            shopping_list = ShoppingList(db)
-            ingredients_food = IngredientsFood(db)
-            
             # Get all items from shopping list
             shopping_items = shopping_list.read()
             shopping_text = ""
@@ -99,13 +97,14 @@ User Input: {user_input}
             else:
                 shopping_text = "Items currently in your shopping list:\n"
                 food_items = ingredients_food.read()
-                food_dict = {item[0]: item[1] for item in food_items} if food_items else {}
+                food_dict = {item['id']: item['name'] for item in food_items} if food_items else {}
                 
                 for item in shopping_items:
-                    item_id = item[0]
-                    amount = item[1]
+                    item_id = item['id']
+                    amount = item['amount']
                     name = food_dict.get(item_id, f"Unknown item (ID: {item_id})")
-                    shopping_text += f"- {name}: {amount}\n"
+                    amount_str = f"{amount:.2f}" if isinstance(amount, float) and amount % 1 != 0 else str(amount)
+                    shopping_text += f"- {name} (ID: {item_id}): {amount_str}\n"
             
             # Get all available food items
             food_items = ingredients_food.read()
@@ -116,15 +115,13 @@ User Input: {user_input}
             else:
                 food_text = "Available food items that can be added to your shopping list:\n"
                 for item in food_items:
-                    food_text += f"ID: {item[0]}, Name: {item[1]}, Min amount to buy: {item[2]}\n"
+                    food_text += f"ID: {item['id']}, Name: {item['name']}, Min amount: {item['min_amount_to_buy']}\n"
             
             return shopping_text, food_text
         except Exception as e:
-            print(f"Error getting shopping list data: {e}")
+            print(f"Error getting shopping list data in processor: {e}")
             return "Error retrieving shopping list.", "Error retrieving food items."
-        finally:
-            if close_after:
-                db.disconnect()
+        # No disconnect needed
 
     def extract_shopping_items(self, user_input: str, shopping_list: str, food_items: str) -> ShoppingListItems:
         """Extract shopping list items from natural language input"""
@@ -147,198 +144,177 @@ User Input: {user_input}
             # Create a minimal valid output to allow the process to continue
             return ShoppingListItems(items=[])
 
-    def find_item_by_name(self, name: str, db) -> Optional[int]:
-        """Find a food item ID by name (case-insensitive)"""
+    def find_item_by_name(self, name: str) -> Optional[int]:
+        """Find a food item ID by name using the shared ingredients table object."""
         if not name:
             return None
-            
-        ingredients_food = IngredientsFood(db)
-        all_items = ingredients_food.read()
-        if not all_items:
+        
+        # Use self.ingredients_table
+        ingredients_food = self.ingredients_table
+        try:
+            all_items = ingredients_food.read()
+            if not all_items:
+                return None
+                
+            # Exact match
+            for item in all_items:
+                if item['name'].lower() == name.lower():
+                    return item['id']
+                    
+            # Partial match
+            for item in all_items:
+                if name.lower() in item['name'].lower():
+                    return item['id']
+                    
             return None
-            
-        # First try exact match
-        for item in all_items:
-            if item[1].lower() == name.lower():
-                return item[0]
-                
-        # Then try partial match
-        for item in all_items:
-            if name.lower() in item[1].lower():
-                return item[0]
-                
-        return None
+        except Exception as e:
+             print(f"[ERROR] Failed to find ingredient by name '{name}': {e}")
+             return None
 
-    def get_item_name(self, item_id: int, db) -> str:
-        """Get the name of a food item by its ID"""
-        ingredients_food = IngredientsFood(db)
-        item = ingredients_food.read(item_id)
-        if item and item[0]:
-            return item[0][1]
-        return f"Unknown item (ID: {item_id})"
+    def get_item_name(self, item_id: int) -> str:
+        """Get the name of a food item by its ID using the shared ingredients table object."""
+        # Use self.ingredients_table
+        ingredients_food = self.ingredients_table
+        try:
+            item_result = ingredients_food.read(item_id)
+            if item_result and item_result[0]:
+                return item_result[0]['name']
+            return f"Unknown item (ID: {item_id})"
+        except Exception as e:
+             print(f"[ERROR] Failed to get ingredient name for ID {item_id}: {e}")
+             return f"Unknown item (ID: {item_id})"
 
     def process_shopping_list_changes(self, user_input: str) -> Tuple[bool, str]:
         """
-        Process shopping list changes based on natural language input.
-        Returns a tuple of (bool, str):
-        - bool: True if any changes were made, False otherwise
-        - str: Confirmation message with details of all changes made
+        Process shopping list changes using shared table objects.
         """
-        # Initialize database connection
-        db = Database()
-        shopping_list = ShoppingList(db)
+        # Use self.shopping_list_table and self.ingredients_table
+        shopping_list = self.shopping_list_table
+        ingredients_food = self.ingredients_table # Needed for potential auto-add
         
-        # Track all changes made
         changes_made = False
         confirmation_messages = []
         items_processed = 0
         
         try:
             # Get current shopping list and food items for context
-            current_shopping_list, available_food_items = self.get_shopping_and_food_info(db)
+            current_shopping_list_text, available_food_items_text = self.get_shopping_and_food_info()
             
             # Extract shopping items from natural language input
-            shopping_items = self.extract_shopping_items(user_input, current_shopping_list, available_food_items)
+            shopping_items = self.extract_shopping_items(user_input, current_shopping_list_text, available_food_items_text)
             
-            # Special case for "clear" if no items were extracted but user wants to clear the list
-            if (not shopping_items.items and 
-                ("clear" in user_input.lower() or "empty" in user_input.lower() or "remove all" in user_input.lower())):
+            # --- Handle Operations --- 
+            operation_handled = {} # Track which operations have run (esp. for clear)
+
+            for item in shopping_items.items:
+                 op = item.operation.lower()
+                 item_name = item.item_name
+                 item_id = item.item_id
+                 amount = item.amount
+                 
+                 # Resolve name to ID if ID is missing
+                 if item_id is None and item_name:
+                     item_id = self.find_item_by_name(item_name)
+                 
+                 # Handle CLEAR (runs only once)
+                 if op == "clear" and "clear" not in operation_handled:
+                     all_items = shopping_list.read()
+                     if all_items:
+                         initial_count = len(all_items)
+                         for sl_item in all_items:
+                             shopping_list.delete(sl_item['id']) 
+                         confirmation_messages.append(f"Shopping list cleared ({initial_count} items removed)")
+                         changes_made = True
+                         items_processed += initial_count
+                     else:
+                         confirmation_messages.append("Shopping list was already empty.")
+                     operation_handled["clear"] = True # Mark clear as handled
+                 
+                 # Handle ADD
+                 elif op == "add":
+                     if item_id is not None:
+                         amount_to_add = amount if amount is not None else 1.0
+                         shopping_list.create(item_id, amount_to_add) # create handles update if exists
+                         resolved_name = self.get_item_name(item_id)
+                         change_msg = f"Added/Updated {resolved_name} (Amount: {amount_to_add}) to shopping list"
+                         confirmation_messages.append(change_msg)
+                         changes_made = True
+                         items_processed += 1
+                     elif item_name:
+                         # Optional: Auto-create ingredient if not found? Current setup warns.
+                         print(f"[WARN] Cannot add '{item_name}' to shopping list, item not found in known ingredients.")
+                     else:
+                          print(f"[WARN] Skipping add operation, missing item name/ID: {item}")
+                 
+                 # Handle REMOVE
+                 elif op == "remove":
+                     if item_id is not None:
+                         current_list_item = shopping_list.read(item_id)
+                         if current_list_item and current_list_item[0]:
+                             resolved_name = self.get_item_name(item_id)
+                             shopping_list.delete(item_id)
+                             change_msg = f"Removed {resolved_name} (ID: {item_id}) from shopping list"
+                             confirmation_messages.append(change_msg)
+                             changes_made = True
+                             items_processed += 1
+                         else:
+                             resolved_name = self.get_item_name(item_id)
+                             print(f"[INFO] Item '{resolved_name}' (ID: {item_id}) not found on shopping list, cannot remove.")
+                     else:
+                         print(f"[WARN] Could not find item to remove: {item_name or item_id}")
+                 
+                 # Handle UPDATE
+                 elif op == "update":
+                     if item_id is not None:
+                         if amount is not None:
+                             current_list_item = shopping_list.read(item_id)
+                             resolved_name = self.get_item_name(item_id)
+                             if current_list_item and current_list_item[0]:
+                                 original_amount = current_list_item[0]['amount']
+                                 shopping_list.update(item_id, amount)
+                                 change_msg = f"Updated {resolved_name} amount from {original_amount} to {amount}"
+                                 confirmation_messages.append(change_msg)
+                                 changes_made = True
+                                 items_processed += 1
+                             else:
+                                 print(f"[INFO] Item '{resolved_name}' not found on shopping list for update. Adding instead.")
+                                 shopping_list.create(item_id, amount)
+                                 change_msg = f"Added {resolved_name} with amount {amount} to shopping list (was not found for update)"
+                                 confirmation_messages.append(change_msg)
+                                 changes_made = True
+                                 items_processed += 1
+                         else:
+                             resolved_name = self.get_item_name(item_id) if item_id else item_name
+                             print(f"[WARN] Skipping update for {resolved_name}, no amount specified.")
+                     else:
+                         print(f"[WARN] Could not find item to update: {item_name or item_id}")
+
+            # Check if clear was the *only* operation requested (and maybe successful)
+            if "clear" in operation_handled and not any(op != "clear" for op in operation_handled):
+                 pass # Already handled by the loop
+            # Special case for implicit clear intent without explicit clear operation extracted
+            elif not items_processed and ("clear" in user_input.lower() or "empty" in user_input.lower()):
                 all_items = shopping_list.read()
                 if all_items:
+                    initial_count = len(all_items)
                     for item in all_items:
-                        item_id = item[0]
-                        item_name = self.get_item_name(item_id, db)
-                        shopping_list.delete(item_id)
-                        change_msg = f"Removed {item_name} (ID: {item_id}) from shopping list"
-                        confirmation_messages.append(change_msg)
-                        changes_made = True
-                        items_processed += 1
-                    
-                    if items_processed > 0:
-                        confirmation_messages.insert(0, "Shopping list cleared")
-            
-            # Process each item based on the operation determined by the LLM
-            for item in shopping_items.items:
-                if item.operation.lower() == "clear":
-                    # Clear the entire shopping list
-                    all_items = shopping_list.read()
-                    if all_items:
-                        for sl_item in all_items:
-                            item_id = sl_item[0]
-                            item_name = self.get_item_name(item_id, db)
-                            shopping_list.delete(item_id)
-                        
-                        confirmation_messages.append("Shopping list cleared")
-                        changes_made = True
-                        items_processed += len(all_items)
-                
-                elif item.operation.lower() == "add":
-                    # Verify required fields for adding
-                    if not item.item_name:
-                        print(f"[WARNING] Skipping add operation due to missing item name: {item}")
-                        continue
-                    
-                    # Find item id from name if not provided
-                    if item.item_id is None:
-                        item.item_id = self.find_item_by_name(item.item_name, db)
-                    
-                    # If item id is still None, we need to create a new food item
-                    if item.item_id is None:
-                        print(f"[WARNING] Could not find food item: {item.item_name}")
-                        # For testing purposes only, auto-create a minimal food item
-                        ingredients_food = IngredientsFood(db)
-                        min_amount = 1
-                        item.item_id = ingredients_food.create(item.item_name, min_amount)
-                        print(f"[INFO] Created new food item: {item.item_name} (ID: {item.item_id})")
-                    
-                    # Use a default amount if not specified
-                    amount = item.amount if item.amount is not None else 1.0
-                    
-                    # Update the shopping list (create uses ON CONFLICT to handle updates)
-                    shopping_list.create(item.item_id, amount)
-                    
-                    item_name = self.get_item_name(item.item_id, db)
-                    unit_text = f" {item.units}" if item.units else ""
-                    change_msg = f"Added {amount}{unit_text} {item_name} to shopping list"
-                    confirmation_messages.append(change_msg)
+                        shopping_list.delete(item['id'])
+                    confirmation_messages.insert(0, f"Shopping list cleared ({initial_count} items removed based on intent).")
                     changes_made = True
-                    items_processed += 1
-                
-                elif item.operation.lower() == "remove":
-                    # Find item id from name if not provided
-                    if item.item_id is None and item.item_name:
-                        item.item_id = self.find_item_by_name(item.item_name, db)
-                    
-                    if item.item_id is None:
-                        print(f"[WARNING] Could not find item to remove: {item.item_name}")
-                        continue
-                    
-                    # Check if the item exists in the shopping list
-                    existing = shopping_list.read(item.item_id)
-                    if existing and existing[0]:
-                        item_name = self.get_item_name(item.item_id, db)
-                        shopping_list.delete(item.item_id)
-                        change_msg = f"Removed {item_name} from shopping list"
-                        confirmation_messages.append(change_msg)
-                        changes_made = True
-                        items_processed += 1
-                    else:
-                        print(f"[WARNING] Item not in shopping list: {item.item_name}")
-                
-                elif item.operation.lower() == "update":
-                    # Find item id from name if not provided
-                    if item.item_id is None and item.item_name:
-                        item.item_id = self.find_item_by_name(item.item_name, db)
-                    
-                    if item.item_id is None:
-                        print(f"[WARNING] Could not find item to update: {item.item_name}")
-                        continue
-                    
-                    # Verify required fields for updating
-                    if item.amount is None:
-                        print(f"[WARNING] Skipping update operation due to missing amount: {item}")
-                        continue
-                    
-                    # Check if the item exists in the shopping list
-                    existing = shopping_list.read(item.item_id)
-                    if existing and existing[0]:
-                        old_amount = existing[0][1]
-                        item_name = self.get_item_name(item.item_id, db)
-                        shopping_list.update(item.item_id, item.amount)
-                        unit_text = f" {item.units}" if item.units else ""
-                        change_msg = f"Updated {item_name} in shopping list: {old_amount} → {item.amount}{unit_text}"
-                        confirmation_messages.append(change_msg)
-                        changes_made = True
-                        items_processed += 1
-                    else:
-                        # If item doesn't exist in the shopping list, add it
-                        shopping_list.create(item.item_id, item.amount)
-                        item_name = self.get_item_name(item.item_id, db)
-                        unit_text = f" {item.units}" if item.units else ""
-                        change_msg = f"Added {item.amount}{unit_text} {item_name} to shopping list"
-                        confirmation_messages.append(change_msg)
-                        changes_made = True
-                        items_processed += 1
+                    items_processed += initial_count
+                elif not confirmation_messages: # Avoid duplicate message if already cleared
+                     confirmation_messages.append("Shopping list is already empty.")
             
-            print(f"[DEBUG] Processed {items_processed} shopping list items. Changes: {confirmation_messages}")
-            
-            # Prepare confirmation message
-            if confirmation_messages:
-                confirmation = "SHOPPING LIST CHANGES:\n"
-                confirmation += "\n".join(confirmation_messages)
-                
-                # Get current shopping list after changes
-                confirmation += "\n\nCURRENT SHOPPING LIST:\n"
-                updated_shopping_list, _ = self.get_shopping_and_food_info(db)
-                confirmation += updated_shopping_list
-                
-                return changes_made, confirmation
+            # Construct final confirmation message
+            if items_processed > 0:
+                final_confirmation = f"SHOPPING LIST UPDATE CONFIRMATION ({items_processed} operation(s))\n-------------------------------------\n" + "\n".join(confirmation_messages)
             else:
-                return changes_made, "No changes were made to the shopping list."
+                final_confirmation = "No changes were detected or applied to the shopping list."
                 
+            return changes_made, final_confirmation
         except Exception as e:
             print(f"[ERROR] Shopping list processor error: {e}")
-            return False, f"Error processing shopping list changes: {e}"
-        finally:
-            # Disconnect from database
-            db.disconnect() 
+            import traceback
+            print(traceback.format_exc())
+            return False, f"Failed to process shopping list changes: {e}"
+        # No disconnect

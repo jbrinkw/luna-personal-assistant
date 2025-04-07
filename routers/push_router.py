@@ -20,24 +20,23 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class PushRouter:
-    def __init__(self, router_model):
+    def __init__(self, router_model, db, tables):
+        """Initialize PushRouter with the main router model and database objects."""
         self.router_model = router_model
-        self.api_key = os.getenv("OPENAI_API_KEY")
+        self.db = db # Store the main db connection
+        self.tables = tables # Store the dictionary of table objects
+        self.api_key = os.getenv("OPENAI_API_KEY") # Keep for potential LLM calls here
         
-        # Initialize inventory processor with simpler model
-        self.inventory_processor = NaturalLanguageInventoryProcessor()
-        
-        # Initialize taste profile processor
-        self.taste_profile_processor = TasteProfileProcessor()
-        
-        # Initialize saved meals processor
-        self.saved_meals_processor = SavedMealsProcessor()
-        
-        # Initialize shopping list processor
-        self.shopping_list_processor = ShoppingListProcessor()
-        
-        # Initialize daily notes processor
-        self.daily_notes_processor = DailyNotesProcessor()
+        # Initialize helper processors, passing the necessary database table objects
+        print("Initializing Push Helper Processors...")
+        # Pass the specific table object each processor primarily interacts with
+        # Also pass the main db connection if needed for cross-table lookups (e.g., finding IDs by name)
+        self.inventory_processor = NaturalLanguageInventoryProcessor(self.tables['inventory'], self.db)
+        self.taste_profile_processor = TasteProfileProcessor(self.tables['taste_profile'])
+        self.saved_meals_processor = SavedMealsProcessor(self.tables['saved_meals'], self.db)
+        self.shopping_list_processor = ShoppingListProcessor(self.tables['shopping_list'], self.tables['ingredients_foods'], self.db)
+        self.daily_notes_processor = DailyNotesProcessor(self.tables['daily_planner'], self.tables['saved_meals'], self.db)
+        print("Push Helper Processors Initialized.")
         
         # High-level routing prompt
         self.router_prompt = """
@@ -119,7 +118,7 @@ Most recent user message: {message}
         
         # Use the routing model to decide if this message requires database updates
         messages = [
-            SystemMessage(content="You are a helpful assistant."),
+            SystemMessage(content="You are a helpful assistant determining update types."),
             HumanMessage(content=self.router_prompt.format(message=recent_user_message))
         ]
         
@@ -133,38 +132,38 @@ Most recent user message: {message}
         needs_shopping_list_update = "shopping_list" in response_text
         needs_daily_notes_update = "daily_notes" in response_text
         
-        routing_decisions.append(f"inventory: {needs_inventory_update}, taste_profile: {needs_taste_profile_update}, saved_meals: {needs_saved_meals_update}, shopping_list: {needs_shopping_list_update}, daily_notes: {needs_daily_notes_update}")
+        update_type_detected = "none"
+        if needs_inventory_update: update_type_detected = "inventory"
+        elif needs_taste_profile_update: update_type_detected = "taste_profile"
+        elif needs_saved_meals_update: update_type_detected = "saved_meals"
+        elif needs_shopping_list_update: update_type_detected = "shopping_list"
+        elif needs_daily_notes_update: update_type_detected = "daily_notes"
         
-        # Handle inventory updates
-        if needs_inventory_update:
+        print(f"[DEBUG] Push router decision: {update_type_detected}")
+        
+        # Handle updates based on the detected type
+        # The handle_* methods now call processors that use the shared db objects
+        if update_type_detected == "inventory":
             result, confirmation = self.handle_inventory_update(recent_user_message, chat_history)
             routing_decisions.append(result)
             print(f"[DEBUG] Push router decisions: {routing_decisions}")
             return result, confirmation
-        
-        # Handle taste profile updates
-        elif needs_taste_profile_update:
+        elif update_type_detected == "taste_profile":
             result, confirmation = self.handle_taste_profile_update(recent_user_message, chat_history)
             routing_decisions.append(result)
             print(f"[DEBUG] Push router decisions: {routing_decisions}")
             return result, confirmation
-            
-        # Handle saved meals updates
-        elif needs_saved_meals_update:
+        elif update_type_detected == "saved_meals":
             result, confirmation = self.handle_saved_meals_update(recent_user_message, chat_history)
             routing_decisions.append(result)
             print(f"[DEBUG] Push router decisions: {routing_decisions}")
             return result, confirmation
-        
-        # Handle shopping list updates
-        elif needs_shopping_list_update:
+        elif update_type_detected == "shopping_list":
             result, confirmation = self.handle_shopping_list_update(recent_user_message, chat_history)
             routing_decisions.append(result)
             print(f"[DEBUG] Push router decisions: {routing_decisions}")
             return result, confirmation
-            
-        # Handle daily notes updates
-        elif needs_daily_notes_update:
+        elif update_type_detected == "daily_notes":
             result, confirmation = self.handle_daily_notes_update(recent_user_message, chat_history)
             routing_decisions.append(result)
             print(f"[DEBUG] Push router decisions: {routing_decisions}")
@@ -187,7 +186,7 @@ Most recent user message: {message}
             return result, confirmation
         except Exception as e:
             print(f"[ERROR] Push router error processing inventory update: {e}")
-            return False, ""
+            return False, "Failed to process inventory update."
 
     def handle_taste_profile_update(self, user_message, chat_history) -> Tuple[bool, str]:
         """
@@ -202,7 +201,7 @@ Most recent user message: {message}
             return result, confirmation
         except Exception as e:
             print(f"[ERROR] Push router error processing taste profile update: {e}")
-            return False, ""
+            return False, "Failed to process taste profile update."
             
     def handle_saved_meals_update(self, user_message, chat_history) -> Tuple[bool, str]:
         """
@@ -217,7 +216,7 @@ Most recent user message: {message}
             return result, confirmation
         except Exception as e:
             print(f"[ERROR] Push router error processing saved meals update: {e}")
-            return False, ""
+            return False, "Failed to process saved meals update."
             
     def handle_shopping_list_update(self, user_message, chat_history) -> Tuple[bool, str]:
         """
@@ -232,7 +231,7 @@ Most recent user message: {message}
             return result, confirmation
         except Exception as e:
             print(f"[ERROR] Push router error processing shopping list update: {e}")
-            return False, ""
+            return False, "Failed to process shopping list update."
             
     def handle_daily_notes_update(self, user_message, chat_history) -> Tuple[bool, str]:
         """
@@ -247,4 +246,4 @@ Most recent user message: {message}
             return result, confirmation
         except Exception as e:
             print(f"[ERROR] Push router error processing daily notes update: {e}")
-            return False, ""
+            return False, "Failed to process daily notes update."

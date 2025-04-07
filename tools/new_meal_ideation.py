@@ -17,6 +17,7 @@ from db.db_functions import Database, init_tables
 import json
 from typing import List, Optional, Dict, Tuple, Any
 import re
+import traceback # For error logging
 
 # Load environment variables
 load_dotenv()
@@ -38,22 +39,26 @@ class MealRecipe(BaseModel):
     recipe: str = Field(..., description="Detailed recipe instructions")
 
 class MealIdeationEngine:
-    def __init__(self, llm_model="gpt-4o-mini"):
-        self.api_key = os.getenv("OPENAI_API_KEY")
+    def __init__(self, db: Database, tables: dict, llm_model="gpt-4o-mini"):
+        """Initialize engine with shared DB/Table objects and LLM model."""
+        self.db = db
+        self.tables = tables
         self.llm_model = llm_model
+        
+        self.api_key = os.getenv("OPENAI_API_KEY")
         self.chat = ChatOpenAI(model=self.llm_model, openai_api_key=self.api_key)
         
-        # Initialize database and tables
-        self.db, self.tables = init_tables()
-        
-        # Get data from database
-        self.taste_profile = self._get_taste_profile()
-        self.current_inventory = self._get_inventory()
-        self.saved_meals = self._get_saved_meals()
-        self.existing_meal_ideas = self._get_existing_meal_ideas()
+        # No need to get data here, get it on demand in methods or pass if static
+        # self.taste_profile = self._get_taste_profile()
+        # self.current_inventory = self._get_inventory()
+        # self.saved_meals = self._get_saved_meals()
+        # self.existing_meal_ideas = self._get_existing_meal_ideas()
         
         # Initialize the Pydantic output parsers
         self.router_parser = PydanticOutputParser(pydantic_object=RouterDecision)
+        # Add parsers for Layer 1 and Layer 2 outputs if needed for validation/structure
+        # self.description_parser = PydanticOutputParser(pydantic_object=List[MealDescription])
+        # self.recipe_parser = PydanticOutputParser(pydantic_object=List[MealRecipe])
         
         # Router prompt template
         self.router_prompt = (
@@ -135,62 +140,89 @@ class MealIdeationEngine:
             "Complete Recipes:"
         )
 
+        # Layer 3: Prompt for extracting recipes from LLM output to save
+        self.save_recipe_parser = PydanticOutputParser(pydantic_object=MealRecipe)
+        self.save_extraction_prompt = (
+            "Extract the recipe details (name, ingredients, prep_time_minutes, recipe instructions) from the following text.\n"
+            "Ensure ingredients are a list of dictionaries, each with 'name' and 'amount'.\n"
+            "Ensure prep_time_minutes is an integer.\n\n"
+            "Recipe Text:\n{recipe_text}\n\n"
+            "{format_instructions}"
+        )
+        
+        # State management (simple example)
+        self.current_meal_descriptions: List[MealDescription] = []
+        self.current_recipes: List[MealRecipe] = []
+
     def _get_taste_profile(self) -> str:
-        """Get taste profile from database"""
-        result = self.tables["taste_profile"].read()
-        if result and len(result) > 0:
-            return result[0][0]
-        return "No taste profile available"
+        """Get taste profile using shared table object."""
+        # Use self.tables
+        taste_profile = self.tables["taste_profile"].read()
+        return taste_profile if taste_profile else "No taste profile available"
 
     def _get_inventory(self) -> str:
-        """Get inventory from database"""
+        """Get inventory using shared table object."""
+        # Use self.tables
         inventory_items = self.tables["inventory"].read()
         inventory_str = ""
         if inventory_items:
             for item in inventory_items:
-                item_id, name, quantity, expiration = item
+                 # Access by key
+                name = item['name']
+                quantity = item['quantity']
+                expiration = item['expiration']
                 exp_str = f", Expires: {expiration}" if expiration else ""
                 inventory_str += f"- {name}, Quantity: {quantity}{exp_str}\n"
         return inventory_str if inventory_str else "No inventory items available"
 
     def _get_saved_meals(self) -> str:
-        """Get saved meals from database"""
+        """Get saved meals using shared table object."""
+        # Use self.tables
         saved_meals = self.tables["saved_meals"].read()
         saved_meals_str = ""
         if saved_meals:
             for meal in saved_meals:
-                meal_id, name, prep_time, ingredients, recipe = meal
+                 # Access by key
+                name = meal['name']
+                ingredients = meal['ingredients'] # Keep as JSON string for context
                 saved_meals_str += f"Meal: {name}\nIngredients: {ingredients}\n\n"
         return saved_meals_str if saved_meals_str else "No saved meals available"
     
     def _get_existing_meal_ideas(self) -> str:
-        """Get existing meal ideas from database"""
+        """Get existing meal ideas using shared table object."""
+        # Use self.tables
         meal_ideas = self.tables["new_meal_ideas"].read()
         meal_ideas_str = ""
         if meal_ideas:
             for meal in meal_ideas:
-                meal_id, name, prep_time, ingredients, recipe = meal
+                 # Access by key
+                name = meal['name']
+                ingredients = meal['ingredients'] # Keep as JSON string for context
                 meal_ideas_str += f"Meal: {name}\nIngredients: {ingredients}\n\n"
         return meal_ideas_str if meal_ideas_str else "No existing meal ideas available"
     
     def clear_meal_ideas_table(self):
-        """Clear the new meal ideas table for testing"""
+        """Clear the new meal ideas table using shared table object."""
+        # Use self.tables
+        new_ideas_table = self.tables["new_meal_ideas"]
         try:
-            print("\n=== CLEARING DATABASE ===")
-            # Get all existing meal ideas
-            meal_ideas = self.tables["new_meal_ideas"].read()
+            print("\n=== CLEARING NEW MEAL IDEAS TABLE ===")
+            meal_ideas = new_ideas_table.read()
             if meal_ideas:
+                count = 0
                 for meal in meal_ideas:
-                    meal_id = meal[0]
-                    self.tables["new_meal_ideas"].delete(meal_id)
-                print(f"Cleared {len(meal_ideas)} meal ideas from the table")
+                     # Access by key
+                    meal_id = meal['id']
+                    new_ideas_table.delete(meal_id)
+                    count += 1
+                print(f"Cleared {count} meal ideas from the table")
             else:
-                print("Database is already empty")
+                print("New meal ideas table is already empty")
         except Exception as e:
-            print(f"Error clearing database: {str(e)}")
+            print(f"Error clearing new meal ideas table: {str(e)}")
 
     def router(self, message_history: List) -> Tuple[int, bool, List[int]]:
-        """Determine which layer to activate, whether to limit to inventory, and selected items"""
+        """Determine which layer to activate, whether to limit to inventory, and selected items."""
         # Format the message history for the prompt
         history_text = ""
         for i, message in enumerate(message_history):
@@ -225,412 +257,259 @@ class MealIdeationEngine:
             return 1, False, []
 
     def generate_meal_descriptions(self, message_history: List, limit_to_inventory: bool) -> str:
-        """Layer 1: Generate meal descriptions based on message history"""
-        # Format the message history for the prompt
-        history_text = ""
-        for i, message in enumerate(message_history):
-            role = "User" if isinstance(message, HumanMessage) else "Assistant"
-            history_text += f"{role}: {message.content}\n"
-            
-        # Set inventory constraint based on limit_to_inventory flag
-        if limit_to_inventory:
-            inventory_constraint = "- ONLY suggest meals that can be made with the current inventory items"
-        else:
-            inventory_constraint = "- Suggest meals that use available ingredients when possible, but don't be limited by inventory"
+        """Layer 1: Generate meal descriptions."""
+        history_text = "\n".join([f"{'User' if isinstance(msg, HumanMessage) else 'Assistant'}: {msg.content}" for msg in message_history])
+        inventory_constraint = "- ONLY suggest meals that can be made with the current inventory items" if limit_to_inventory else "- Suggest meals using available ingredients when possible, but don't be limited by inventory"
+        
+        # Get fresh context data
+        taste_profile = self._get_taste_profile()
+        saved_meals_context = self._get_saved_meals()
+        existing_ideas_context = self._get_existing_meal_ideas()
+        inventory_context = self._get_inventory()
             
         prompt = ChatPromptTemplate.from_template(self.description_generation_prompt)
         formatted_prompt = prompt.format(
             message_history=history_text,
-            taste_profile=self.taste_profile,
-            saved_meals=self.saved_meals,
-            existing_meal_ideas=self.existing_meal_ideas,
+            taste_profile=taste_profile,
+            saved_meals=saved_meals_context,
+            existing_meal_ideas=existing_ideas_context,
             inventory_constraint=inventory_constraint,
-            current_inventory=self.current_inventory
+            current_inventory=inventory_context
         )
         
         try:
             response = self.chat.invoke(formatted_prompt)
-            return response.content.strip()
+            response_content = response.content.strip()
+            print(f"\n=== LAYER 1 RESPONSE ===\n{response_content}\n=== END LAYER 1 RESPONSE ===\n")
+            
+            # TODO: Parse descriptions from response_content to store in self.current_meal_descriptions
+            # This requires defining a reliable parsing method (regex, LLM, etc.)
+            self.current_meal_descriptions = self._parse_meal_descriptions(response_content)
+            
+            return response_content
         except Exception as e:
-            raise Exception(f"Error generating meal descriptions: {str(e)}")
+            print(f"[ERROR] Layer 1 (Descriptions) failed: {e}")
+            return "Sorry, I had trouble coming up with meal descriptions right now."
 
-    def generate_full_recipes(self, meal_descriptions: str, selected_items: List[int], limit_to_inventory: bool) -> str:
-        """Layer 2: Generate full recipes based on selected meal descriptions"""
-        # If we have selected items, filter the meal descriptions to only include those items
-        if selected_items:
-            filtered_descriptions = ""
-            lines = meal_descriptions.split('\n')
-            
-            include_next_lines = False
-            current_meal_num = None
-            
-            for line in lines:
-                # Check if this is a meal header line with numbering
-                if line.startswith("MEAL #"):
-                    try:
-                        meal_num = int(line.split("#")[1].split(":")[0].strip())
-                        current_meal_num = meal_num
-                        include_next_lines = meal_num in selected_items
-                    except:
-                        include_next_lines = False
-                
-                # If we're currently including lines for a selected meal, add this line
-                if include_next_lines:
-                    filtered_descriptions += line + "\n"
-            
-            selected_meal_descriptions = filtered_descriptions.strip()
-        else:
-            # If no selections made, use all descriptions
-            selected_meal_descriptions = meal_descriptions
-            
-        # Set inventory constraint based on limit_to_inventory flag
-        if limit_to_inventory:
-            inventory_constraint = "- ONLY use ingredients from the current inventory"
-        else:
-            inventory_constraint = "- Use available ingredients when possible, but don't be limited by inventory"
-            
+    def _parse_meal_descriptions(self, text: str) -> List[MealDescription]:
+        """Helper to parse meal descriptions from LLM output (example using regex)."""
+        descriptions = []
+        # Simple regex example, might need refinement
+        matches = re.findall(r"MEAL\s*#?\d+:\s*(.*?)\nDescription:\s*(.*?)(?=\nMEAL|$)", text, re.DOTALL | re.IGNORECASE)
+        for match in matches:
+            name = match[0].strip()
+            desc = match[1].strip()
+            if name and desc:
+                 descriptions.append(MealDescription(name=name, description=desc))
+        self.current_meal_descriptions = descriptions # Update state
+        print(f"[DEBUG] Parsed Descriptions: {self.current_meal_descriptions}")
+        return descriptions
+
+    def generate_recipes(self, message_history: List, selected_items: List[int], limit_to_inventory: bool) -> str:
+        """Layer 2: Generate full recipes for selected meal descriptions."""
+        if not selected_items:
+            return "Please tell me which meal numbers you'd like recipes for (e.g., 'show me recipe 1')."
+        if not self.current_meal_descriptions:
+             return "I don't have any meal descriptions to generate recipes from. Please ask for some ideas first."
+
+        selected_descriptions_text = ""
+        valid_selected_items = []
+        for item_num in selected_items:
+             index = item_num - 1
+             if 0 <= index < len(self.current_meal_descriptions):
+                 meal_desc = self.current_meal_descriptions[index]
+                 selected_descriptions_text += f"MEAL #{item_num}: {meal_desc.name}\nDescription: {meal_desc.description}\n\n"
+                 valid_selected_items.append(item_num)
+             else:
+                  print(f"[WARN] Invalid selection number ignored: {item_num}")
+                  
+        if not valid_selected_items:
+             return "The item numbers you selected don't match the previous suggestions. Please try again."
+
+        history_text = "\n".join([f"{'User' if isinstance(msg, HumanMessage) else 'Assistant'}: {msg.content}" for msg in message_history])
+        inventory_constraint = "- ONLY use ingredients from the current inventory" if limit_to_inventory else "- Use available ingredients when possible, but add others if needed"
+        
+        # Get fresh context data
+        taste_profile = self._get_taste_profile()
+        saved_meals_context = self._get_saved_meals()
+        inventory_context = self._get_inventory()
+
         prompt = ChatPromptTemplate.from_template(self.recipe_generation_prompt)
         formatted_prompt = prompt.format(
-            selected_meal_descriptions=selected_meal_descriptions,
-            meal_number="meal_number", # This is a placeholder that will be replaced in the recipe
-            taste_profile=self.taste_profile,
-            saved_meals=self.saved_meals,
+            selected_meal_descriptions=selected_descriptions_text,
+            taste_profile=taste_profile,
+            saved_meals=saved_meals_context,
             inventory_constraint=inventory_constraint,
-            current_inventory=self.current_inventory
+            current_inventory=inventory_context,
+            # If using Pydantic parser for recipes, add format instructions here
+            # format_instructions=self.recipe_parser.get_format_instructions() 
         )
-        
+
         try:
             response = self.chat.invoke(formatted_prompt)
-            return response.content.strip()
+            response_content = response.content.strip()
+            print(f"\n=== LAYER 2 RESPONSE ===\n{response_content}\n=== END LAYER 2 RESPONSE ===\n")
+            
+            # TODO: Parse recipes from response_content to store in self.current_recipes
+            self.current_recipes = self._parse_recipes(response_content) 
+            
+            return response_content
         except Exception as e:
-            raise Exception(f"Error generating full recipes: {str(e)}")
+            print(f"[ERROR] Layer 2 (Recipes) failed: {e}")
+            return "Sorry, I had trouble generating the recipes right now."
 
-    def extract_meal_descriptions_from_history(self, message_history: List) -> str:
-        """Extract meal descriptions from message history for Layer 2"""
-        descriptions = ""
-        
-        # Search backward through the message history to find the most recent meal descriptions
-        for message in reversed(message_history):
-            if isinstance(message, AIMessage):
-                content = message.content
-                # Look for numbered meal descriptions
-                if "MEAL #" in content and "Description:" in content:
-                    descriptions = content
-                    break
-        
-        if not descriptions:
-            # If not found in AI messages, check user messages (they might have edited/selected)
-            for message in reversed(message_history):
-                if isinstance(message, HumanMessage):
-                    content = message.content
-                    if "MEAL #" in content and "Description:" in content:
-                        descriptions = content
-                        break
-        
-        return descriptions.strip() if descriptions else "No meal descriptions found in message history"
+    def _parse_recipes(self, text: str) -> List[MealRecipe]:
+        """Helper to parse full recipes from LLM output (example using regex/LLM)."""
+        recipes = []
+        # Option 1: Regex (complex and brittle)
+        # matches = re.findall(r"RECIPE\s*#?\d+:\s*(.*?)\nRecipe:\s*(.*?)\nIngredients:\s*(.*?)\nPrep Time:\s*(\d+)\s*minutes", text, re.DOTALL | re.IGNORECASE)
+        # for match in matches:
+        #     name, recipe_instr, ingredients_str, prep_time = match
+        #     # Further parse ingredients_str
+        #     # ... 
 
-    def extract_recipes_from_history(self, message_history: List) -> str:
-        """Extract full recipes from message history for Layer 3"""
-        recipes = ""
+        # Option 2: Use another LLM call with Pydantic parser for each recipe block
+        recipe_blocks = re.split(r"RECIPE\s*#?\d+:.*\n", text)[1:] # Split by recipe headers
+        meal_names = re.findall(r"RECIPE\s*#?\d+:\s*(.*?)\n", text, re.IGNORECASE)
         
-        # Search backward through the message history to find the most recent recipes
-        for message in reversed(message_history):
-            if isinstance(message, AIMessage):
-                content = message.content
-                # Debug: print the content we're searching
-                print(f"Looking for recipe in content (length {len(content)}): {content[:100]}...")
-                # Look for recipes - check various possible formats
-                if "RECIPE #" in content:
-                    recipes = content
-                    print(f"Found recipe with 'RECIPE #' format")
-                    break
-                elif "Recipe:" in content and "Ingredients:" in content:
-                    recipes = content
-                    print(f"Found recipe with 'Recipe:' and 'Ingredients:' format")  
-                    break
+        format_instructions = self.save_recipe_parser.get_format_instructions()
         
-        if not recipes:
-            # If not found in AI messages, check user messages (they might have edited)
-            for message in reversed(message_history):
-                if isinstance(message, HumanMessage):
-                    content = message.content
-                    if "RECIPE #" in content or ("Recipe:" in content and "Ingredients:" in content):
-                        recipes = content
-                        break
-        
-        return recipes.strip() if recipes else "No recipes found in message history"
+        for i, block in enumerate(recipe_blocks):
+             if i < len(meal_names): # Ensure we have a name
+                 recipe_name = meal_names[i].strip()
+                 # Reconstruct the text for the parser
+                 parser_input_text = f"RECIPE #{i+1}: {recipe_name}\n{block.strip()}"
+                 
+                 prompt = ChatPromptTemplate.from_template(self.save_extraction_prompt)
+                 formatted_prompt = prompt.format(
+                     recipe_text=parser_input_text,
+                     format_instructions=format_instructions
+                 )
+                 try:
+                     response = self.chat.invoke(formatted_prompt)
+                     parsed_recipe = self.save_recipe_parser.parse(response.content)
+                     # Ensure the name matches (or update it)
+                     parsed_recipe.name = recipe_name 
+                     recipes.append(parsed_recipe)
+                 except Exception as e:
+                      print(f"[ERROR] Failed to parse recipe block #{i+1} ({recipe_name}): {e}")
+                      
+        self.current_recipes = recipes # Update state
+        print(f"[DEBUG] Parsed Recipes: {self.current_recipes}")
+        return recipes
 
-    def save_selected_recipes(self, recipes_text: str, selected_items: List[int]) -> str:
-        """Layer 3: Save selected recipes to database"""
-        print("\n=== SAVING RECIPES ===")
-        print(f"Selected items: {selected_items}")
-        print(f"Recipe text length: {len(recipes_text)}")
-        print(f"Recipe text starts with: {recipes_text[:100]}...")
+    def save_recipes(self, selected_items: List[int]) -> Tuple[bool, str]:
+        """Layer 3: Save selected recipes to the new_meal_ideas table."""
+        if not selected_items:
+            return False, "Please specify which recipe numbers you want to save."
+        if not self.current_recipes:
+             return False, "I don't have any recipes generated to save. Please generate recipes first."
+
+        saved_count = 0
+        skipped_count = 0
+        confirmation_messages = []
+        new_ideas_table = self.tables["new_meal_ideas"]
+
+        # Map selected item numbers to indices in self.current_recipes
+        # Assumes self.current_recipes maintains the order corresponding to original numbering
+        recipes_to_save = []
+        original_indices = {} # Map recipe index back to original number if needed
         
-        # Try to handle the format with LAYER prefix from our chat interface
-        if recipes_text.startswith("[LAYER"):
-            first_line_end = recipes_text.find("\n")
-            if first_line_end > 0:
-                recipes_text = recipes_text[first_line_end:].strip()
-                print("Stripped LAYER prefix from recipe text")
-        
-        # Split the text into individual recipes
-        recipe_sections = []
-        
-        # First try to split by RECIPE # format
-        if "RECIPE #" in recipes_text:
-            recipe_sections = recipes_text.split("RECIPE #")
-            # Remove empty first section if it exists
-            if recipe_sections and not recipe_sections[0].strip():
-                recipe_sections = recipe_sections[1:]
-            print(f"Found {len(recipe_sections)} recipe sections using 'RECIPE #' format")
-        # Fallback: try other formats if no sections found
+        # This mapping is tricky if recipe parsing failed for some items.
+        # A better approach might be to store recipes in a dictionary keyed by original number.
+        # For now, assume self.current_recipes aligns with successful parses.
+        # We need a way to link the recipe objects back to the selected numbers.
+        # Let's assume the parser returns recipes in the order of selection for now.
+        if len(selected_items) != len(self.current_recipes):
+             print("[WARN] Mismatch between selected items and parsed recipes. Saving might be incomplete.")
+             # Attempt to match by name if possible, otherwise rely on order
+
+        for i, recipe_obj in enumerate(self.current_recipes): 
+             # This simple check assumes the order is preserved and matches the *selection* order
+             # Example: If user selected [1, 3], current_recipes[0] is #1, current_recipes[1] is #3
+             # We need to map this back if saving confirmation needs the original number.
+             original_number = selected_items[i] if i < len(selected_items) else -1 # Fallback
+             
+             # Check if a recipe with the same name already exists
+             # TODO: Implement check against saved_meals and new_meal_ideas by name
+             
+             try:
+                 new_id = new_ideas_table.create(
+                     name=recipe_obj.name,
+                     prep_time=recipe_obj.prep_time_minutes,
+                     ingredients=recipe_obj.ingredients, # Pass list of dicts
+                     recipe=recipe_obj.recipe
+                 )
+                 if new_id:
+                     confirmation_messages.append(f"Saved '{recipe_obj.name}' (ID: {new_id}) to New Meal Ideas.")
+                     saved_count += 1
+                 else:
+                     confirmation_messages.append(f"Failed to save '{recipe_obj.name}'.")
+                     skipped_count += 1
+             except Exception as e:
+                 print(f"[ERROR] Failed to save recipe '{recipe_obj.name}': {e}")
+                 confirmation_messages.append(f"Error saving '{recipe_obj.name}'.")
+                 skipped_count += 1
+
+        if saved_count > 0:
+             final_confirmation = f"Saved {saved_count} recipe(s) to your New Meal Ideas.\n" + "\n".join(confirmation_messages)
+             return True, final_confirmation
+        elif skipped_count > 0:
+             return False, "Could not save the selected recipe(s) due to errors." 
         else:
-            # Try other formats here if needed
-            print("Using alternative recipe parsing logic")
-            # Just use the whole text as one recipe if we can't split
-            recipe_sections = [recipes_text]
-        
-        saved_recipes = []
-        
-        for i, section in enumerate(recipe_sections):
-            if not section.strip():
-                continue
-                
-            try:
-                # If using RECIPE # format, extract the number
-                recipe_num = i + 1  # Default to section index + 1
-                if section.startswith(str(i+1) + ":"):
-                    recipe_num = i + 1
-                elif ":" in section and section.split(":", 1)[0].strip().isdigit():
-                    recipe_num = int(section.split(":", 1)[0].strip())
-                
-                print(f"Processing recipe #{recipe_num}")
-                
-                # Check if this recipe is selected (or if no selections were provided, include all)
-                if selected_items and recipe_num not in selected_items:
-                    print(f"Skipping recipe #{recipe_num}: Not selected")
-                    continue
-                
-                # Split the section by newlines
-                lines = section.split('\n')
-                
-                # Extract the name - first try to get it from format like "RECIPE #1: Name"
-                name = ""
-                if ":" in lines[0]:
-                    name = lines[0].split(":", 1)[1].strip()
-                else:
-                    # Try to find a line that looks like a recipe name (first non-empty line)
-                    for line in lines:
-                        if line.strip() and not line.startswith("Recipe:") and not line.startswith("Ingredients:"):
-                            name = line.strip()
-                            break
-                
-                if not name:
-                    print(f"Skipping recipe #{recipe_num}: No name found")
-                    continue
-                
-                print(f"Recipe name: {name}")
-                
-                # Initialize variables
-                ingredients_line = ""
-                prep_time = 30  # Default prep time
-                recipe_text = ""
-                
-                # First pass: Find any multiline ingredients sections
-                multiline_ingredients = []
-                in_ingredients_section = False
-                for line_idx, line in enumerate(lines):
-                    line = line.strip()
-                    
-                    # Skip empty lines
-                    if not line:
-                        continue
-                    
-                    # Check for ingredient section start
-                    if line == "Ingredients:" or line == "Ingredients":
-                        in_ingredients_section = True
-                        continue
-                    # Check for end of ingredients section (next section starts or prep time)
-                    elif in_ingredients_section and (line.startswith("Prep Time:") or line.startswith("Recipe:") or line == ""):
-                        in_ingredients_section = False
-                    # Collect ingredients while in the ingredients section
-                    elif in_ingredients_section:
-                        multiline_ingredients.append(line)
-                
-                # If we found multiline ingredients, combine them
-                if multiline_ingredients:
-                    ingredients_line = ", ".join(multiline_ingredients)
-                    print(f"Found multiline ingredients: {ingredients_line}")
-                
-                # Second pass: Process the rest of the details (recipe steps, prep time, etc)
-                in_recipe_section = False
-                
-                for line in lines:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    
-                    # Extract recipe instructions
-                    if line.startswith("Recipe:"):
-                        in_recipe_section = True
-                        recipe_text = line.replace("Recipe:", "").strip()
-                    elif in_recipe_section and (line.startswith("Ingredients:") or line.startswith("Prep Time:")):
-                        in_recipe_section = False
-                        if line.startswith("Ingredients:") and not ingredients_line:
-                            ingredients_line = line.replace("Ingredients:", "").strip()
-                    elif in_recipe_section:
-                        # Still in recipe section, add to recipe text
-                        recipe_text += "\n" + line
-                    elif line.startswith("Ingredients:") and not ingredients_line:
-                        # Direct ingredient line
-                        ingredients_line = line.replace("Ingredients:", "").strip()
-                    elif "Prep Time:" in line or "Prep time:" in line:
-                        # Extract prep time - handle various formats
-                        time_text = line
-                        if "Prep Time:" in line:
-                            time_text = line.split("Prep Time:", 1)[1]
-                        elif "Prep time:" in line:
-                            time_text = line.split("Prep time:", 1)[1]
-                        
-                        # Find number in the text
-                        import re
-                        time_match = re.search(r'\d+', time_text)
-                        if time_match:
-                            prep_time = int(time_match.group())
-                
-                # If we still don't have recipe text but have numbered steps, try to collect them
-                if not recipe_text:
-                    recipe_steps = []
-                    in_steps = False
-                    for line in lines:
-                        line = line.strip()
-                        if not line:
-                            continue
-                            
-                        # Look for numbered steps like "1. Step one" or just steps starting with numbers
-                        if re.match(r'^\d+\.?\s', line):
-                            in_steps = True
-                            recipe_steps.append(line)
-                        elif in_steps and not line.startswith("Ingredients:") and not "Prep Time:" in line:
-                            # Continue adding lines as part of the steps
-                            recipe_steps.append(line)
-                        elif line.startswith("Ingredients:") or "Prep Time:" in line:
-                            # Stop collecting steps when we hit ingredients or prep time
-                            in_steps = False
-                    
-                    if recipe_steps:
-                        recipe_text = "\n".join(recipe_steps)
-                
-                # Check if we have enough data to save the recipe
-                print(f"Ingredients line: {ingredients_line}")
-                print(f"Recipe text: {recipe_text[:50]}..." if recipe_text else "No recipe text found")
-                print(f"Prep time: {prep_time}")
-                
-                if not ingredients_line:
-                    print(f"Skipping recipe #{recipe_num} '{name}': No ingredients found")
-                    continue
-                
-                if not recipe_text:
-                    # Even without recipe text, we'll still save it if we have ingredients
-                    recipe_text = "No detailed instructions provided."
-                    print(f"No recipe instructions found, but continuing with default text")
-                
-                # Convert ingredients to proper JSON format
-                # Handle different formats: comma-separated list, or bullet points
-                if "\n-" in ingredients_line:
-                    # Bullet point format
-                    ingredients_list = [item.strip().lstrip('-').strip() for item in ingredients_line.split('\n-')]
-                else:
-                    # Comma separated format
-                    ingredients_list = [item.strip() for item in ingredients_line.split(',')]
-                
-                # Process ingredients into JSON - ignoring food database lookup
-                ingredients_json = json.dumps([
-                    {"name": item.split('(')[0].strip() if '(' in item else item.strip(), 
-                     "amount": item.split('(')[1].split(')')[0].strip() if '(' in item and ')' in item else "to taste"} 
-                    for item in ingredients_list if item.strip()
-                ])
-                
-                # Create meal in database
-                meal_id = self.tables["new_meal_ideas"].create(
-                    name=name,
-                    prep_time=prep_time,
-                    ingredients=ingredients_json,
-                    recipe=recipe_text
-                )
-                
-                if meal_id:
-                    print(f"Added recipe: {name} (ID: {meal_id})")
-                    saved_recipes.append({"number": recipe_num, "name": name, "id": meal_id})
-                    
-            except Exception as e:
-                print(f"Error processing recipe {i+1}: {str(e)}")
-                import traceback
-                traceback.print_exc()
-        
-        # Create a summary of saved recipes
-        if saved_recipes:
-            summary = "Successfully saved the following recipes to your collection:\n"
-            for recipe in saved_recipes:
-                summary += f"- Recipe #{recipe['number']}: {recipe['name']} (ID: {recipe['id']})\n"
-            return summary
-        else:
-            return "No recipes were saved to the database. Please try again with valid recipe selections."
+             # This case happens if selected_items was valid but current_recipes was empty
+             return False, "No valid recipes were available to save for your selection."
 
-    def process_message_history(self, message_history: List) -> Dict[str, Any]:
-        """Main function to process message history and generate appropriate meal content"""
-        # Clear meal ideas table for testing (only in test mode)
-        if os.getenv("TEST_MODE", "false").lower() == "true":
-            self.clear_meal_ideas_table()
-        
-        # Run router to determine which layer to activate
-        layer, limit_to_inventory, selected_items = self.router(message_history)
-        
-        result = {
-            "layer": layer,
-            "limit_to_inventory": limit_to_inventory,
-            "selected_items": selected_items,
-            "content": ""
-        }
-        
-        if layer == 1:
-            # Layer 1: Generate meal descriptions
-            print(f"\n=== LAYER {layer} ===")
-            all_descriptions = self.generate_meal_descriptions(message_history, limit_to_inventory)
-            result["content"] = all_descriptions
-            
-        elif layer == 2:
-            # Layer 2: Generate full recipes
-            print(f"\n=== LAYER {layer} ===")
-            
-            # Extract meal descriptions from message history
-            meal_descriptions = self.extract_meal_descriptions_from_history(message_history)
-            
-            if "No meal descriptions found" in meal_descriptions:
-                result["content"] = "No meal descriptions found in message history. Please generate meal ideas first."
+    # --- Execute Method --- 
+    def execute(self, chat_history: List[Dict[str, str]]) -> str:
+        """Main entry point called by the ToolRouter."""
+        try:
+            # 1. Route to determine layer and parameters
+            layer, limit_to_inventory, selected_items = self.router(chat_history)
+            print(f"[INFO] MealIdeationEngine - Layer: {layer}, Limit Inventory: {limit_to_inventory}, Selected: {selected_items}")
+
+            # 2. Execute the appropriate layer
+            if layer == 1:
+                # Generate Descriptions
+                output = self.generate_meal_descriptions(chat_history, limit_to_inventory)
+            elif layer == 2:
+                # Generate Recipes for selected descriptions
+                output = self.generate_recipes(chat_history, selected_items, limit_to_inventory)
+            elif layer == 3:
+                # Save selected recipes
+                # Layer 3 needs selected items from the *previous* turn (recipes shown)
+                # The router needs context to know which recipes were presented.
+                # For simplicity now, assume selected_items refers to recipes shown in the *last assistant message*
+                # This requires parsing the last assistant message or better state management.
+                # Let's assume selected_items from router directly maps to recipe indices for now.
+                success, output = self.save_recipes(selected_items)
             else:
-                recipes = self.generate_full_recipes(meal_descriptions, selected_items, limit_to_inventory)
-                result["content"] = recipes
+                output = "Internal error: Invalid layer determined by router."
                 
-        elif layer == 3:
-            # Layer 3: Save selected recipes to database
-            print(f"\n=== LAYER {layer} ===")
-            
-            # Extract recipes from message history
-            recipes = self.extract_recipes_from_history(message_history)
-            
-            if "No recipes found" in recipes:
-                result["content"] = "No recipes found in message history. Please generate recipes first."
-            else:
-                save_result = self.save_selected_recipes(recipes, selected_items)
-                result["content"] = save_result
-                
+            return output
+
+        except Exception as e:
+            print(f"[ERROR] MealIdeationEngine execution failed: {e}")
+            print(traceback.format_exc())
+            return "Sorry, I encountered an error while generating recipe ideas."
+
+
+# Optional: Top-level function if preferred over class instance
+def generate_meal_ideas(message_history: List) -> str:
+    """Main function to generate meal ideas based on message history using the engine."""
+    # Need to handle DB connection if using this function directly
+    try:
+        db, tables = init_tables()
+        if not db or not tables:
+             return "Error: Could not initialize database for meal ideation."
+        engine = MealIdeationEngine(db, tables)
+        result = engine.execute(message_history)
+        db.disconnect() # Disconnect after use
         return result
-
-# Main function to be called by the tool router
-def generate_meal_ideas(message_history):
-    """Generate meal ideas based on message history"""
-    engine = MealIdeationEngine()
-    result = engine.process_message_history(message_history)
-    return result["content"]
+    except Exception as e:
+         print(f"[ERROR] generate_meal_ideas function failed: {e}")
+         print(traceback.format_exc())
+         # Ensure DB disconnects even on error if connection was made
+         if 'db' in locals() and db:
+              db.disconnect()
+         return "Sorry, an error occurred while generating meal ideas."

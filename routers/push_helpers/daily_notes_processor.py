@@ -15,6 +15,7 @@ from langchain.output_parsers import PydanticOutputParser
 
 from db.db_functions import Database, DailyPlanner, SavedMeals
 from dotenv import load_dotenv
+import traceback # For detailed error logging
 
 # Load environment variables
 load_dotenv()
@@ -33,9 +34,16 @@ class DailyPlanItems(BaseModel):
     items: List[DailyPlanItem] = Field(..., description="List of daily plan items to be processed")
 
 class DailyNotesProcessor:
-    def __init__(self):
+    def __init__(self, daily_planner_table: DailyPlanner, saved_meals_table: SavedMeals, db: Database):
+        """Initialize processor with shared table objects and DB connection."""
+        self.daily_planner_table = daily_planner_table # Store passed object
+        self.saved_meals_table = saved_meals_table # Store passed object
+        self.db = db # Store passed DB connection
+        
         # Initialize language model
-        self.chat = ChatOpenAI(temperature=0)
+        self.api_key = os.getenv("OPENAI_API_KEY") # Still needed for LLM call
+        self.llm_model = "gpt-4o-mini" 
+        self.chat = ChatOpenAI(temperature=0, model=self.llm_model, api_key=self.api_key)
         
         # Initialize the output parser
         self.output_parser = PydanticOutputParser(pydantic_object=DailyPlanItems)
@@ -95,82 +103,69 @@ User input: {user_input}
             "today_date_obj": today
         }
 
-    def get_plans_and_meals_info(self, db):
-        """Get current plans and available meals for context"""
-        # Initialize database classes
-        daily_planner = DailyPlanner(db)
-        saved_meals = SavedMeals(db)
-        
-        # Get current date info
-        date_info = self.get_current_date_info()
-        today = date_info["today_date_obj"]
-        
-        # Get plans for the next 7 days
-        plans_text = "No current plans found."
-        
-        # Calculate date range (next 7 days)
-        end_date = today + timedelta(days=7)
-        
-        # Get all daily planner entries
-        all_entries = daily_planner.read()
-        
-        if all_entries:
-            # Format entries
-            formatted_entries = []
+    def get_plans_and_meals_info(self):
+        """Get current plans and available meals using shared objects."""
+        # Use self.daily_planner_table and self.saved_meals_table
+        daily_planner = self.daily_planner_table
+        saved_meals = self.saved_meals_table
+        try:
+            date_info = self.get_current_date_info()
+            today = date_info["today_date_obj"]
+            end_date = today + timedelta(days=7)
             
-            for entry in all_entries:
-                entry_date = entry[0]
-                
-                # Only include entries in the next 7 days
-                if today <= entry_date <= end_date:
-                    notes = entry[1] or "No notes"
-                    
-                    # Safely parse meal IDs
+            plans_text = "No current plans found."
+            all_entries = daily_planner.read()
+            
+            if all_entries:
+                formatted_entries = []
+                for entry in all_entries:
+                    entry_date_str = entry['day']
                     try:
-                        if entry[2]:
-                            if isinstance(entry[2], str):
-                                meal_ids = json.loads(entry[2])
+                        entry_date = datetime.strptime(entry_date_str, '%Y-%m-%d').date()
+                    except (ValueError, TypeError):
+                        continue 
+                    
+                    if today <= entry_date <= end_date:
+                        notes = entry['notes'] or "No notes"
+                        meal_ids_json = entry['meal_ids']
+                        meal_names = []
+                        try:
+                            meal_ids = json.loads(meal_ids_json) if meal_ids_json and isinstance(meal_ids_json, str) else []
+                            if isinstance(meal_ids, list):
+                                for mid in meal_ids:
+                                    try:
+                                        meal_id_int = int(mid)
+                                        meal_result = saved_meals.read(meal_id_int)
+                                        if meal_result and meal_result[0]:
+                                            meal_names.append(meal_result[0]['name'])
+                                        else:
+                                            meal_names.append(f"Unknown (ID:{meal_id_int})")
+                                    except (ValueError, TypeError):
+                                        meal_names.append(f"Invalid ID ({mid})")
                             else:
-                                # It might already be a Python object
-                                meal_ids = entry[2]
-                        else:
-                            meal_ids = []
-                    except Exception as e:
-                        print(f"[WARNING] Error parsing meal IDs in get_plans_and_meals_info: {e}")
-                        meal_ids = []
-                    
-                    meal_names = []
-                    for mid in meal_ids:
-                        meal = saved_meals.read(mid)
-                        if meal and meal[0]:
-                            meal_names.append(meal[0][1])
-                        else:
-                            meal_names.append(f"Unknown meal (ID: {mid})")
-                    
-                    meal_text = ", ".join(meal_names) if meal_names else "No meals"
-                    
-                    formatted_date = entry_date.strftime("%A, %B %d, %Y")
-                    formatted_entries.append(f"{formatted_date}: {meal_text} (Notes: {notes})")
+                                meal_names.append("[Invalid meal data]")
+                        except (json.JSONDecodeError, TypeError):
+                            meal_names.append("[Error parsing meal data]")
+                            
+                        meal_text = ", ".join(meal_names) if meal_names else "No meals"
+                        formatted_date = entry_date.strftime("%A, %B %d")
+                        formatted_entries.append(f"{formatted_date}: {meal_text} (Notes: {notes})")
+                
+                if formatted_entries:
+                    plans_text = "\n".join(formatted_entries)
             
-            if formatted_entries:
-                plans_text = "\n".join(formatted_entries)
-        
-        # Get available meals
-        meals_text = "No saved meals found."
-        
-        all_meals = saved_meals.read()
-        if all_meals:
-            formatted_meals = []
+            meals_text = "No saved meals found."
+            all_meals = saved_meals.read()
+            if all_meals:
+                formatted_meals = [f"ID {meal['id']}: {meal['name']}" for meal in all_meals]
+                if formatted_meals:
+                    meals_text = "\n".join(formatted_meals)
             
-            for meal in all_meals:
-                meal_id = meal[0]
-                name = meal[1]
-                formatted_meals.append(f"ID {meal_id}: {name}")
-            
-            if formatted_meals:
-                meals_text = "\n".join(formatted_meals)
-        
-        return plans_text, meals_text
+            return plans_text, meals_text
+        except Exception as e:
+             print(f"[ERROR] Failed to get plans and meals info in processor: {e}")
+             return "Error retrieving plans.", "Error retrieving meals."
+        # No disconnect
 
     def parse_relative_date(self, date_reference):
         """Parse a relative date reference like 'tomorrow' or 'next Monday'"""
@@ -251,272 +246,200 @@ User input: {user_input}
         return today
 
     def extract_daily_plan_items(self, user_input: str) -> DailyPlanItems:
-        """Extract daily plan items from natural language input"""
-        # Prepare date information for context
+        """Extract daily plan items from user input using LLM."""
+        # Get context needed for the prompt
+        current_plans, available_meals = self.get_plans_and_meals_info()
         date_info = self.get_current_date_info()
         
-        # Get current plans and available meals
-        db = Database()
-        plans_text, meals_text = self.get_plans_and_meals_info(db)
-        db.disconnect()
-        
-        # Create prompt with current context
         prompt = ChatPromptTemplate.from_template(template=self.extraction_prompt_template)
         messages = prompt.format_messages(
             user_input=user_input,
-            format_instructions=self.format_instructions,
             current_date=date_info["today"],
             current_weekday=date_info["current_weekday"],
-            current_plans=plans_text,
-            available_meals=meals_text
+            current_plans=current_plans,
+            available_meals=available_meals,
+            format_instructions=self.format_instructions
         )
-        
-        # Get response from LLM
         response = self.chat.invoke(messages)
-        # print(f"[DEBUG] Extractor LLM raw output (truncated): '{response.content[:300]}...'")
+        print(f"[DEBUG] Daily Plan Extractor LLM raw output (truncated): '{response.content[:300]}...'")
         
-        # Implement a fallback mechanism in case parsing fails
         try:
             extracted_items = self.output_parser.parse(response.content)
-            
-            # Normalize dates for any items with relative date references
-            for i, item in enumerate(extracted_items.items):
-                # If the target date is not already in YYYY-MM-DD format, parse it
-                if not re.match(r'^\d{4}-\d{2}-\d{2}$', item.target_date):
-                    try:
-                        # Convert the relative date to an actual date
-                        actual_date = self.parse_relative_date(item.target_date)
-                        # Update the target_date with the ISO format
-                        item.target_date = actual_date.strftime('%Y-%m-%d')
-                    except Exception as e:
-                        print(f"[WARNING] Failed to normalize date '{item.target_date}': {e}")
-                        # Keep the original date reference if parsing fails
-            
             return extracted_items
         except Exception as e:
-            print(f"[ERROR] Failed to parse extractor output: {e}")
-            # Create a minimal valid output to allow the process to continue
-            return DailyPlanItems(items=[])
+            print(f"[ERROR] Failed to parse Daily Plan extractor output: {e}")
+            return DailyPlanItems(items=[]) # Return empty list on failure
 
-    def find_meal_by_name(self, meal_name: str, db) -> Optional[int]:
-        """Find a meal ID by name (case-insensitive)"""
+    def find_meal_by_name(self, meal_name: str) -> Optional[int]:
+        """Find a saved meal ID by name using the shared saved_meals_table."""
         if not meal_name:
             return None
-            
-        saved_meals = SavedMeals(db)
-        all_meals = saved_meals.read()
-        if not all_meals:
+        
+        # Use self.saved_meals_table
+        saved_meals = self.saved_meals_table
+        try:
+            all_meals = saved_meals.read()
+            if not all_meals:
+                return None
+                
+            # Exact match
+            for meal in all_meals:
+                if meal['name'].lower() == meal_name.lower():
+                    return meal['id']
+                    
+            # Partial match
+            for meal in all_meals:
+                if meal_name.lower() in meal['name'].lower():
+                    return meal['id']
+                    
             return None
-            
-        # First try exact match
-        for meal in all_meals:
-            if meal[1].lower() == meal_name.lower():
-                return meal[0]
-                
-        # Then try partial match
-        for meal in all_meals:
-            if meal_name.lower() in meal[1].lower():
-                return meal[0]
-                
-        return None
+        except Exception as e:
+             print(f"[ERROR] Failed to find meal by name '{meal_name}' in daily notes processor: {e}")
+             return None
 
-    def get_meal_name(self, meal_id: int, db) -> str:
-        """Get the name of a meal by its ID"""
-        saved_meals = SavedMeals(db)
-        meal = saved_meals.read(meal_id)
-        if meal and meal[0]:
-            return meal[0][1]
-        return f"Unknown meal (ID: {meal_id})"
+    def get_meal_name(self, meal_id: int) -> str:
+        """Get the name of a saved meal by its ID using the shared saved_meals_table."""
+        # Use self.saved_meals_table
+        saved_meals = self.saved_meals_table
+        try:
+            meal_result = saved_meals.read(meal_id) 
+            if meal_result and meal_result[0]:
+                return meal_result[0]['name']
+            return f"Unknown meal (ID: {meal_id})"
+        except Exception as e:
+             print(f"[ERROR] Failed to get meal name for ID {meal_id} in daily notes processor: {e}")
+             return f"Unknown meal (ID: {meal_id})"
 
     def process_daily_notes_changes(self, user_input: str) -> Tuple[bool, str]:
         """
-        Process daily notes changes based on natural language input.
-        Returns a tuple of (bool, str):
-        - bool: True if any changes were made, False otherwise
-        - str: Confirmation message with details of all changes made
+        Process daily plan changes using shared table objects.
         """
-        # Initialize database connection
-        db = Database()
-        daily_planner = DailyPlanner(db)
+        # Use self.daily_planner_table and self.saved_meals_table
+        daily_planner = self.daily_planner_table
+        saved_meals = self.saved_meals_table 
         
-        # Track all changes made
         changes_made = False
         confirmation_messages = []
         items_processed = 0
         
         try:
-            # Extract daily plan items from natural language input
+            # Extract plan items (uses shared objects via get_plans_and_meals_info)
             plan_items = self.extract_daily_plan_items(user_input)
             
-            # Process each item based on the operation determined by the LLM
-            for i, item in enumerate(plan_items.items):
-                # Convert relative date to actual date
-                target_date = self.parse_relative_date(item.target_date)
+            # Process each item
+            for item in plan_items.items:
+                target_date_obj = self.parse_relative_date(item.target_date)
+                if not target_date_obj:
+                    print(f"[WARN] Could not parse target date: {item.target_date}")
+                    continue
                 
-                # Format the date for confirmation messages
-                formatted_date = target_date.strftime("%A, %B %d, %Y")
+                target_date_str = target_date_obj.strftime("%Y-%m-%d")
                 
-                if item.operation.lower() == "add" or item.operation.lower() == "update":
-                    # Determine the meal IDs to use
-                    meal_ids = []
-                    
-                    # Use explicit meal IDs if provided
-                    if item.meal_ids:
-                        meal_ids = item.meal_ids
-                    
-                    # Look up meal names if provided
-                    if item.meal_names:
-                        for meal_name in item.meal_names:
-                            meal_id = self.find_meal_by_name(meal_name, db)
-                            if meal_id:
-                                meal_ids.append(meal_id)
-                    
-                    # Check if this is an update to an existing entry
-                    existing_plan = daily_planner.read(target_date)
-                    
-                    if existing_plan and existing_plan[0]:
-                        # If updating an existing entry, preserve existing data if not specified
-                        existing_notes = existing_plan[0][1]
-                        
-                        # Safely parse the existing meal IDs
+                meal_ids_to_process = item.meal_ids if item.meal_ids else []
+                if item.meal_names:
+                    for name in item.meal_names:
+                        found_id = self.find_meal_by_name(name)
+                        if found_id:
+                            if found_id not in meal_ids_to_process:
+                                meal_ids_to_process.append(found_id)
+                        else:
+                            print(f"[WARN] Could not find saved meal by name: {name}")
+                
+                # --- Handle Operations --- 
+                op = item.operation.lower()
+                
+                if op == "clear":
+                    delete_result = daily_planner.delete(target_date_str)
+                    change_msg = f"Cleared plan for {target_date_str}"
+                    confirmation_messages.append(change_msg)
+                    changes_made = True
+                    items_processed += 1
+
+                elif op == "add" or op == "update":
+                    existing_plan_result = daily_planner.read(target_date_str)
+                    existing_notes = None
+                    existing_meal_ids = []
+                    if existing_plan_result and existing_plan_result[0]:
+                        existing_plan = existing_plan_result[0]
+                        existing_notes = existing_plan['notes']
                         try:
-                            if existing_plan[0][2]:
-                                if isinstance(existing_plan[0][2], str):
-                                    existing_meal_ids = json.loads(existing_plan[0][2])
-                                else:
-                                    # It might already be a Python object
-                                    existing_meal_ids = existing_plan[0][2]
-                            else:
+                            meal_ids_json = existing_plan['meal_ids']
+                            existing_meal_ids = json.loads(meal_ids_json) if meal_ids_json and isinstance(meal_ids_json, str) else []
+                            if not isinstance(existing_meal_ids, list):
                                 existing_meal_ids = []
-                        except Exception as e:
-                            print(f"[WARNING] Error parsing existing meal IDs: {e}")
-                            existing_meal_ids = []
-                        
-                        # Use existing notes if new notes not specified
-                        notes = item.notes if item.notes is not None else existing_notes
-                        
-                        # Use existing meal IDs if not replacing them
-                        if not (item.meal_ids or item.meal_names):
-                            meal_ids = existing_meal_ids
-                        
-                        # Convert meal_ids to JSON string if it's a list or keep as is if already a string
-                        meal_ids_json = json.dumps(meal_ids) if meal_ids is not None else None
-                        
-                        # Update the plan
-                        daily_planner.update(target_date, notes, meal_ids_json)
-                        
-                        # Create confirmation message
-                        meal_names = [self.get_meal_name(mid, db) for mid in meal_ids]
-                        meal_text = ", ".join(meal_names) if meal_names else "No meals"
-                        
-                        confirmation_messages.append(f"Updated plan for {formatted_date}:\nMeals: {meal_text}\nNotes: {notes}")
-                        
-                        changes_made = True
-                        items_processed += 1
-                    else:
-                        # Create a new plan entry
-                        notes = item.notes or ""
-                        
-                        # Convert meal_ids to JSON string if it's a list
-                        meal_ids_json = json.dumps(meal_ids) if meal_ids else None
-                        
-                        daily_planner.create(target_date, notes, meal_ids_json)
-                        
-                        # Create confirmation message
-                        meal_names = [self.get_meal_name(mid, db) for mid in meal_ids]
-                        meal_text = ", ".join(meal_names) if meal_names else "No meals"
-                        
-                        confirmation_messages.append(f"Added new plan for {formatted_date}:\nMeals: {meal_text}\nNotes: {notes}")
-                        
-                        changes_made = True
-                        items_processed += 1
-                
-                elif item.operation.lower() == "clear":
-                    # Check if the entry exists
-                    existing_plan = daily_planner.read(target_date)
+                        except (json.JSONDecodeError, TypeError):
+                            existing_meal_ids = [] 
                     
-                    if existing_plan and existing_plan[0]:
-                        # Delete the plan for this day
-                        daily_planner.delete(target_date)
-                        
-                        confirmation_messages.append(f"Cleared all plans for {formatted_date}")
-                        
-                        changes_made = True
-                        items_processed += 1
-                    else:
-                        confirmation_messages.append(f"No plans found for {formatted_date} to clear")
-                
-                elif item.operation.lower() == "remove":
-                    # Check if the entry exists
-                    existing_plan = daily_planner.read(target_date)
+                    final_notes = item.notes if item.notes is not None else existing_notes
+                    final_meal_ids = list(existing_meal_ids)
                     
-                    if existing_plan and existing_plan[0]:
-                        existing_notes = existing_plan[0][1]
-                        
-                        # Safely parse the existing meal IDs
+                    for meal_id in meal_ids_to_process:
+                        if meal_id not in final_meal_ids:
+                            final_meal_ids.append(meal_id)
+                            
+                    create_update_result = daily_planner.create(target_date_str, final_notes, final_meal_ids)
+                    
+                    meal_names_str = ", ".join([self.get_meal_name(mid) for mid in final_meal_ids]) or "No meals"
+                    notes_str = f" | Notes: {final_notes}" if final_notes else ""
+                    op_verb = "Updated" if existing_plan_result else "Added"
+                    change_msg = f"{op_verb} plan for {target_date_str}: Meals=[{meal_names_str}]{notes_str}"
+                    confirmation_messages.append(change_msg)
+                    changes_made = True
+                    items_processed += 1
+                
+                elif op == "remove":
+                    existing_plan_result = daily_planner.read(target_date_str)
+                    if existing_plan_result and existing_plan_result[0]:
+                        existing_plan = existing_plan_result[0]
+                        existing_notes = existing_plan['notes']
                         try:
-                            if existing_plan[0][2]:
-                                if isinstance(existing_plan[0][2], str):
-                                    existing_meal_ids = json.loads(existing_plan[0][2])
-                                else:
-                                    # It might already be a Python object
-                                    existing_meal_ids = existing_plan[0][2]
-                            else:
+                            meal_ids_json = existing_plan['meal_ids']
+                            existing_meal_ids = json.loads(meal_ids_json) if meal_ids_json and isinstance(meal_ids_json, str) else []
+                            if not isinstance(existing_meal_ids, list):
                                 existing_meal_ids = []
-                        except Exception as e:
-                            print(f"[WARNING] Error parsing existing meal IDs for remove: {e}")
-                            existing_meal_ids = []
+                        except (json.JSONDecodeError, TypeError):
+                             existing_meal_ids = []
+                             
+                        removed_meal_names = []
+                        final_meal_ids = list(existing_meal_ids) # Start with current list
+                        ids_actually_removed = []
+
+                        for mid_to_remove in meal_ids_to_process:
+                            if mid_to_remove in final_meal_ids:
+                                final_meal_ids.remove(mid_to_remove)
+                                removed_meal_names.append(self.get_meal_name(mid_to_remove))
+                                ids_actually_removed.append(mid_to_remove)
                         
-                        meals_to_remove = []
-                        
-                        # Use explicit meal IDs if provided
-                        if item.meal_ids:
-                            meals_to_remove = item.meal_ids
-                        
-                        # Look up meal names if provided
-                        if item.meal_names:
-                            for meal_name in item.meal_names:
-                                meal_id = self.find_meal_by_name(meal_name, db)
-                                if meal_id:
-                                    meals_to_remove.append(meal_id)
-                        
-                        # Remove the specified meals from the existing list
-                        new_meal_ids = [mid for mid in existing_meal_ids if mid not in meals_to_remove]
-                        
-                        # Convert to JSON string
-                        new_meal_ids_json = json.dumps(new_meal_ids) if new_meal_ids else None
-                        
-                        # Update the plan with the filtered meal list
-                        daily_planner.update(target_date, existing_notes, new_meal_ids_json)
-                        
-                        # Create confirmation message
-                        removed_meal_names = [self.get_meal_name(mid, db) for mid in meals_to_remove]
-                        removed_text = ", ".join(removed_meal_names) if removed_meal_names else "No meals"
-                        
-                        confirmation_messages.append(f"Removed meals from {formatted_date}: {removed_text}")
-                        
-                        changes_made = True
-                        items_processed += 1
+                        # Only proceed if something was actually removed
+                        if ids_actually_removed:
+                            if not final_meal_ids and not existing_notes:
+                                daily_planner.delete(target_date_str)
+                                change_msg = f"Removed meals ({', '.join(removed_meal_names)}) from {target_date_str}, clearing the day."
+                            else:
+                                daily_planner.update(target_date_str, notes=existing_notes, meal_ids=final_meal_ids)
+                                change_msg = f"Removed meals ({', '.join(removed_meal_names)}) from {target_date_str}"
+                                
+                            confirmation_messages.append(change_msg)
+                            changes_made = True
+                            items_processed += 1
+                        else:
+                            print(f"[INFO] No specified meals to remove were found in plan for {target_date_str}")
                     else:
-                        confirmation_messages.append(f"No plans found for {formatted_date} to modify")
+                        print(f"[WARN] No plan found for {target_date_str} to remove meals from.")
             
-            # print(f"[DEBUG] Processed {items_processed} daily plan items. Changes: {confirmation_messages}")
-            
-            # Prepare confirmation message
-            if confirmation_messages:
-                confirmation = "DAILY PLAN CHANGES:\n"
-                confirmation += "\n\n".join(confirmation_messages)
-                
-                return changes_made, confirmation
+            # Construct final confirmation message
+            if items_processed > 0:
+                final_confirmation = f"DAILY PLAN UPDATE CONFIRMATION ({items_processed} operation(s))\n-------------------------------------\n" + "\n".join(confirmation_messages)
             else:
-                return changes_made, "No changes were made to the daily plans."
+                final_confirmation = "No changes were detected or applied to the daily plan."
                 
+            return changes_made, final_confirmation
         except Exception as e:
             print(f"[ERROR] Daily notes processor error: {e}")
-            return False, f"Error processing daily plan changes: {e}"
-        finally:
-            # Disconnect from database
-            db.disconnect()
+            import traceback
+            print(traceback.format_exc())
+            return False, f"Failed to process daily plan changes: {e}"
+        # No disconnect
 
 
 # Test function

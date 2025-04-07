@@ -14,30 +14,43 @@ from helpers.model_router import ModelRouter
 from routers.pull_router import PullRouter
 from routers.push_router import PushRouter
 from routers.tool_router import ToolRouter
+# Import init_tables
+from db.db_functions import init_tables
+import traceback # For more detailed error logging
 
 # Load environment variables
 load_dotenv()
 
 class ChefByteChat:
     def __init__(self, intelligence_level='low', use_local_resources=False):
-        # Initialize the model router
-        self.model_router = ModelRouter(intelligence_level, use_local_resources)
-        self.model = self.model_router.get_model()
-        
-        # Create a separate model for internal routing (can use lower intelligence level)
-        self.router_model = ModelRouter('medium', use_local_resources).get_model()
-        
-        # Initialize the pull router for context retrieval
-        self.pull_router = PullRouter(self.router_model)
-        
-        # Initialize the push router for database updates
-        self.push_router = PushRouter(self.router_model)
-        
-        # Initialize the tool router for activating tools like meal generation
-        self.tool_router = ToolRouter(self.router_model)
-        
-        # Initialize system message with database capabilities explanation
-        self.system_message = SystemMessage(content="""
+        print("Initializing ChefByteChat...")
+        try:
+            # --- Central Database Initialization ---
+            print("Attempting to initialize database...")
+            self.db, self.tables = init_tables() 
+            if not self.db or not self.tables:
+                raise ConnectionError("Failed to initialize database connection or tables.")
+            print("Database initialized successfully.")
+            # ---------------------------------------
+            
+            # Initialize the model router for main responses
+            self.model_router = ModelRouter(intelligence_level, use_local_resources)
+            self.model = self.model_router.get_model()
+            
+            # Create a separate model for internal routing
+            self.router_model = ModelRouter('medium', use_local_resources).get_model()
+            
+            # Initialize routers, passing the central db connection and tables dictionary
+            print("Initializing Routers...")
+            # Pass the db connection and the dictionary of table objects
+            self.pull_router = PullRouter(self.router_model, self.db, self.tables)
+            self.push_router = PushRouter(self.router_model, self.db, self.tables)
+            # ToolRouter might also need db/tables depending on the tools
+            self.tool_router = ToolRouter(self.router_model, self.db, self.tables) 
+            print("Routers initialized.")
+
+            # Initialize system message with database capabilities explanation
+            self.system_message = SystemMessage(content="""
 You are ChefByte, a friendly cooking assistant with access to the user's refrigerator and pantry inventory. You are designed to help users find recipes, answer cooking questions, and manage their kitchen more effectively.
 
 As a cooking assistant, you have several capabilities:
@@ -103,14 +116,26 @@ It's important to include notes about any changes made to inventory, recipes, sh
 
 First time users should be told about your inventory tracking capabilities and how they can update their inventory. You should encourage them to add items to their inventory and taste profile.
 """)
-        self.chat_history = [self.system_message]
-    
+            self.chat_history = [self.system_message]
+            print("ChefByteChat initialization complete.")
+
+        except Exception as e:
+            print(f"[CRITICAL ERROR] Failed to initialize ChefByteChat: {e}")
+            print(traceback.format_exc())
+            # Optionally re-raise or handle appropriately
+            raise
+            
     def process_message(self, user_input: str) -> str:
         """Process a user message and return the AI response"""
+        # Ensure DB connection is still valid (optional, depends on long-running stability)
+        # if not self.db.connect():
+        #     return "Error: Database connection lost."
+            
         # Add user message to history
         self.chat_history.append(HumanMessage(content=user_input))
         
         # Check if any tools need to be activated based on the user message
+        # Note: ToolRouter now has access to db and tables if needed by tools
         tool_result = self.tool_router.route_tool(self.chat_history)
         
         # If a tool was activated, use its output directly
@@ -125,7 +150,7 @@ First time users should be told about your inventory tracking capabilities and h
             return tool_output
             
         # If no tool was activated, proceed with normal context retrieval and response generation
-        # Retrieve context using pull router
+        # Retrieve context using pull router (now uses shared db/tables)
         context = self.pull_router.pull_context(self.chat_history)
         if context:
             print(f"Context retrieved from database: {len(context)} characters")
@@ -143,6 +168,7 @@ First time users should be told about your inventory tracking capabilities and h
             temp_history.append(message)
         
         # Check if any database updates need to be made based on the user's message
+        # PushRouter now uses the shared db/tables
         updates_made, confirmation_message = self.push_router.push_updates(self.chat_history)
         
         # If updates were made, append a system message to inform the assistant
@@ -160,7 +186,7 @@ First time users should be told about your inventory tracking capabilities and h
             elif "DAILY PLAN" in confirmation_message:
                 update_type = "meal plan"
             
-            update_notice = f"\n\nNOTE: {update_type.capitalize()} changes are being processed based on the user's request. A confirmation will be displayed after your response."
+            update_notice = f"\n\nNOTE: {update_type.capitalize()} changes are being processed based on the user\'s request. A confirmation will be displayed after your response."
             temp_history.append(SystemMessage(content=update_notice))
             print(f"Database was updated based on user message: {update_type} changes")
         else:
@@ -176,8 +202,10 @@ First time users should be told about your inventory tracking capabilities and h
         final_response = response.content
         if updates_made and confirmation_message:
             # Set the appropriate update type header for the confirmation
-            update_header = "INVENTORY UPDATE CONFIRMATION"
-            if "TASTE PROFILE" in confirmation_message:
+            update_header = "DATABASE UPDATE CONFIRMATION"
+            if "INVENTORY" in confirmation_message:
+                update_header = "INVENTORY UPDATE CONFIRMATION"
+            elif "TASTE PROFILE" in confirmation_message:
                 update_header = "TASTE PROFILE UPDATE CONFIRMATION"
             elif "SAVED MEAL" in confirmation_message:
                 update_header = "SAVED MEALS UPDATE CONFIRMATION"
@@ -190,6 +218,13 @@ First time users should be told about your inventory tracking capabilities and h
         
         return final_response
     
+    # Add a cleanup method to disconnect DB on exit (optional but good practice)
+    def close(self):
+        print("Closing ChefByteChat resources...")
+        if hasattr(self, 'db') and self.db:
+            self.db.disconnect()
+        print("ChefByteChat closed.")
+
     def reset_conversation(self):
         """Reset the conversation history"""
         self.chat_history = [self.system_message]
@@ -206,13 +241,14 @@ First time users should be told about your inventory tracking capabilities and h
 
 
 if __name__ == "__main__":
-    # Create instance of ChefByte chat
-    chef_chat = ChefByteChat()
-    
-    print("ChefByte Assistant (Press Ctrl+C to exit)")
-    print("--------------------------------------------")
-    
+    chef_chat = None # Initialize to None
     try:
+        # Create instance of ChefByte chat
+        chef_chat = ChefByteChat()
+        
+        print("\nChefByte Assistant Ready (Press Ctrl+C to exit)")
+        print("--------------------------------------------")
+        
         while True:
             user_input = input("\nYou: ").strip()
             
@@ -229,4 +265,9 @@ if __name__ == "__main__":
         print("\nGoodbye!")
     except Exception as e:
         print(f"\nAn error occurred: {str(e)}")
+        print(traceback.format_exc())
+    finally:
+        # Ensure database connection is closed if chat object exists
+        if chef_chat:
+            chef_chat.close()
 
