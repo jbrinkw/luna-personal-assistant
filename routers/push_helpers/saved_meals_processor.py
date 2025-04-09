@@ -10,7 +10,7 @@ from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from langchain.output_parsers import PydanticOutputParser
 
-from db.db_functions import Database, SavedMeals
+from db.db_functions import Database, SavedMeals, IngredientsFood
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -37,6 +37,9 @@ class SavedMealsProcessor:
         """Initialize processor with shared SavedMeals table object and DB connection."""
         self.saved_meals_table = saved_meals_table # Store passed object
         self.db = db # Store passed DB connection (needed for find_meal_by_name)
+        # Add ingredients_foods table for lookups
+        self.ingredients_foods_table = IngredientsFood(self.db)
+        self._food_id_lookup = self._build_food_id_lookup() # Build lookup on init
         
         self.api_key = os.getenv("OPENAI_API_KEY")
         self.llm_model = "gpt-4o-mini" 
@@ -85,6 +88,24 @@ Remember that ALL ingredient entries MUST have both a name and an amount field s
 User Input: {user_input}
 """
 
+    def _build_food_id_lookup(self) -> Dict[str, int]:
+        """Builds a dictionary mapping lowercase ingredient names to food IDs."""
+        lookup = {}
+        try:
+            all_foods = self.ingredients_foods_table.read()
+            if all_foods:
+                for food in all_foods:
+                    # Use dictionary access for Row objects
+                    lookup[food['name'].lower()] = food['id']
+        except Exception as e:
+             print(f"[ERROR] Failed to build food ID lookup in SavedMealsProcessor: {e}")
+        return lookup
+
+    def _get_food_id_by_name(self, name: str) -> Optional[int]:
+        """Helper to find the food ID based on name using the pre-built lookup."""
+        # Simple case-insensitive lookup
+        return self._food_id_lookup.get(name.lower())
+
     def get_current_saved_meals_text(self):
         """Get the current saved meals using the shared table object."""
         # Use self.saved_meals_table directly
@@ -103,16 +124,17 @@ User Input: {user_input}
                 ingredients_col = meal['ingredients']
                 recipe_col = meal['recipe']
                 
-                # Parse ingredients JSON
+                # Parse ingredients JSON (new format: [[id, name, quantity], ...])
                 ingredients_text = "[Invalid Ingredients Data]" # Default
                 try:
                     ingredients_json = json.loads(ingredients_col) if isinstance(ingredients_col, str) else ingredients_col 
                     if isinstance(ingredients_json, list): 
-                        ingredients_text = ", ".join([f"{ing.get('name', '?')} ({ing.get('amount', '?')})" 
-                                                    for ing in ingredients_json])
+                        # Format based on new list structure
+                        ingredients_text = ", ".join([f"{ing_data[1]} ({ing_data[2]})" 
+                                                    for ing_data in ingredients_json if isinstance(ing_data, list) and len(ing_data) >= 3])
                     else:
                          ingredients_text = str(ingredients_json)
-                except (json.JSONDecodeError, TypeError) as e:
+                except (json.JSONDecodeError, TypeError, IndexError) as e:
                     print(f"[WARN] Error parsing ingredients JSON for saved meal ID {meal_id}: {e}")
                 
                 # Truncate recipe text
@@ -177,6 +199,7 @@ User Input: {user_input}
     def process_saved_meals_changes(self, user_input: str) -> Tuple[bool, str]:
         """
         Process saved meals changes using the shared table object.
+        Handles the new ingredient format [[food_id, name, quantity], ...]
         """
         # Use self.saved_meals_table directly
         saved_meals = self.saved_meals_table
@@ -215,13 +238,22 @@ User Input: {user_input}
                         print(f"[WARN] Skipping create operation due to missing fields: {item}")
                         continue
                     
-                    ingredients_list = [{"name": ing.name, "amount": ing.amount} for ing in item.ingredients]
+                    # Convert ingredients from LLM format [{name, amount}, ...] to DB format [[id, name, amount], ...]
+                    ingredients_for_db = []
+                    for ing in item.ingredients:
+                        food_id = self._get_food_id_by_name(ing.name)
+                        # If food_id is None, we might skip, log, or add without ID
+                        if food_id is None:
+                             print(f"[WARN] Could not find food ID for ingredient '{ing.name}'. Skipping in meal '{item.name}'.")
+                             # Alternatively, could add with food_id=None: ingredients_for_db.append([None, ing.name, ing.amount])
+                             continue # Skip this ingredient if ID not found
+                        ingredients_for_db.append([food_id, ing.name, ing.amount])
                     
                     # Use shared table object
                     meal_id = saved_meals.create(
                         item.name,
                         item.prep_time_minutes,
-                        ingredients_list,
+                        ingredients_for_db, # Save in the new format
                         item.recipe
                     )
                     
@@ -255,69 +287,56 @@ User Input: {user_input}
                 
                 elif item.operation.lower() == "update":
                     target_meal_id = item.meal_id
-                    current_meal_data = None
-                    item_found_and_updated = False
-
                     if target_meal_id is None and item.name:
                         target_meal_id = self.find_meal_by_name(item.name)
+                    
+                    if target_meal_id is None:
+                        print(f"[WARN] Could not find meal to update: {item.name or 'ID not provided'}")
+                        continue
 
-                    if target_meal_id is not None:
-                        current = saved_meals.read(target_meal_id)
-                        if current and current[0]:
-                           current_meal_data = current[0]
+                    update_fields = {}
+                    if item.name is not None: update_fields['name'] = item.name
+                    if item.prep_time_minutes is not None: update_fields['prep_time_minutes'] = item.prep_time_minutes
+                    if item.recipe is not None: update_fields['recipe'] = item.recipe
+                    
+                    # Handle ingredient update separately - convert to new format
+                    if item.ingredients is not None:
+                        ingredients_for_db = []
+                        for ing in item.ingredients:
+                            food_id = self._get_food_id_by_name(ing.name)
+                            if food_id is None:
+                                print(f"[WARN] Could not find food ID for ingredient '{ing.name}' during update for meal ID {target_meal_id}. Skipping ingredient.")
+                                continue
+                            ingredients_for_db.append([food_id, ing.name, ing.amount])
+                        # Convert the list to JSON string before saving
+                        update_fields['ingredients'] = json.dumps(ingredients_for_db) 
 
-                    if target_meal_id is not None and current_meal_data is not None:
-                        update_params = {"meal_id": target_meal_id}
-                        original_details = []
-                        updated_details = []
-
-                        if item.name is not None and item.name != current_meal_data['name']:
-                            update_params['name'] = item.name
-                            original_details.append(f"Name: {current_meal_data['name']}")
-                            updated_details.append(f"Name: {item.name}")
-                            
-                        if item.prep_time_minutes is not None and item.prep_time_minutes != current_meal_data['prep_time_minutes']:
-                            update_params['prep_time_minutes'] = item.prep_time_minutes
-                            original_details.append(f"Prep: {current_meal_data['prep_time_minutes']}m")
-                            updated_details.append(f"Prep: {item.prep_time_minutes}m")
-                            
-                        if item.ingredients is not None:
-                            ingredients_list = [{"name": ing.name, "amount": ing.amount} for ing in item.ingredients]
-                            update_params['ingredients'] = ingredients_list
-                            original_details.append("Ingredients changed")
-                            updated_details.append(f"{len(ingredients_list)} ingredients")
-                            
-                        if item.recipe is not None and item.recipe != current_meal_data['recipe']:
-                            update_params['recipe'] = item.recipe
-                            original_details.append("Recipe changed")
-                            updated_details.append("Recipe updated")
-
-                        if len(update_params) > 1: 
-                            # Use shared table object
-                            update_result = saved_meals.update(**update_params)
-                            
-                            meal_name = current_meal_data['name'] if 'name' not in update_params else update_params['name']
-                            change_msg = f"Updated: {meal_name} (ID: {target_meal_id})\n Changes: {', '.join(updated_details)}"
-                            confirmation_messages.append(change_msg)
-                            changes_made = True
-                            meals_processed += 1
-                            item_found_and_updated = True
-                        else:
-                            print(f"[INFO] No actual changes detected for update on meal ID {target_meal_id}")
-                            
-                    if not item_found_and_updated:
-                        print(f"[WARN] Could not find meal to update: {item.name or item.meal_id}")
+                    if not update_fields:
+                        print(f"[WARN] No fields to update for meal ID: {target_meal_id}")
+                        continue
+                        
+                    # Use shared table object
+                    saved_meals.update(target_meal_id, **update_fields)
+                    
+                    # Fetch updated name for confirmation message
+                    updated_meal_data = saved_meals.read(target_meal_id)
+                    updated_name = updated_meal_data[0]['name'] if updated_meal_data else item.name
+                    change_msg = f"Updated meal: {updated_name} (ID: {target_meal_id}) | Fields: {list(update_fields.keys())}"
+                    confirmation_messages.append(change_msg)
+                    changes_made = True
+                    meals_processed += 1
             
             # Construct final confirmation message
             if meals_processed > 0:
-                final_confirmation = f"SAVED MEALS UPDATE CONFIRMATION ({meals_processed} operation(s))\n-------------------------------------\n" + "\n".join(confirmation_messages)
+                final_confirmation = f"SAVED MEALS UPDATE CONFIRMATION ({meals_processed} meal(s))\n-------------------------------------\n" + "\n".join(confirmation_messages)
             else:
-                final_confirmation = "No changes were detected or applied to saved meals."
-                
+                final_confirmation = "No saved meals changes were detected or applied."
+            
             return changes_made, final_confirmation
+                  
         except Exception as e:
-            print(f"[ERROR] Saved meals processor error: {e}")
+            print(f"[ERROR] Error processing saved meals changes: {e}")
             import traceback
-            print(traceback.format_exc())
-            return False, f"Failed to process saved meals changes: {e}"
-        # No disconnect 
+            print(traceback.format_exc()) # Print detailed traceback
+            return False, "An error occurred while processing saved meals changes."
+        # No disconnect needed here 

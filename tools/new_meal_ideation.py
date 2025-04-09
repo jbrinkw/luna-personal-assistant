@@ -13,7 +13,8 @@ from langchain.prompts import ChatPromptTemplate
 from langchain.output_parsers import PydanticOutputParser
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
-from db.db_functions import Database, init_tables
+from db.db_functions import Database, init_tables, IngredientsFood
+from helpers.ingredient_translator import IngredientTranslator
 import json
 from typing import List, Optional, Dict, Tuple, Any
 import re
@@ -32,9 +33,16 @@ class MealDescription(BaseModel):
     name: str = Field(..., description="The name of the meal")
     description: str = Field(..., description="Brief description of the meal")
 
+# Define an intermediate model for raw ingredient parsing from LLM
+class RawIngredient(BaseModel):
+    name: str = Field(..., description="Ingredient name as extracted from text")
+    amount: str = Field(..., description="Ingredient amount/quantity as extracted from text")
+
+# Updated MealRecipe model to use the final [id, name, amount] format
 class MealRecipe(BaseModel):
     name: str = Field(..., description="The name of the meal")
-    ingredients: List[dict] = Field(..., description="List of ingredients with amounts")
+    # Use Tuple for the inner structure: [Optional[int], str, str]
+    ingredients: List[Tuple[Optional[int], str, str]] = Field(..., description="List of translated ingredients: [food_id, name, amount]")
     prep_time_minutes: int = Field(..., description="Preparation time in minutes")
     recipe: str = Field(..., description="Detailed recipe instructions")
 
@@ -48,11 +56,16 @@ class MealIdeationEngine:
         self.api_key = os.getenv("OPENAI_API_KEY")
         self.chat = ChatOpenAI(model=self.llm_model, openai_api_key=self.api_key)
         
-        # No need to get data here, get it on demand in methods or pass if static
-        # self.taste_profile = self._get_taste_profile()
-        # self.current_inventory = self._get_inventory()
-        # self.saved_meals = self._get_saved_meals()
-        # self.existing_meal_ideas = self._get_existing_meal_ideas()
+        # Initialize IngredientTranslator - requires IngredientsFood table object
+        try:
+            # Ensure IngredientsFood table object exists in the passed tables dict
+            if "ingredients_foods" not in self.tables:
+                raise ValueError("'ingredients_foods' table object not found in provided tables dictionary.")
+            self.translator = IngredientTranslator(self.db, self.tables["ingredients_foods"])
+            print("[MealIdeationEngine] IngredientTranslator initialized.")
+        except Exception as e:
+            print(f"[ERROR] Failed to initialize IngredientTranslator in MealIdeationEngine: {e}")
+            raise # Re-raise the error to prevent engine from initializing incorrectly
         
         # Initialize the Pydantic output parsers
         self.router_parser = PydanticOutputParser(pydantic_object=RouterDecision)
@@ -127,12 +140,12 @@ class MealIdeationEngine:
             "For each meal, provide the following in this exact order:\n"
             "1. Name of the meal\n"
             "2. Detailed recipe instructions\n"
-            "3. Ingredients with amounts\n"
+            "3. Ingredients with amounts (e.g., 'Flour (1 cup)', 'Eggs (2 large)')\n" # Instruct LLM on ingredient format
             "4. Prep time in minutes\n\n"
             "Format each recipe as:\n"
             "RECIPE #{meal_number}: <meal name>\n"
             "Recipe: <detailed cooking instructions>\n"
-            "Ingredients: <ingredient1 (amount)>, <ingredient2 (amount)>, ...\n"
+            "Ingredients: <ingredient1 (amount)>, <ingredient2 (amount)>, ...\n" # Example format
             "Prep Time: <time in minutes> minutes\n\n"
             "After presenting the recipes, ask the user if they would like to:\n"
             "1. Make adjustments to any recipe\n"
@@ -140,11 +153,18 @@ class MealIdeationEngine:
             "Complete Recipes:"
         )
 
-        # Layer 3: Prompt for extracting recipes from LLM output to save
-        self.save_recipe_parser = PydanticOutputParser(pydantic_object=MealRecipe)
+        # Layer 3: Pydantic model for the *intermediate* parsing of raw ingredients
+        class RawMealRecipe(BaseModel):
+            name: str = Field(..., description="The name of the meal")
+            ingredients: List[RawIngredient] = Field(..., description="List of raw ingredients with names and amounts")
+            prep_time_minutes: int = Field(..., description="Preparation time in minutes")
+            recipe: str = Field(..., description="Detailed recipe instructions")
+
+        # Updated parser for Layer 3 extraction to use RawMealRecipe
+        self.save_recipe_parser = PydanticOutputParser(pydantic_object=RawMealRecipe)
         self.save_extraction_prompt = (
             "Extract the recipe details (name, ingredients, prep_time_minutes, recipe instructions) from the following text.\n"
-            "Ensure ingredients are a list of dictionaries, each with 'name' and 'amount'.\n"
+            "Ensure ingredients are a list of objects, each with 'name' and 'amount'. Extract these directly from the text (e.g., from 'Flour (1 cup)' extract name='Flour', amount='1 cup').\n"
             "Ensure prep_time_minutes is an integer.\n\n"
             "Recipe Text:\n{recipe_text}\n\n"
             "{format_instructions}"
@@ -350,7 +370,9 @@ class MealIdeationEngine:
             response_content = response.content.strip()
             print(f"\n=== LAYER 2 RESPONSE ===\n{response_content}\n=== END LAYER 2 RESPONSE ===\n")
             
-            # TODO: Parse recipes from response_content to store in self.current_recipes
+            # Parse recipes using the updated _parse_recipes method
+            # This will now populate self.current_recipes with MealRecipe objects
+            # containing the final translated ingredient format [id, name, amount]
             self.current_recipes = self._parse_recipes(response_content) 
             
             return response_content
@@ -359,44 +381,78 @@ class MealIdeationEngine:
             return "Sorry, I had trouble generating the recipes right now."
 
     def _parse_recipes(self, text: str) -> List[MealRecipe]:
-        """Helper to parse full recipes from LLM output (example using regex/LLM)."""
-        recipes = []
-        # Option 1: Regex (complex and brittle)
-        # matches = re.findall(r"RECIPE\s*#?\d+:\s*(.*?)\nRecipe:\s*(.*?)\nIngredients:\s*(.*?)\nPrep Time:\s*(\d+)\s*minutes", text, re.DOTALL | re.IGNORECASE)
-        # for match in matches:
-        #     name, recipe_instr, ingredients_str, prep_time = match
-        #     # Further parse ingredients_str
-        #     # ... 
-
-        # Option 2: Use another LLM call with Pydantic parser for each recipe block
-        recipe_blocks = re.split(r"RECIPE\s*#?\d+:.*\n", text)[1:] # Split by recipe headers
-        meal_names = re.findall(r"RECIPE\s*#?\d+:\s*(.*?)\n", text, re.IGNORECASE)
+        """Helper to parse full recipes from LLM output, including ingredient translation."""
+        final_recipes: List[MealRecipe] = []
         
+        # Split text into blocks for each recipe
+        # Assuming headers like "RECIPE #1: Meal Name"
+        recipe_blocks = re.split(r"RECIPE\s*#?\d+:.*?\n", text)[1:] # Get content after headers
+        meal_names = re.findall(r"RECIPE\s*#?\d+:\s*(.*?)\n", text, re.IGNORECASE) # Extract names
+        
+        if len(recipe_blocks) != len(meal_names):
+             print(f"[WARN] Mismatch between recipe blocks ({len(recipe_blocks)}) and names ({len(meal_names)}). Parsing may be incomplete.")
+             # Adjust loop range to avoid index errors
+             num_to_process = min(len(recipe_blocks), len(meal_names))
+        else:
+             num_to_process = len(recipe_blocks)
+             
+        # Get format instructions for the intermediate raw ingredient parsing
         format_instructions = self.save_recipe_parser.get_format_instructions()
         
-        for i, block in enumerate(recipe_blocks):
-             if i < len(meal_names): # Ensure we have a name
-                 recipe_name = meal_names[i].strip()
-                 # Reconstruct the text for the parser
-                 parser_input_text = f"RECIPE #{i+1}: {recipe_name}\n{block.strip()}"
-                 
-                 prompt = ChatPromptTemplate.from_template(self.save_extraction_prompt)
-                 formatted_prompt = prompt.format(
-                     recipe_text=parser_input_text,
-                     format_instructions=format_instructions
-                 )
-                 try:
-                     response = self.chat.invoke(formatted_prompt)
-                     parsed_recipe = self.save_recipe_parser.parse(response.content)
-                     # Ensure the name matches (or update it)
-                     parsed_recipe.name = recipe_name 
-                     recipes.append(parsed_recipe)
-                 except Exception as e:
-                      print(f"[ERROR] Failed to parse recipe block #{i+1} ({recipe_name}): {e}")
+        for i in range(num_to_process):
+            block = recipe_blocks[i]
+            recipe_name = meal_names[i].strip()
+            
+            # Reconstruct the text for the intermediate parser
+            parser_input_text = f"RECIPE #{i+1}: {recipe_name}\n{block.strip()}"
+            
+            prompt = ChatPromptTemplate.from_template(self.save_extraction_prompt)
+            formatted_prompt = prompt.format(
+                recipe_text=parser_input_text,
+                format_instructions=format_instructions
+            )
+            
+            try:
+                # 1. Parse raw recipe details (name, raw_ingredients, prep_time, recipe) using LLM
+                response = self.chat.invoke(formatted_prompt)
+                raw_parsed_recipe: RawMealRecipe = self.save_recipe_parser.parse(response.content)
+                
+                # Ensure name consistency
+                raw_parsed_recipe.name = recipe_name
+                
+                # 2. Translate raw ingredients using IngredientTranslator
+                print(f"\n--- Translating Ingredients for '{recipe_name}' ---")
+                raw_ingredients_list = [[ing.name, ing.amount] for ing in raw_parsed_recipe.ingredients]
+                
+                # Use the translator instance
+                matched_tuples, new_tuples = self.translator.translate_ingredients(raw_ingredients_list)
+                
+                # Combine matched and new into the final [id, name, amount] format
+                translated_ingredients: List[Tuple[Optional[int], str, str]] = []
+                for orig_name, amount, food_id in matched_tuples:
+                    # Use the matched ID, original name, and amount
+                    translated_ingredients.append((food_id, orig_name, amount)) 
+                for orig_name, amount, food_id in new_tuples:
+                    # Use the new ID, original name, and amount
+                    translated_ingredients.append((food_id, orig_name, amount))
+                print("--- Ingredient Translation Finished ---")
+                
+                # 3. Create the final MealRecipe object with translated ingredients
+                final_recipe = MealRecipe(
+                    name=raw_parsed_recipe.name,
+                    ingredients=translated_ingredients,
+                    prep_time_minutes=raw_parsed_recipe.prep_time_minutes,
+                    recipe=raw_parsed_recipe.recipe
+                )
+                final_recipes.append(final_recipe)
+                
+            except Exception as e:
+                 print(f"[ERROR] Failed to parse or translate recipe block #{i+1} ('{recipe_name}'): {e}")
+                 print(traceback.format_exc()) # Add traceback for parsing/translation errors
                       
-        self.current_recipes = recipes # Update state
-        print(f"[DEBUG] Parsed Recipes: {self.current_recipes}")
-        return recipes
+        self.current_recipes = final_recipes # Update state with successfully parsed & translated recipes
+        print(f"[DEBUG] Parsed & Translated Recipes: {self.current_recipes}")
+        return final_recipes
 
     def save_recipes(self, selected_items: List[int]) -> Tuple[bool, str]:
         """Layer 3: Save selected recipes to the new_meal_ideas table."""
@@ -419,25 +475,26 @@ class MealIdeationEngine:
         # A better approach might be to store recipes in a dictionary keyed by original number.
         # For now, assume self.current_recipes aligns with successful parses.
         # We need a way to link the recipe objects back to the selected numbers.
-        # Let's assume the parser returns recipes in the order of selection for now.
-        if len(selected_items) != len(self.current_recipes):
-             print("[WARN] Mismatch between selected items and parsed recipes. Saving might be incomplete.")
-             # Attempt to match by name if possible, otherwise rely on order
-
+        # Let's assume the MealRecipe object's name is sufficient for confirmation.
+        # original_number = selected_items[i] if i < len(selected_items) else -1 # Fallback (if needed)
+        
+        # Check if a recipe with the same name already exists
+        # TODO: Implement check against saved_meals and new_meal_ideas by name
+        # existing_check = new_ideas_table.read_by_name(recipe_obj.name) ... etc.
+        
         for i, recipe_obj in enumerate(self.current_recipes): 
              # This simple check assumes the order is preserved and matches the *selection* order
              # Example: If user selected [1, 3], current_recipes[0] is #1, current_recipes[1] is #3
              # We need to map this back if saving confirmation needs the original number.
              original_number = selected_items[i] if i < len(selected_items) else -1 # Fallback
              
-             # Check if a recipe with the same name already exists
-             # TODO: Implement check against saved_meals and new_meal_ideas by name
-             
              try:
+                 # Pass the final MealRecipe object's fields to the create function
+                 # The 'ingredients' field is already the list of [id, name, amount] tuples
                  new_id = new_ideas_table.create(
                      name=recipe_obj.name,
                      prep_time=recipe_obj.prep_time_minutes,
-                     ingredients=recipe_obj.ingredients, # Pass list of dicts
+                     ingredients=recipe_obj.ingredients, # Pass the translated list
                      recipe=recipe_obj.recipe
                  )
                  if new_id:

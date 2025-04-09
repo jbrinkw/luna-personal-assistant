@@ -3,6 +3,8 @@ import os
 import json
 from datetime import datetime, timedelta
 import traceback
+from typing import Optional
+import shutil # Import the shutil module for file operations
 
 # Add project root to sys.path to allow importing db_functions
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -17,165 +19,381 @@ from db.ingredient_matcher import IngredientMatcher
 
 class ResetDB:
     def __init__(self, add_to_shopping_list=False):
-        # Initialize database connection and table objects
-        self.db, self.tables = init_tables()
+        # Initialize database connection ONLY. Table objects will be created on demand.
+        self.db_path = DB_PATH # Store the path
+        self.db = Database(self.db_path) # Initialize DB connection
+        if not self.db.connect():
+            raise ConnectionError("Failed to connect to database in ResetDB init.")
+            
+        # Initialize table object dictionary, but don't create tables yet
+        # Table creation will happen in load methods after potential drops in clear methods
+        self.tables = {
+            "inventory": Inventory(self.db),
+            "taste_profile": TasteProfile(self.db),
+            "saved_meals": SavedMeals(self.db),
+            "new_meal_ideas": NewMealIdeas(self.db),
+            "saved_meals_instock_ids": SavedMealsInStockIds(self.db),
+            "new_meal_ideas_instock_ids": NewMealIdeasInStockIds(self.db),
+            "daily_planner": DailyPlanner(self.db),
+            "shopping_list": ShoppingList(self.db),
+            "ingredients_foods": IngredientsFood(self.db)
+        }
+        
         # Whether to add missing ingredients to shopping list
         self.add_to_shopping_list = add_to_shopping_list
         
-        # Hardcoded meals list
+        # Define ingredients_foods data FIRST
+        self.ingredients_foods = [
+            # Existing items with known links
+            {"id": 101, "name": "Fairlife chocolate milk", "min_amount": 1, "walmart_link": "https://www.walmart.com/ip/43922523"},
+            {"id": 102, "name": "Whole milk", "min_amount": 1, "walmart_link": "https://www.walmart.com/ip/10450114"},
+            {"id": 103, "name": "Cream cheese", "min_amount": 1, "walmart_link": "https://www.walmart.com/ip/10295585"},
+            # Items corresponding to inventory_items (will be defined later, ensure consistency)
+            {"id": 104, "name": "Ground beef", "min_amount": 1, "walmart_link": ""},
+            {"id": 105, "name": "Bacon", "min_amount": 1, "walmart_link": ""},
+            {"id": 106, "name": "Garlic", "min_amount": 1, "walmart_link": ""},
+            {"id": 107, "name": "Ginger", "min_amount": 1, "walmart_link": ""},
+            {"id": 108, "name": "Spaghetti", "min_amount": 1, "walmart_link": ""},
+            {"id": 109, "name": "Parmesan cheese", "min_amount": 1, "walmart_link": ""},
+            {"id": 110, "name": "Butter", "min_amount": 1, "walmart_link": ""},
+            {"id": 111, "name": "Olive oil", "min_amount": 1, "walmart_link": ""},
+            {"id": 112, "name": "Thin-sliced steak", "min_amount": 1, "walmart_link": ""},
+            {"id": 113, "name": "White rice", "min_amount": 1, "walmart_link": ""},
+            {"id": 114, "name": "Black beans", "min_amount": 1, "walmart_link": ""},
+            {"id": 115, "name": "Tortilla", "min_amount": 1, "walmart_link": ""},
+            {"id": 116, "name": "Mayo", "min_amount": 1, "walmart_link": ""},
+            {"id": 117, "name": "Eggs", "min_amount": 1, "walmart_link": ""},
+            {"id": 118, "name": "Sourdough bread", "min_amount": 1, "walmart_link": ""},
+            {"id": 119, "name": "Pre-cooked chicken", "min_amount": 1, "walmart_link": ""},
+            {"id": 120, "name": "Shredded cheese", "min_amount": 1, "walmart_link": ""},
+            {"id": 121, "name": "Caesar dressing", "min_amount": 1, "walmart_link": ""},
+            {"id": 122, "name": "Instant ramen", "min_amount": 1, "walmart_link": ""},
+            {"id": 123, "name": "Non-chunky tomato sauce", "min_amount": 1, "walmart_link": ""},
+            {"id": 124, "name": "Pre-cooked pulled pork", "min_amount": 1, "walmart_link": ""},
+            {"id": 125, "name": "BBQ sauce", "min_amount": 1, "walmart_link": ""},
+            {"id": 126, "name": "Instant mashed potatoes", "min_amount": 1, "walmart_link": ""},
+            {"id": 127, "name": "Pre-cooked shrimp", "min_amount": 1, "walmart_link": ""},
+            {"id": 128, "name": "Onions", "min_amount": 1, "walmart_link": ""},
+            {"id": 129, "name": "Taco seasoning", "min_amount": 1, "walmart_link": ""},
+            {"id": 130, "name": "Taco shells", "min_amount": 1, "walmart_link": ""},
+            {"id": 131, "name": "Frozen mixed vegetables", "min_amount": 1, "walmart_link": ""},
+            {"id": 132, "name": "Microwaveable rice", "min_amount": 1, "walmart_link": ""},
+            {"id": 133, "name": "Rotisserie chicken", "min_amount": 1, "walmart_link": ""},
+            {"id": 134, "name": "Salmon", "min_amount": 1, "walmart_link": ""},
+            {"id": 135, "name": "Tortilla chips", "min_amount": 1, "walmart_link": ""},
+            {"id": 136, "name": "Sesame seeds", "min_amount": 1, "walmart_link": ""},
+            {"id": 137, "name": "Soy sauce", "min_amount": 1, "walmart_link": ""},
+            {"id": 138, "name": "Frozen waffles", "min_amount": 1, "walmart_link": ""},
+            {"id": 139, "name": "Microwave burrito", "min_amount": 1, "walmart_link": ""},
+            {"id": 140, "name": "Carrots", "min_amount": 1, "walmart_link": ""},
+            # Extra ingredients needed for meals/ideas (assuming IDs)
+            {"id": 141, "name": "Hamburger Bun", "min_amount": 1, "walmart_link": ""},
+            {"id": 142, "name": "Extra Sharp Cheddar", "min_amount": 1, "walmart_link": ""},
+            {"id": 143, "name": "Cornstarch", "min_amount": 1, "walmart_link": ""},
+            {"id": 144, "name": "Pepper", "min_amount": 1, "walmart_link": ""},
+            {"id": 145, "name": "Turkey sausage patties", "min_amount": 1, "walmart_link": ""},
+            {"id": 146, "name": "Chicken patties", "min_amount": 1, "walmart_link": ""},
+            {"id": 147, "name": "Sliced turkey", "min_amount": 1, "walmart_link": ""},
+            {"id": 148, "name": "Bread", "min_amount": 1, "walmart_link": ""}, # Generic bread
+            {"id": 149, "name": "Sliced cheese", "min_amount": 1, "walmart_link": ""}, # Generic sliced cheese
+            {"id": 150, "name": "Boxed mac and cheese", "min_amount": 1, "walmart_link": ""},
+            {"id": 151, "name": "Bagel", "min_amount": 1, "walmart_link": ""},
+            {"id": 152, "name": "Pasta", "min_amount": 1, "walmart_link": ""}, # Generic pasta
+            {"id": 153, "name": "Alfredo sauce", "min_amount": 1, "walmart_link": ""},
+            {"id": 154, "name": "Parsley", "min_amount": 1, "walmart_link": ""},
+            {"id": 155, "name": "Slider buns", "min_amount": 1, "walmart_link": ""},
+            {"id": 156, "name": "Chicken tenders", "min_amount": 1, "walmart_link": ""},
+            {"id": 157, "name": "Frozen fries", "min_amount": 1, "walmart_link": ""},
+            {"id": 158, "name": "Pesto", "min_amount": 1, "walmart_link": ""},
+            {"id": 159, "name": "Sloppy joe sauce", "min_amount": 1, "walmart_link": ""},
+            # Make sure all used IDs exist, add any missing ones used in meals/ideas
+        ]
+        
+        # Helper to find food ID (used when defining meals/ideas below)
+        # Initialize the lookup dictionary AFTER defining the data it depends on
+        self._food_id_lookup = {item['name'].lower(): item['id'] for item in self.ingredients_foods}
+        
+        # Hardcoded meals list - **Updated ingredient format**
         self.meals = [
             ["Bacon Cheeseburger", 20, 
-             [{"name": "Ground beef", "quantity": "to taste"}, {"name": "bacon", "quantity": "to taste"}, 
-              {"name": "burger bun", "quantity": "to taste"}, {"name": "extra sharp cheddar", "quantity": "to taste"}, 
-              {"name": "condiments", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Ground beef"), "Ground beef", "to taste"], 
+                 [self._get_food_id_by_name("Bacon"), "bacon", "to taste"], 
+                 [self._get_food_id_by_name("Hamburger Bun"), "burger bun", "to taste"], 
+                 [self._get_food_id_by_name("Extra Sharp Cheddar"), "extra sharp cheddar", "to taste"], 
+                 [None, "condiments", "to taste"]
+             ], 
              "Form beef patties, cook to desired doneness; fry bacon; assemble patty with bacon and cheese on bun."],
             ["Sesame Chicken", 25, 
-             [{"name": "Chicken pieces", "quantity": "to taste"}, {"name": "sesame seeds", "quantity": "to taste"}, 
-              {"name": "soy sauce", "quantity": "to taste"}, {"name": "garlic", "quantity": "to taste"}, 
-              {"name": "ginger", "quantity": "to taste"}, {"name": "cornstarch", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Pre-cooked chicken"), "Chicken pieces", "to taste"], 
+                 [self._get_food_id_by_name("Sesame seeds"), "sesame seeds", "to taste"], 
+                 [self._get_food_id_by_name("Soy sauce"), "soy sauce", "to taste"], 
+                 [self._get_food_id_by_name("Garlic"), "garlic", "to taste"], 
+                 [self._get_food_id_by_name("Ginger"), "ginger", "to taste"], 
+                 [self._get_food_id_by_name("Cornstarch"), "cornstarch", "to taste"]
+             ], 
              "Marinate chicken in soy sauce, garlic, and ginger; coat lightly with cornstarch; stir-fry until cooked; sprinkle sesame seeds."],
             ["Magic Spaghetti", 15, 
-             [{"name": "Spaghetti", "quantity": "to taste"}, {"name": "parmesan cheese", "quantity": "to taste"}, 
-              {"name": "butter", "quantity": "to taste"}, {"name": "olive oil", "quantity": "to taste"}, 
-              {"name": "pepper", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Spaghetti"), "Spaghetti", "to taste"], 
+                 [self._get_food_id_by_name("Parmesan cheese"), "parmesan cheese", "to taste"], 
+                 [self._get_food_id_by_name("Butter"), "butter", "to taste"], 
+                 [self._get_food_id_by_name("Olive oil"), "olive oil", "to taste"], 
+                 [self._get_food_id_by_name("Pepper"), "pepper", "to taste"]
+             ], 
              "Cook spaghetti; toss with butter, olive oil, parmesan, and pepper."],
             ["Steak Burrito", 25, 
-             [{"name": "Thin-sliced steak", "quantity": "to taste"}, {"name": "white rice", "quantity": "to taste"}, 
-              {"name": "black beans", "quantity": "to taste"}, {"name": "tortilla", "quantity": "to taste"}, 
-              {"name": "extra cheese", "quantity": "to taste"}, {"name": "mayo", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Thin-sliced steak"), "Thin-sliced steak", "to taste"], 
+                 [self._get_food_id_by_name("White rice"), "white rice", "to taste"], 
+                 [self._get_food_id_by_name("Black beans"), "black beans", "to taste"], 
+                 [self._get_food_id_by_name("Tortilla"), "tortilla", "to taste"], 
+                 [self._get_food_id_by_name("Shredded cheese"), "extra cheese", "to taste"], 
+                 [self._get_food_id_by_name("Mayo"), "mayo", "to taste"]
+             ], 
              "Sauté steak strips; warm rice and beans; layer steak, rice, beans, cheese, and mayo on tortilla; roll up."],
             ["Breakfast Egg Sandwich", 15, 
-             [{"name": "Eggs", "quantity": "to taste"}, {"name": "cheese", "quantity": "to taste"}, 
-              {"name": "turkey sausage patties", "quantity": "to taste"}, {"name": "sourdough bread", "quantity": "to taste"}, 
-              {"name": "mayo", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Eggs"), "Eggs", "to taste"], 
+                 [self._get_food_id_by_name("Shredded cheese"), "cheese", "to taste"], 
+                 [self._get_food_id_by_name("Turkey sausage patties"), "turkey sausage patties", "to taste"], 
+                 [self._get_food_id_by_name("Sourdough bread"), "sourdough bread", "to taste"], 
+                 [self._get_food_id_by_name("Mayo"), "mayo", "to taste"]
+             ], 
              "Scramble eggs with cheese; heat sausage patties; toast sourdough with mayo; assemble sandwich."],
             ["Homemade McChicken", 20, 
-             [{"name": "Chicken patties", "quantity": "to taste"}, {"name": "burger buns", "quantity": "to taste"}, 
-              {"name": "mayo", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Chicken patties"), "Chicken patties", "to taste"], 
+                 [self._get_food_id_by_name("Hamburger Bun"), "burger buns", "to taste"], 
+                 [self._get_food_id_by_name("Mayo"), "mayo", "to taste"]
+             ], 
              "Cook chicken patties; toast buns with a bit of mayo; place patty between buns."],
             ["Chicken Caesar Wrap", 15, 
-             [{"name": "Pre-cooked chicken", "quantity": "to taste"}, {"name": "tortilla", "quantity": "to taste"}, 
-              {"name": "shredded cheese", "quantity": "to taste"}, {"name": "Caesar dressing", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Pre-cooked chicken"), "Pre-cooked chicken", "to taste"], 
+                 [self._get_food_id_by_name("Tortilla"), "tortilla", "to taste"], 
+                 [self._get_food_id_by_name("Shredded cheese"), "shredded cheese", "to taste"], 
+                 [self._get_food_id_by_name("Caesar dressing"), "Caesar dressing", "to taste"]
+             ], 
              "Layer sliced chicken, cheese, and Caesar dressing in tortilla; roll tightly."],
             ["Turkey and Cheese Sandwich", 10, 
-             [{"name": "Sliced turkey", "quantity": "to taste"}, {"name": "cheese", "quantity": "to taste"}, 
-              {"name": "toasted sourdough or bagel", "quantity": "to taste"}, {"name": "mayo", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Sliced turkey"), "Sliced turkey", "to taste"], 
+                 [self._get_food_id_by_name("Shredded cheese"), "cheese", "to taste"], 
+                 [self._get_food_id_by_name("Sourdough bread"), "toasted sourdough or bagel", "to taste"], # Map bagel to sourdough 
+                 [self._get_food_id_by_name("Mayo"), "mayo", "to taste"]
+             ], 
              "Layer turkey and cheese on toasted bread/bagel with mayo."],
             ["Grilled Cheese Sandwich", 10, 
-             [{"name": "Bread", "quantity": "to taste"}, {"name": "butter", "quantity": "to taste"}, 
-              {"name": "sliced cheese", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Bread"), "Bread", "to taste"], # Assumes generic Bread ID exists
+                 [self._get_food_id_by_name("Butter"), "butter", "to taste"], 
+                 [self._get_food_id_by_name("Sliced cheese"), "sliced cheese", "to taste"] # Assumes ID exists
+             ], 
              "Butter bread on outside, add cheese in between; grill until golden."],
             ["Quesadilla", 15, 
-             [{"name": "Tortilla", "quantity": "to taste"}, {"name": "cheese", "quantity": "to taste"}, 
-              {"name": "pre-cooked chicken or turkey", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Tortilla"), "Tortilla", "to taste"], 
+                 [self._get_food_id_by_name("Shredded cheese"), "cheese", "to taste"], 
+                 [self._get_food_id_by_name("Pre-cooked chicken"), "pre-cooked chicken or turkey", "to taste"] # Map turkey to chicken
+             ], 
              "Fill tortilla with cheese and meat; cook in pan until tortilla is crispy and cheese melts."],
             ["Mac and Cheese with Bacon", 15, 
-             [{"name": "Boxed mac and cheese", "quantity": "to taste"}, {"name": "bacon bits", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Boxed mac and cheese"), "Boxed mac and cheese", "to taste"], # Assumes ID exists
+                 [self._get_food_id_by_name("Bacon"), "bacon bits", "to taste"] # Map bits to bacon
+             ], 
              "Prepare mac and cheese per box directions; stir in cooked bacon bits."],
             ["Instant Ramen with Egg", 10, 
-             [{"name": "Instant ramen", "quantity": "to taste"}, {"name": "egg", "quantity": "to taste"}, 
-              {"name": "water", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Instant ramen"), "Instant ramen", "to taste"], 
+                 [self._get_food_id_by_name("Eggs"), "egg", "to taste"], 
+                 [None, "water", "to taste"] # No ID for water
+             ], 
              "Cook ramen as directed; add a boiled or poached egg before serving."],
             ["Bagel with Cream Cheese and Bacon", 10, 
-             [{"name": "Bagel", "quantity": "to taste"}, {"name": "cream cheese", "quantity": "to taste"}, 
-              {"name": "bacon", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Bagel"), "Bagel", "to taste"], # Assumes ID exists
+                 [self._get_food_id_by_name("Cream cheese"), "cream cheese", "to taste"], 
+                 [self._get_food_id_by_name("Bacon"), "bacon", "to taste"]
+             ], 
              "Toast bagel; spread cream cheese; add cooked bacon."],
             ["Spaghetti with Meat Sauce", 25, 
-             [{"name": "Spaghetti", "quantity": "to taste"}, {"name": "ground beef", "quantity": "to taste"}, 
-              {"name": "non-chunky tomato sauce", "quantity": "to taste"}, {"name": "parmesan", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Spaghetti"), "Spaghetti", "to taste"], 
+                 [self._get_food_id_by_name("Ground beef"), "ground beef", "to taste"], 
+                 [self._get_food_id_by_name("Non-chunky tomato sauce"), "non-chunky tomato sauce", "to taste"], 
+                 [self._get_food_id_by_name("Parmesan cheese"), "parmesan", "to taste"]
+             ], 
              "Cook spaghetti; brown ground beef; mix with tomato sauce; serve over pasta with parmesan."],
             ["Chicken Alfredo", 20, 
-             [{"name": "Pasta", "quantity": "to taste"}, {"name": "store-bought Alfredo sauce", "quantity": "to taste"}, 
-              {"name": "pre-cooked chicken", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Pasta"), "Pasta", "to taste"], # Assumes generic Pasta ID exists
+                 [self._get_food_id_by_name("Alfredo sauce"), "store-bought Alfredo sauce", "to taste"], # Assumes ID exists
+                 [self._get_food_id_by_name("Pre-cooked chicken"), "pre-cooked chicken", "to taste"]
+             ], 
              "Cook pasta; heat Alfredo sauce and chicken together; combine with pasta."],
             ["Pulled Pork with BBQ", 25, 
-             [{"name": "Pre-cooked pulled pork", "quantity": "to taste"}, {"name": "BBQ sauce", "quantity": "to taste"}, 
-              {"name": "instant mashed potatoes or rice", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Pre-cooked pulled pork"), "Pre-cooked pulled pork", "to taste"], 
+                 [self._get_food_id_by_name("BBQ sauce"), "BBQ sauce", "to taste"], 
+                 [self._get_food_id_by_name("Instant mashed potatoes"), "instant mashed potatoes or rice", "to taste"] # Map rice to potatoes
+             ], 
              "Heat pulled pork with BBQ sauce; serve with instant mashed potatoes or rice."],
             ["Shrimp Scampi", 15, 
-             [{"name": "Pre-cooked shrimp", "quantity": "to taste"}, {"name": "pasta", "quantity": "to taste"}, 
-              {"name": "garlic", "quantity": "to taste"}, {"name": "butter", "quantity": "to taste"}, 
-              {"name": "olive oil", "quantity": "to taste"}, {"name": "parsley", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Pre-cooked shrimp"), "Pre-cooked shrimp", "to taste"], 
+                 [self._get_food_id_by_name("Pasta"), "pasta", "to taste"], 
+                 [self._get_food_id_by_name("Garlic"), "garlic", "to taste"], 
+                 [self._get_food_id_by_name("Butter"), "butter", "to taste"], 
+                 [self._get_food_id_by_name("Olive oil"), "olive oil", "to taste"], 
+                 [self._get_food_id_by_name("Parsley"), "parsley", "to taste"] # Assumes ID exists
+             ], 
              "Cook pasta; sauté garlic in butter and olive oil; add shrimp; toss with pasta and parsley."],
             ["Philly Cheesesteak Sliders", 25, 
-             [{"name": "Thinly sliced steak", "quantity": "to taste"}, {"name": "slider buns", "quantity": "to taste"}, 
-              {"name": "cheese", "quantity": "to taste"}, {"name": "onions", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Thinly sliced steak"), "Thinly sliced steak", "to taste"], 
+                 [self._get_food_id_by_name("Slider buns"), "slider buns", "to taste"], # Assumes ID exists
+                 [self._get_food_id_by_name("Shredded cheese"), "cheese", "to taste"], 
+                 [self._get_food_id_by_name("Onions"), "onions", "to taste"]
+             ], 
              "Sauté steak and onions; place mixture and cheese on slider buns; heat until cheese melts."],
             ["Chicken Tenders and Fries", 25, 
-             [{"name": "Pre-breaded chicken tenders", "quantity": "to taste"}, {"name": "frozen fries", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Chicken tenders"), "Pre-breaded chicken tenders", "to taste"], # Assumes ID exists
+                 [self._get_food_id_by_name("Frozen fries"), "frozen fries", "to taste"] # Assumes ID exists
+             ], 
              "Bake chicken tenders and fries as per package instructions; serve together."],
             ["Beef Tacos", 20, 
-             [{"name": "Ground beef", "quantity": "to taste"}, {"name": "taco seasoning", "quantity": "to taste"}, 
-              {"name": "taco shells", "quantity": "to taste"}, {"name": "cheese", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Ground beef"), "Ground beef", "to taste"], 
+                 [self._get_food_id_by_name("Taco seasoning"), "taco seasoning", "to taste"], 
+                 [self._get_food_id_by_name("Taco shells"), "taco shells", "to taste"], 
+                 [self._get_food_id_by_name("Shredded cheese"), "cheese", "to taste"]
+             ], 
              "Cook beef with taco seasoning; fill taco shells with beef and top with cheese."],
             ["Stir-Fry with Pre-Cooked Chicken", 20, 
-             [{"name": "Pre-cooked chicken strips", "quantity": "to taste"}, {"name": "frozen mixed vegetables", "quantity": "to taste"}, 
-              {"name": "soy sauce", "quantity": "to taste"}, {"name": "microwaveable rice", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Pre-cooked chicken"), "Pre-cooked chicken strips", "to taste"], 
+                 [self._get_food_id_by_name("Frozen mixed vegetables"), "frozen mixed vegetables", "to taste"], 
+                 [self._get_food_id_by_name("Soy sauce"), "soy sauce", "to taste"], 
+                 [self._get_food_id_by_name("Microwaveable rice"), "microwaveable rice", "to taste"]
+             ], 
              "Stir-fry chicken and vegetables with soy sauce; serve over heated rice."],
             ["Pasta with Pesto", 15, 
-             [{"name": "Pasta", "quantity": "to taste"}, {"name": "store-bought pesto", "quantity": "to taste"}, 
-              {"name": "parmesan cheese", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Pasta"), "Pasta", "to taste"], 
+                 [self._get_food_id_by_name("Pesto"), "store-bought pesto", "to taste"], # Assumes ID exists
+                 [self._get_food_id_by_name("Parmesan cheese"), "parmesan cheese", "to taste"]
+             ], 
              "Cook pasta; toss with pesto and sprinkle parmesan on top."],
             ["Sloppy Joes", 20, 
-             [{"name": "Ground beef", "quantity": "to taste"}, {"name": "sloppy joe sauce", "quantity": "to taste"}, 
-              {"name": "hamburger buns", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Ground beef"), "Ground beef", "to taste"], 
+                 [self._get_food_id_by_name("Sloppy joe sauce"), "sloppy joe sauce", "to taste"], # Assumes ID exists
+                 [self._get_food_id_by_name("Hamburger buns"), "hamburger buns", "to taste"]
+             ], 
              "Brown ground beef; mix with sloppy joe sauce; spoon onto hamburger buns."]
         ]
         
-        # Hardcoded meal ideas list
+        # Hardcoded meal ideas list - **Updated ingredient format**
         self.meal_ideas = [
             ('Garlic Salmon Pasta', 30, 
-             [{"name": "salmon", "quantity": "to taste"}, {"name": "spaghetti", "quantity": "to taste"}, 
-              {"name": "garlic", "quantity": "to taste"}, {"name": "olive oil", "quantity": "to taste"}, 
-              {"name": "parmesan cheese", "quantity": "to taste"}], 
+             [
+                 [self._get_food_id_by_name("Salmon"), "salmon", "to taste"], 
+                 [self._get_food_id_by_name("Spaghetti"), "spaghetti", "to taste"], 
+                 [self._get_food_id_by_name("Garlic"), "garlic", "to taste"], 
+                 [self._get_food_id_by_name("Olive oil"), "olive oil", "to taste"], 
+                 [self._get_food_id_by_name("Parmesan cheese"), "parmesan cheese", "to taste"]
+             ], 
              '1. Cook spaghetti according to package instructions. \n2. In a pan, heat olive oil and garlic, then add salmon and cook until done. \n3. Combine cooked pasta with salmon, garlic, and olive oil. \n4. Serve with grated parmesan cheese on top.'),
             ('Bacon Egg Sourdough Toast', 20, 
-             [{"name": "sourdough bread", "quantity": "to taste"}, {"name": "eggs", "quantity": "to taste"}, 
-              {"name": "bacon", "quantity": "to taste"}, {"name": "shredded cheese", "quantity": "to taste"}, 
-              {"name": "butter", "quantity": "to taste"}],
+             [
+                 [self._get_food_id_by_name("Sourdough bread"), "sourdough bread", "to taste"], 
+                 [self._get_food_id_by_name("Eggs"), "eggs", "to taste"], 
+                 [self._get_food_id_by_name("Bacon"), "bacon", "to taste"], 
+                 [self._get_food_id_by_name("Shredded cheese"), "shredded cheese", "to taste"], 
+                 [self._get_food_id_by_name("Butter"), "butter", "to taste"]
+             ],
              '1. Cook bacon until crispy, then scramble eggs. \n2. Toast sourdough bread slices. \n3. Assemble by placing scrambled eggs and bacon on top of the toast. \n4. Sprinkle shredded cheese and melt under broiler. \n5. Serve hot with a side of butter.'),
             ('Sesame Ginger Chicken Wrap', 25, 
-             [{"name": "rotisserie chicken", "quantity": "to taste"}, {"name": "tortilla", "quantity": "to taste"}, 
-              {"name": "garlic", "quantity": "to taste"}, {"name": "ginger", "quantity": "to taste"}, 
-              {"name": "sesame seeds", "quantity": "to taste"}, {"name": "soy sauce", "quantity": "to taste"}, 
-              {"name": "shredded cheese", "quantity": "to taste"}],
+             [
+                 [self._get_food_id_by_name("Rotisserie chicken"), "rotisserie chicken", "to taste"], 
+                 [self._get_food_id_by_name("Tortilla"), "tortilla", "to taste"], 
+                 [self._get_food_id_by_name("Garlic"), "garlic", "to taste"], 
+                 [self._get_food_id_by_name("Ginger"), "ginger", "to taste"], 
+                 [self._get_food_id_by_name("Sesame seeds"), "sesame seeds", "to taste"], 
+                 [self._get_food_id_by_name("Soy sauce"), "soy sauce", "to taste"], 
+                 [self._get_food_id_by_name("Shredded cheese"), "shredded cheese", "to taste"]
+             ],
              '1. Shred rotisserie chicken and mix with garlic, ginger, sesame seeds, and soy sauce. \n2. Warm tortilla and fill with the chicken mixture. \n3. Sprinkle shredded cheese on top. \n4. Roll up the wrap and enjoy.'),
             ('Cheesy Chicken Tortilla Bake', 40, 
-             [{"name": "pre-cooked chicken", "quantity": "to taste"}, {"name": "tortilla", "quantity": "to taste"}, 
-              {"name": "non-chunky tomato sauce", "quantity": "to taste"}, {"name": "shredded cheese", "quantity": "to taste"}, 
-              {"name": "onions", "quantity": "to taste"}],
+             [
+                 [self._get_food_id_by_name("Pre-cooked chicken"), "pre-cooked chicken", "to taste"], 
+                 [self._get_food_id_by_name("Tortilla"), "tortilla", "to taste"], 
+                 [self._get_food_id_by_name("Non-chunky tomato sauce"), "non-chunky tomato sauce", "to taste"], 
+                 [self._get_food_id_by_name("Shredded cheese"), "shredded cheese", "to taste"], 
+                 [self._get_food_id_by_name("Onions"), "onions", "to taste"]
+             ],
              '1. Preheat oven to 350°F. \n2. Layer tortillas, chicken, tomato sauce, onions, and shredded cheese in a baking dish. \n3. Repeat layers and top with more cheese. \n4. Bake for 25-30 minutes until cheese is melted and bubbly. \n5. Serve hot.'),
             ('Bacon Egg Fried Rice', 25, 
-             [{"name": "Bacon", "quantity": "to taste"}, {"name": "Eggs", "quantity": "to taste"}, 
-              {"name": "White rice", "quantity": "to taste"}, {"name": "Onion", "quantity": "to taste"}, 
-              {"name": "Garlic", "quantity": "to taste"}, {"name": "Frozen mixed vegetables", "quantity": "to taste"}, 
-              {"name": "Soy sauce", "quantity": "to taste"}, {"name": "Olive oil", "quantity": "to taste"}],
+             [
+                 [self._get_food_id_by_name("Bacon"), "Bacon", "to taste"], 
+                 [self._get_food_id_by_name("Eggs"), "Eggs", "to taste"], 
+                 [self._get_food_id_by_name("White rice"), "White rice", "to taste"], 
+                 [self._get_food_id_by_name("Onions"), "Onion", "to taste"], 
+                 [self._get_food_id_by_name("Garlic"), "Garlic", "to taste"], 
+                 [self._get_food_id_by_name("Frozen mixed vegetables"), "Frozen mixed vegetables", "to taste"], 
+                 [self._get_food_id_by_name("Soy sauce"), "Soy sauce", "to taste"], 
+                 [self._get_food_id_by_name("Olive oil"), "Olive oil", "to taste"]
+             ],
              '1. Cook bacon until crispy, then set aside. \n2. In the same pan, sauté onions and garlic. \n3. Add cooked white rice and frozen mixed vegetables. \n4. Push rice to the side, scramble eggs, and mix in. \n5. Crumble bacon and add to the rice. \n6. Season with soy sauce and serve hot.'),
             ('Chicken Tomato Garlic Pasta', 30, 
-             [{"name": "Rotisserie chicken", "quantity": "to taste"}, {"name": "Spaghetti", "quantity": "to taste"}, 
-              {"name": "Non-chunky tomato sauce", "quantity": "to taste"}, {"name": "Garlic", "quantity": "to taste"}, 
-              {"name": "Olive oil", "quantity": "to taste"}, {"name": "Parmesan cheese", "quantity": "to taste"}],
+             [
+                 [self._get_food_id_by_name("Rotisserie chicken"), "Rotisserie chicken", "to taste"], 
+                 [self._get_food_id_by_name("Spaghetti"), "Spaghetti", "to taste"], 
+                 [self._get_food_id_by_name("Non-chunky tomato sauce"), "Non-chunky tomato sauce", "to taste"], 
+                 [self._get_food_id_by_name("Garlic"), "Garlic", "to taste"], 
+                 [self._get_food_id_by_name("Olive oil"), "Olive oil", "to taste"], 
+                 [self._get_food_id_by_name("Parmesan cheese"), "Parmesan cheese", "to taste"]
+             ],
              '1. Cook spaghetti according to package instructions. \n2. In a pan, heat olive oil and garlic, then add shredded rotisserie chicken. \n3. Pour in tomato sauce and simmer. \n4. Toss cooked pasta in the sauce. \n5. Serve with grated parmesan cheese on top.'),
             ('Ginger Soy Salmon Stir-Fry', 25, 
-             [{"name": "Salmon", "quantity": "to taste"}, {"name": "Frozen mixed vegetables", "quantity": "to taste"}, 
-              {"name": "Onion", "quantity": "to taste"}, {"name": "Garlic", "quantity": "to taste"}, 
-              {"name": "Ginger", "quantity": "to taste"}, {"name": "Soy sauce", "quantity": "to taste"}, 
-              {"name": "Microwaveable rice", "quantity": "to taste"}],
+             [
+                 [self._get_food_id_by_name("Salmon"), "Salmon", "to taste"], 
+                 [self._get_food_id_by_name("Frozen mixed vegetables"), "Frozen mixed vegetables", "to taste"], 
+                 [self._get_food_id_by_name("Onions"), "Onion", "to taste"], 
+                 [self._get_food_id_by_name("Garlic"), "Garlic", "to taste"], 
+                 [self._get_food_id_by_name("Ginger"), "Ginger", "to taste"], 
+                 [self._get_food_id_by_name("Soy sauce"), "Soy sauce", "to taste"], 
+                 [self._get_food_id_by_name("Microwaveable rice"), "Microwaveable rice", "to taste"]
+             ],
              '1. In a pan, stir-fry salmon, vegetables, onion, garlic, and ginger. \n2. Add soy sauce and cook until salmon is done. \n3. Microwave rice according to package instructions. \n4. Serve stir-fry over rice.'),
             ('Steak Cheddar Sourdough Melt', 35, 
-             [{"name": "Thin-sliced steak", "quantity": "to taste"}, {"name": "Sourdough bread", "quantity": "to taste"}, 
-              {"name": "Shredded cheese", "quantity": "to taste"}, {"name": "Onion", "quantity": "to taste"}, 
-              {"name": "Butter", "quantity": "to taste"}, {"name": "Mayo", "quantity": "to taste"}],
+             [
+                 [self._get_food_id_by_name("Thin-sliced steak"), "Thin-sliced steak", "to taste"], 
+                 [self._get_food_id_by_name("Sourdough bread"), "Sourdough bread", "to taste"], 
+                 [self._get_food_id_by_name("Shredded cheese"), "Shredded cheese", "to taste"], # Changed from cheddar
+                 [self._get_food_id_by_name("Onions"), "Onion", "to taste"], 
+                 [self._get_food_id_by_name("Butter"), "Butter", "to taste"], 
+                 [self._get_food_id_by_name("Mayo"), "Mayo", "to taste"]
+             ],
              '1. Cook steak slices in a pan until desired doneness. \n2. Butter sourdough bread slices and toast. \n3. Spread mayo on one side of the bread. \n4. Layer steak, shredded cheese, and onions on the other side. \n5. Close the sandwich and grill until cheese melts. \n6. Serve hot.'),
             ('Shrimp and Bacon Carbonara', 30, 
-             [{"name": "Pre-cooked shrimp", "quantity": "to taste"}, {"name": "Bacon", "quantity": "to taste"}, 
-              {"name": "Eggs", "quantity": "to taste"}, {"name": "Spaghetti", "quantity": "to taste"}, 
-              {"name": "Parmesan cheese", "quantity": "to taste"}, {"name": "Olive oil", "quantity": "to taste"}, 
-              {"name": "Garlic", "quantity": "to taste"}],
+             [
+                 [self._get_food_id_by_name("Pre-cooked shrimp"), "Pre-cooked shrimp", "to taste"], 
+                 [self._get_food_id_by_name("Bacon"), "Bacon", "to taste"], 
+                 [self._get_food_id_by_name("Eggs"), "Eggs", "to taste"], 
+                 [self._get_food_id_by_name("Spaghetti"), "Spaghetti", "to taste"], 
+                 [self._get_food_id_by_name("Parmesan cheese"), "Parmesan cheese", "to taste"], 
+                 [self._get_food_id_by_name("Olive oil"), "Olive oil", "to taste"], 
+                 [self._get_food_id_by_name("Garlic"), "Garlic", "to taste"]
+             ],
              '1. Cook bacon until crispy, then set aside. \n2. In the same pan, sauté garlic and shrimp. \n3. Cook spaghetti according to package instructions. \n4. Whisk eggs and parmesan cheese in a bowl. \n5. Drain pasta and toss with egg mixture. \n6. Add shrimp and crumbled bacon. \n7. Serve hot.')
         ]
     
-        # Default inventory items
+        # Default inventory items (uses IDs from ingredients_foods defined above)
         self.inventory_items = [
             "Ground beef", "Bacon", "Sesame seeds", "Soy sauce", "Garlic",
             "Ginger", "Spaghetti", "Parmesan cheese", "Butter", "Olive oil",
@@ -189,14 +407,46 @@ class ResetDB:
             "Microwave burrito", "Carrots"
         ]
         
-        # Sample data for ingredients_foods with shorter URLs
-        self.ingredients_foods = [
-            {"name": "Fairlife chocolate milk", "min_amount": 1, 
-            "walmart_link": "https://www.walmart.com/ip/43922523"},
-            {"name": "Whole milk", "min_amount": 1, 
-            "walmart_link": "https://www.walmart.com/ip/10450114"},
-            {"name": "Cream cheese", "min_amount": 1, 
-            "walmart_link": "https://www.walmart.com/ip/10295585"}
+        # Define sample inventory data in the new format: [ingredient_food_id, name, quantity, expiration]
+        self.sample_inventory_data = [
+            [104, "Ground beef", "1 lb", None],
+            [105, "Bacon", "12 oz", None],
+            [136, "Sesame seeds", "1 tbsp", None],
+            [137, "Soy sauce", "1/4 cup", None],
+            [106, "Garlic", "3 cloves", None],
+            [107, "Ginger", "1 inch piece", None],
+            [108, "Spaghetti", "1 box", None],
+            [109, "Parmesan cheese", "1 wedge", None],
+            [110, "Butter", "1 stick", None],
+            [111, "Olive oil", "500ml bottle", None],
+            [112, "Thin-sliced steak", "1 lb", None],
+            [113, "White rice", "2 cups", None],
+            [114, "Black beans", "1 can", None],
+            [115, "Tortilla", "1 pack (10 ct)", None],
+            [116, "Mayo", "1 jar", None],
+            [117, "Eggs", "1 dozen", None],
+            [118, "Sourdough bread", "1 loaf", None],
+            [119, "Pre-cooked chicken", "1 lb", None],
+            [120, "Shredded cheese", "1 bag", None],
+            [121, "Caesar dressing", "1 bottle", None],
+            [122, "Instant ramen", "3 packs", None],
+            [123, "Non-chunky tomato sauce", "1 jar", None],
+            [124, "Pre-cooked pulled pork", "1 container", None],
+            [125, "BBQ sauce", "1 bottle", None],
+            [126, "Instant mashed potatoes", "1 box", None],
+            [127, "Pre-cooked shrimp", "1 lb", None],
+            [128, "Onions", "2", None],
+            [129, "Taco seasoning", "1 packet", None],
+            [130, "Taco shells", "1 box", None],
+            [131, "Frozen mixed vegetables", "1 bag", None],
+            [132, "Microwaveable rice", "1 pouch", None],
+            [133, "Rotisserie chicken", "1 whole", None],
+            [134, "Salmon", "1 fillet", None],
+            [135, "Tortilla chips", "1 bag", None],
+            [102, "Whole milk", "1 gallon", None],
+            [138, "Frozen waffles", "1 box", None],
+            [139, "Microwave burrito", "2", None],
+            [140, "Carrots", "1 bag", None]
         ]
     
         # Taste profile string
@@ -260,6 +510,11 @@ Dislikes:
 - Oatmeal
 """
     
+    def _get_food_id_by_name(self, name: str) -> Optional[int]:
+        """Helper to find the hardcoded food ID based on name."""
+        # Simple case-insensitive lookup in the pre-built dictionary
+        return self._food_id_lookup.get(name.lower())
+    
     # --- CLEAR FUNCTIONS ---
     
     def clear_saved_meals(self):
@@ -272,7 +527,7 @@ Dislikes:
         # Delete existing data if any
         self.db.execute_query(f"DELETE FROM {self.tables['saved_meals'].table_name}")
         
-        print("✓ Saved meals cleared")
+        print("[OK] Saved meals cleared")
     
     def clear_taste_profile(self):
         """Clears the taste profile table."""
@@ -284,19 +539,26 @@ Dislikes:
         # Delete existing data if any
         self.db.execute_query(f"DELETE FROM {self.tables['taste_profile'].table_name}")
         
-        print("✓ Taste profile cleared")
+        print("[OK] Taste profile cleared")
     
     def clear_inventory(self):
-        """Clears the inventory table."""
-        print("\nClearing inventory...")
+        """Clears the inventory table by dropping and recreating it."""
+        print("\nClearing inventory (dropping table)...")
         
-        # Create the table
+        # Drop the table first to ensure schema changes are applied
+        try:
+            self.db.execute_query(f"DROP TABLE IF EXISTS {self.tables['inventory'].table_name}")
+            print(f"  Dropped table: {self.tables['inventory'].table_name}")
+        except Exception as e:
+            print(f"  [WARN] Failed to drop inventory table (may not exist yet): {e}")
+            
+        # Create the table with the potentially updated schema
         self.tables["inventory"].create_table()
         
-        # Delete existing data if any
-        self.db.execute_query(f"DELETE FROM {self.tables['inventory'].table_name}")
+        # Delete existing data if any (redundant if dropped, but safe)
+        # self.db.execute_query(f"DELETE FROM {self.tables['inventory'].table_name}")
         
-        print("✓ Inventory cleared")
+        print("[OK] Inventory table recreated")
     
     def clear_new_meal_ideas(self):
         """Clears the new_meal_ideas table."""
@@ -321,7 +583,7 @@ Dislikes:
         else:
             print("Warning: Could not find sequence for id column")
             
-        print("✓ New meal ideas cleared")
+        print("[OK] New meal ideas cleared")
     
     def clear_daily_planner(self):
         """Clears the daily_planner table."""
@@ -333,7 +595,7 @@ Dislikes:
         # Delete existing data if any
         self.db.execute_query(f"DELETE FROM {self.tables['daily_planner'].table_name}")
         
-        print("✓ Daily planner cleared")
+        print("[OK] Daily planner cleared")
     
     def clear_shopping_list(self):
         """Clears the shopping_list table."""
@@ -345,19 +607,26 @@ Dislikes:
         # Delete existing data if any
         self.db.execute_query(f"DELETE FROM {self.tables['shopping_list'].table_name}")
         
-        print("✓ Shopping list cleared")
+        print("[OK] Shopping list cleared")
     
     def clear_ingredients_foods(self):
-        """Clears the ingredients_foods table."""
-        print("\nClearing ingredients foods...")
+        """Clears the ingredients_foods table by dropping and recreating it."""
+        print("\nClearing ingredients foods (dropping table)...")
+
+        # Drop the table first
+        try:
+            self.db.execute_query(f"DROP TABLE IF EXISTS {self.tables['ingredients_foods'].table_name}")
+            print(f"  Dropped table: {self.tables['ingredients_foods'].table_name}")
+        except Exception as e:
+             print(f"  [WARN] Failed to drop ingredients_foods table (may not exist yet): {e}")
         
         # Create the table
         self.tables["ingredients_foods"].create_table()
         
-        # Delete existing data if any
-        self.db.execute_query(f"DELETE FROM {self.tables['ingredients_foods'].table_name}")
+        # Delete existing data if any (redundant)
+        # self.db.execute_query(f"DELETE FROM {self.tables['ingredients_foods'].table_name}")
         
-        print("✓ Ingredients foods cleared")
+        print("[OK] Ingredients foods table recreated")
     
     def clear_saved_meals_instock_ids(self):
         """Clears the saved_meals_instock_ids table."""
@@ -369,7 +638,7 @@ Dislikes:
         # Delete existing data if any
         self.db.execute_query(f"DELETE FROM {self.tables['saved_meals_instock_ids'].table_name}")
         
-        print("✓ Saved meals in stock IDs cleared")
+        print("[OK] Saved meals in stock IDs cleared")
     
     def clear_new_meal_ideas_instock_ids(self):
         """Clears the new_meal_ideas_instock_ids table."""
@@ -381,7 +650,7 @@ Dislikes:
         # Delete existing data if any
         self.db.execute_query(f"DELETE FROM {self.tables['new_meal_ideas_instock_ids'].table_name}")
         
-        print("✓ New meal ideas in stock IDs cleared")
+        print("[OK] New meal ideas in stock IDs cleared")
 
     def clear_all(self):
         """Clears all tables."""
@@ -412,9 +681,9 @@ Dislikes:
             meal_id = self.tables["saved_meals"].create(name, prep_time, ingredients, recipe)
             
             if meal_id is not None:
-                print(f"✓ Added: {name}")
+                print(f"[OK] Added: {name}")
             else:
-                print(f"✗ Failed to add: {name}")
+                print(f"[FAIL] Failed to add: {name}")
     
     def load_taste_profile(self):
         """Loads sample data into the taste profile table."""
@@ -424,25 +693,42 @@ Dislikes:
         success = self.tables["taste_profile"].create(self.taste_profile)
         
         if success is not None:
-            print("✓ Taste profile updated successfully")
+            print("[OK] Taste profile updated successfully")
         else:
-            print("✗ Failed to update taste profile")
+            print("[FAIL] Failed to update taste profile")
     
     def load_inventory(self):
-        """Loads sample data into the inventory table."""
+        """Loads sample data into the inventory table from self.sample_inventory_data."""
         print("\nLoading inventory...")
         
-        # Set default expiration date
+        # Ensure table exists with the correct schema *before* loading
+        print("  Ensuring inventory table exists...")
+        self.tables["inventory"].create_table()
+        
+        # Set default expiration date (used if expiration in sample data is None)
         default_expiration = datetime.now() + timedelta(days=7)
         
-        # Insert sample data
-        for item in self.inventory_items:
-            item_id = self.tables["inventory"].create(item, "1", default_expiration)
+        # Insert sample data using the new list format
+        for item_data in self.sample_inventory_data:
+            if len(item_data) != 4:
+                print(f"[WARN] Skipping invalid sample inventory data: {item_data}")
+                continue
+            
+            food_id, name, quantity, expiration = item_data
+            # Use default expiration if None is provided in the sample data
+            effective_expiration = expiration if expiration else default_expiration
+            
+            item_id = self.tables["inventory"].create(
+                name=name, 
+                quantity=quantity,
+                expiration=effective_expiration, 
+                ingredient_food_id=food_id # Use the ID from the sample data
+            )
             
             if item_id is not None:
-                print(f"✓ Added: {item}")
+                print(f"[OK] Added: {name} (Qty: {quantity}, FoodID: {food_id})")
             else:
-                print(f"✗ Failed to add: {item}")
+                print(f"[FAIL] Failed to add: {name}")
     
     def load_new_meal_ideas(self):
         """Loads sample data into the new_meal_ideas table."""
@@ -454,9 +740,9 @@ Dislikes:
             new_id = self.tables["new_meal_ideas"].create(name, prep_time, ingredients, recipe)
             
             if new_id is not None:
-                print(f"✓ Added meal idea: {name} with id {new_id}")
+                print(f"[OK] Added meal idea: {name} with id {new_id}")
             else:
-                print(f"✗ Failed to add meal idea: {name}")
+                print(f"[FAIL] Failed to add meal idea: {name}")
     
     def load_daily_planner(self):
         """Loads sample data into the daily_planner table for 2025."""
@@ -471,29 +757,67 @@ Dislikes:
             success = self.tables["daily_planner"].create(current_date, None, [])
             current_date += timedelta(days=1)
         
-        print("✓ Daily planner populated for 2025")
+        print("[OK] Daily planner populated for 2025")
     
     def load_shopping_list(self):
         """Initializes the shopping_list table."""
         print("\nLoading shopping list...")
-        print("✓ Shopping list initialized (empty)")
+        print("[OK] Shopping list initialized (empty)")
     
     def load_ingredients_foods(self):
-        """Loads sample data into the ingredients_foods table."""
-        print("\nLoading ingredients foods...")
+        """Loads sample data into the ingredients_foods table using direct INSERT with hardcoded IDs."""
+        print("\nLoading ingredients foods with hardcoded IDs...")
         
-        # Insert sample data
+        # Ensure table exists with the correct schema *before* loading
+        print("  Ensuring ingredients_foods table exists...")
+        self.tables["ingredients_foods"].create_table()
+        
+        # Use direct INSERT to specify IDs
+        insert_query = """
+        INSERT INTO ingredients_foods (id, name, min_amount_to_buy, walmart_link)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(id) DO NOTHING; -- Or UPDATE if preferred
+        """
+        
+        success_count = 0
+        fail_count = 0
         for item in self.ingredients_foods:
-            food_id = self.tables["ingredients_foods"].create(
-                item["name"],
-                item["min_amount"],
-                item["walmart_link"]
-            )
-            
-            if food_id is not None:
-                print(f"✓ Added ingredient: {item['name']}")
-            else:
-                print(f"✗ Failed to add ingredient: {item['name']}")
+            try:
+                # Ensure item has 'id'
+                if 'id' not in item:
+                    print(f"[FAIL] Skipping ingredient - missing 'id': {item.get('name', 'Unknown')}")
+                    fail_count += 1
+                    continue
+                    
+                item_name = item["name"]
+                item_min_amount = item["min_amount"]
+                
+                # Item has already been added, so insert it into the ingredients_foods lookup table
+                # with its hardcoded ID
+                params = (
+                    item["id"],
+                    item_name,
+                    item_min_amount,
+                    item.get("walmart_link", "")
+                )
+                
+                try:
+                    query = """
+                    INSERT OR REPLACE INTO ingredients_foods (id, name, min_amount_to_buy, walmart_link)
+                    VALUES (?, ?, ?, ?)
+                    """
+                    self.db.execute_query(query, params)
+                    success_count += 1
+                    print(f"[OK] Added/Checked ingredient: {item_name} (ID: {item['id']})")
+                except Exception as e:
+                    # If insert fails, try to display details about it
+                    failure_count += 1
+                    print(f"[ERROR] Failed to add ingredient to ingredients_foods with ID {item['id']}: {e}")
+            except Exception as e:
+                 print(f"[FAIL] Failed to add ingredient {item.get('name', 'Unknown')} (ID: {item.get('id', '?')}): {e}")
+                 fail_count += 1
+
+        print(f"\nFinished loading ingredients foods: {success_count} succeeded, {fail_count} failed.")
     
     def load_saved_meals_instock_ids(self):
         """
@@ -506,7 +830,7 @@ Dislikes:
         updater = MealAvailabilityUpdater(self.db)
         available_meals = updater.update_saved_meals_availability(self.add_to_shopping_list)
         
-        print(f"✓ Found {len(available_meals)} saved meals that can be made with current inventory")
+        print(f"[OK] Found {len(available_meals)} saved meals that can be made with current inventory")
         if available_meals:
             print(f"  Meal IDs: {available_meals[:5]}{'...' if len(available_meals) > 5 else ''}")
         
@@ -524,7 +848,7 @@ Dislikes:
         updater = MealAvailabilityUpdater(self.db)
         available_meal_ideas = updater.update_new_meal_ideas_availability(self.add_to_shopping_list)
         
-        print(f"✓ Found {len(available_meal_ideas)} meal ideas that can be made with current inventory")
+        print(f"[OK] Found {len(available_meal_ideas)} meal ideas that can be made with current inventory")
         if available_meal_ideas:
             print(f"  Meal IDs: {available_meal_ideas[:5]}{'...' if len(available_meal_ideas) > 5 else ''}")
         
@@ -540,7 +864,7 @@ Dislikes:
         
         results = update_all_meal_availability(self.add_to_shopping_list)
         
-        print(f"✓ Found {len(results['saved_meals'])} saved meals and {len(results['new_meal_ideas'])} meal ideas that can be made with current inventory")
+        print(f"[OK] Found {len(results['saved_meals'])} saved meals and {len(results['new_meal_ideas'])} meal ideas that can be made with current inventory")
         
         if self.add_to_shopping_list:
             print("  Missing ingredients added to shopping list")
@@ -664,54 +988,90 @@ Dislikes:
         """Legacy method: Runs the complete reset process."""
         self.reload_all()
 
+    def snapshot_db(self, snapshot_filename="chefbyte_snapshot.db"):
+        """Creates a snapshot copy of the current database file."""
+        print(f"\nAttempting to create database snapshot... ")
+        # Ensure the connection is closed before copying to avoid file locks
+        if self.db and self.db.conn:
+            print("  Closing current DB connection before snapshot...")
+            self.db.disconnect()
+            
+        source_path = self.db_path
+        snapshot_path = os.path.join(os.path.dirname(source_path), snapshot_filename)
+        
+        if not os.path.exists(source_path):
+            print(f"[ERROR] Source database file not found at: {source_path}. Cannot create snapshot.")
+            # Optionally try to reconnect if disconnected
+            # self.db.connect()
+            return False
+            
+        try:
+            shutil.copy2(source_path, snapshot_path) # copy2 preserves metadata
+            print(f"[OK] Database snapshot created successfully at: {snapshot_path}")
+            # Re-open connection after snapshot
+            # print("  Re-opening DB connection after snapshot...")
+            # self.db.connect() # Reconnect if needed for subsequent operations
+            return True
+        except Exception as e:
+            print(f"[ERROR] Failed to create database snapshot: {e}")
+            # Optionally try to reconnect if disconnected
+            # self.db.connect()
+            return False
+            
+    def reload_from_snapshot(self, snapshot_filename="chefbyte_snapshot.db"):
+        """Restores the database from a snapshot file."""
+        print(f"\nAttempting to reload database from snapshot: {snapshot_filename}...")
+        # Ensure the connection is closed before replacing the file
+        if self.db and self.db.conn:
+            print("  Closing current DB connection before reloading...")
+            self.db.disconnect()
+            
+        target_path = self.db_path
+        snapshot_path = os.path.join(os.path.dirname(target_path), snapshot_filename)
+        
+        if not os.path.exists(snapshot_path):
+            print(f"[ERROR] Snapshot file not found at: {snapshot_path}. Cannot reload.")
+            # Optionally try to connect to existing db if reload fails
+            # self.db.connect() 
+            return False
+            
+        try:
+            # Remove the current database file if it exists
+            if os.path.exists(target_path):
+                os.remove(target_path)
+                print(f"  Removed existing database file: {target_path}")
+                
+            # Copy the snapshot to the target path
+            shutil.copy2(snapshot_path, target_path)
+            print(f"[OK] Database reloaded successfully from snapshot: {snapshot_filename}")
+            
+            # Important: Reconnect after reloading to use the restored database
+            print("  Re-opening DB connection after reloading...")
+            if not self.db.connect():
+                 print("[WARN] Failed to automatically reconnect after reloading from snapshot.")
+            return True
+        except Exception as e:
+            print(f"[ERROR] Failed to reload database from snapshot: {e}")
+            # Optionally try to connect to original db if snapshot copy failed
+            # self.db.connect()
+            return False
+
 def reset_database():
     """Resets the SQLite database by clearing data and reloading sample data."""
     print(f"Attempting to reset data in database: {DB_PATH}")
-    db = None # Initialize db to None
+    db_conn_for_loader = None # Use a different name to avoid confusion
+    reset_db_loader = None
     try:
-        # Initialize db connection and ensure tables exist
-        # This also ensures the db file exists for the ResetDB class later
-        db, tables = init_tables()
-        
-        if not db or not tables:
-            print("[ERROR] Failed to initialize database connection or tables. Cannot reset.")
-            return
-            
-        print("Clearing data from tables...")
-        success_count = 0
-        fail_count = 0
-        for table_name, table_obj in tables.items():
-            print(f"  Clearing table: {table_name}...")
-            try:
-                if hasattr(table_obj, 'table_name'):
-                    delete_query = f"DELETE FROM {table_obj.table_name};"
-                    db.execute_query(delete_query)
-                    print(f"    Table '{table_name}' cleared.")
-                    success_count += 1
-                else:
-                     print(f"    Skipping {table_name}: Cannot determine table name from object.")
-                     fail_count += 1
-            except Exception as table_e:
-                print(f"    [ERROR] Failed to clear table '{table_name}': {table_e}")
-                fail_count += 1
-                
-        # Optional: Reclaim space
-        if fail_count == 0:
-             print("All tables cleared successfully. Vacuuming database...")
-             try:
-                  db.execute_query("VACUUM;")
-                  print("Database vacuumed.")
-             except Exception as vac_e:
-                  print(f"[WARN] Failed to vacuum database: {vac_e}")
-        else:
-             print(f"Finished clearing tables with {fail_count} errors.")
-
-        # --- Load Sample Data --- 
-        print("\nLoading sample data...")
-        # Instantiate the ResetDB class to use its loading methods
+        # We only need to instantiate ResetDB. It handles its own connection
+        # and the load_all (via reload_all) will handle clearing first via reload_all.
+        print("Initializing ResetDB loader...")
         # Pass add_to_shopping_list=False by default, or make it configurable
         reset_db_loader = ResetDB(add_to_shopping_list=False) 
-        reset_db_loader.load_all() # Use the method that loads all sample data
+        db_conn_for_loader = reset_db_loader.db # Get the connection used by the loader
+        
+        # --- Load Sample Data (which includes clearing first via reload_all) --- 
+        print("\nCalling loader to clear and load sample data...")
+        reset_db_loader.reload_all() # Use reload_all to ensure clearing happens first
         # ------------------------
 
         print("\nDatabase reset and sample data loading complete.")
@@ -720,14 +1080,28 @@ def reset_database():
         print(f"[ERROR] An error occurred during database reset/load: {e}")
         print(traceback.format_exc())
     finally:
-         # Ensure connection is closed (init_tables connects, load_all might too)
-         if db and db.conn:
-              db.disconnect()
-         # Also ensure the loader's connection is closed if it's separate
-         if 'reset_db_loader' in locals() and reset_db_loader.db and reset_db_loader.db.conn:
-              if reset_db_loader.db != db: # Only disconnect if it's a different connection object
-                   reset_db_loader.db.disconnect()
+        # Ensure the loader's connection is closed
+        if reset_db_loader and reset_db_loader.db and reset_db_loader.db.conn:
+            print("Disconnecting loader database connection.")
+            reset_db_loader.db.disconnect()
 
 if __name__ == "__main__":
     # Reset and load directly without confirmation
     reset_database()
+    
+    # After resetting and loading, create a baseline snapshot
+    try:
+        # Need an instance to call snapshot_db
+        # Ensure connection is established within the instance first
+        print("\nCreating baseline database snapshot...")
+        snapshot_creator = ResetDB() 
+        if snapshot_creator.db: # Check if db connection was successful in init
+            snapshot_creator.snapshot_db("chefbyte_baseline.db")
+            # Important: Close the connection used by snapshot_creator if not needed further
+            if snapshot_creator.db.conn:
+                snapshot_creator.db.disconnect()
+        else:
+             print("[ERROR] Cannot create snapshot, failed to initialize DB connection.")
+    except Exception as e:
+        print(f"[ERROR] An error occurred during baseline snapshot creation: {e}")
+        print(traceback.format_exc())

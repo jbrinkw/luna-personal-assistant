@@ -65,18 +65,20 @@ class ToolRouter:
 Based on the latest user query in the conversation history, which specialized tool is most appropriate?
 
 Available Tools:
-- meal_suggestion: Use for general meal ideas, recommendations, or suggestions based on preferences/inventory.
-- meal_planning: Use for structured planning of meals for specific dates or periods (e.g., 'plan my week').
-- recipe_generator: Use for generating entirely new recipes or novel meal concepts.
-- shopping_list_generator: Use to create a shopping list based on planned meals or needed items.
-- none: Use if no specialized tool is needed (e.g., simple DB query, general chat).
+- meal_suggestion: Use ONLY if the user explicitly asks for meal recommendations, or suggestions (e.g., 'what can I make?', 'suggest some recipes', 'any ideas for dinner?').
+- meal_planning: Use ONLY if the user explicitly asks to plan meals for specific dates or periods (e.g., 'plan my week', 'what should I eat Monday?', 'add X to Tuesday plan').
+- recipe_generator: Use ONLY if the user explicitly asks to generate a *new* recipe or concept (e.g., 'create a recipe for X', 'invent a dish using Y').
+# - shopping_list_generator: Use ONLY if the user explicitly asks to create, modify, or view their shopping list. # Temporarily comment out
+- none: Use for ALL other cases, including: general conversation, simple questions, statements about inventory changes (e.g., 'I bought X', 'I used Y'), requests to view data (e.g., 'show my inventory'), or if no other tool is explicitly requested.
 
 Conversation History (Last 5 messages):
 {message_history}
 
 Latest User Query: {query}
 
-Respond with ONLY the name of the single most appropriate tool from the list above (meal_suggestion, meal_planning, recipe_generator, shopping_list_generator, none).
+**IMPORTANT**: Prioritize 'none' unless the user's request *clearly and directly* matches the specific function of another tool. Do not activate a tool based on keywords alone if the user is just making a statement or asking a general question.
+
+Respond with ONLY the name of the single most appropriate tool from the list above (meal_suggestion, meal_planning, recipe_generator, none).
 Tool Selection:"""
 
     def route_tool(self, chat_history):

@@ -9,10 +9,13 @@ load_dotenv()
 
 class IngredientMatcher:
     def __init__(self):
-        """Initialize the ingredient matcher with OpenAI client"""
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        """Initialize the ingredient matcher."""
+        # OpenAI client might still be needed for find_or_create if it uses LLM for generalization
+        # For now, assume find_or_create doesn't need it directly
+        # self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        pass
     
-    def find_or_create_ingredient(self, ingredient_name: str, db) -> Tuple[int, bool]:
+    def find_or_create_ingredient(self, ingredient_name: str, db) -> Tuple[Optional[int], bool]:
         """
         Find an existing ingredient in the ingredients_foods table or create a new one
         
@@ -33,8 +36,8 @@ class IngredientMatcher:
         
         # Check if we have ingredients to match against
         if all_ingredients:
-            # Extract just the names for matching
-            ingredient_names = [item[1] for item in all_ingredients]
+            # Extract just the names for matching (using key access)
+            ingredient_names = [item['name'] for item in all_ingredients]
             
             # Try to find a matching ingredient
             matching_id = self.find_matching_ingredient(ingredient_name, ingredient_names, all_ingredients)
@@ -43,20 +46,26 @@ class IngredientMatcher:
                 # Found a match
                 return matching_id, False
         
-        # No match found, create a new entry
+        # No match found or no existing ingredients, create a new entry
+        print(f"No match found for '{ingredient_name}'. Creating new entry...")
         # Use default values for min_amount_to_buy and walmart_link
         new_id = ingredients_foods.create(ingredient_name, 1, None)
-        return new_id, True
+        if new_id is not None:
+             print(f"Successfully created new ingredient '{ingredient_name}' with ID: {new_id}")
+             return new_id, True
+        else:
+             print(f"[ERROR] Failed to create new ingredient '{ingredient_name}'.")
+             return None, False # Indicate failure
     
     def find_matching_ingredient(self, ingredient_name: str, ingredient_names: List[str], 
-                                all_ingredients: List[tuple]) -> Optional[int]:
+                                all_ingredients: List[Any]) -> Optional[int]:
         """
         Use AI to find a matching ingredient from the ingredients_foods table
         
         Args:
             ingredient_name: Name of the ingredient to match
             ingredient_names: List of all ingredient names in ingredients_foods
-            all_ingredients: Complete ingredient data from ingredients_foods
+            all_ingredients: Complete ingredient data from ingredients_foods (List of Row objects)
             
         Returns:
             ID of the matching ingredient or None if no match
@@ -92,10 +101,11 @@ Answer:"""
         if match == "NO_MATCH":
             return None
             
-        # Find the matching ingredient ID
+        # Find the matching ingredient ID using key access
         for ingredient in all_ingredients:
-            if ingredient[1] == match:
-                return ingredient[0]
+            # Use dictionary key access for Row objects
+            if ingredient['name'] == match:
+                return ingredient['id']
                 
         return None
     

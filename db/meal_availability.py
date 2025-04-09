@@ -16,8 +16,8 @@ class MealAvailabilityUpdater:
         self.checker = InStockChecker()
         self.ingredient_matcher = IngredientMatcher()
     
-    def get_inventory_items(self) -> List[tuple]:
-        """Get all inventory items from database"""
+    def get_inventory_items(self) -> List[dict]:
+        """Get all inventory items from database (as list of dicts)"""
         return self.inventory.read()
     
     def check_saved_meal(self, meal_id: int, add_to_shopping_list: bool = False) -> Dict[str, Any]:
@@ -37,23 +37,33 @@ class MealAvailabilityUpdater:
             return {'available': False, 'missing': [], 'error': 'Meal not found'}
         
         # Get inventory
-        inventory = self.get_inventory_items()
+        inventory_items = self.get_inventory_items()
         
-        # Extract ingredients from meal data
+        # Extract ingredients from meal data (should be [[id, name, quantity], ...])
         meal = meal_data[0]
-        ingredients = json.loads(meal[3]) if isinstance(meal[3], str) else meal[3]
+        ingredients_list = []
+        try:
+            # Access ingredients column by name and parse JSON
+            ingredients_str = meal['ingredients'] 
+            ingredients_list = json.loads(ingredients_str) if isinstance(ingredients_str, str) else ingredients_str
+            # Ensure it's a list of lists
+            if not isinstance(ingredients_list, list) or not all(isinstance(i, list) for i in ingredients_list):
+                raise TypeError("Ingredients format is not a list of lists")
+        except (json.JSONDecodeError, TypeError, KeyError) as e:
+             print(f"[ERROR] Could not parse ingredients for saved meal ID {meal_id}: {e}")
+             return {'available': False, 'missing': [], 'error': 'Invalid ingredients format'}
         
-        # Check ingredients against inventory
+        # Check ingredients against inventory - PASS THE ingredients_list DIRECTLY
         missing_ingredients = self.checker.check_ingredients(
-            ingredients, 
-            inventory, 
+            ingredients=ingredients_list, # Pass the [[id, name, quantity], ...] list
+            inventory=inventory_items, 
             add_to_shopping_list=add_to_shopping_list,
             db=self.db if add_to_shopping_list else None
         )
         
         return {
             'available': len(missing_ingredients) == 0,
-            'missing': missing_ingredients
+            'missing': missing_ingredients # check_ingredients returns [{'name':..,'quantity':..}] format
         }
     
     def check_new_meal_idea(self, meal_id: int, add_to_shopping_list: bool = False) -> Dict[str, Any]:
@@ -73,23 +83,31 @@ class MealAvailabilityUpdater:
             return {'available': False, 'missing': [], 'error': 'Meal idea not found'}
         
         # Get inventory
-        inventory = self.get_inventory_items()
+        inventory_items = self.get_inventory_items()
         
-        # Extract ingredients from meal data
+        # Extract ingredients from meal data (should be [[id, name, quantity], ...])
         meal = meal_data[0]
-        ingredients = json.loads(meal[3]) if isinstance(meal[3], str) else meal[3]
-        
-        # Check ingredients against inventory
+        ingredients_list = []
+        try:
+            ingredients_str = meal['ingredients']
+            ingredients_list = json.loads(ingredients_str) if isinstance(ingredients_str, str) else ingredients_str
+            if not isinstance(ingredients_list, list) or not all(isinstance(i, list) for i in ingredients_list):
+                raise TypeError("Ingredients format is not a list of lists")
+        except (json.JSONDecodeError, TypeError, KeyError) as e:
+             print(f"[ERROR] Could not parse ingredients for new meal idea ID {meal_id}: {e}")
+             return {'available': False, 'missing': [], 'error': 'Invalid ingredients format'}
+
+        # Check ingredients against inventory - PASS THE ingredients_list DIRECTLY
         missing_ingredients = self.checker.check_ingredients(
-            ingredients, 
-            inventory,
+            ingredients=ingredients_list, # Pass the [[id, name, quantity], ...] list
+            inventory=inventory_items,
             add_to_shopping_list=add_to_shopping_list,
             db=self.db if add_to_shopping_list else None
         )
         
         return {
             'available': len(missing_ingredients) == 0,
-            'missing': missing_ingredients
+            'missing': missing_ingredients # check_ingredients returns [{'name':..,'quantity':..}] format
         }
     
     def update_saved_meals_availability(self, add_to_shopping_list: bool = False) -> List[int]:
