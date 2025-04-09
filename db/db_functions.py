@@ -97,7 +97,7 @@ class Inventory:
         self.table_name = "inventory"
     
     def format(self):
-        return "inventory [id(int), name(text), quantity(text), expiration(text)]"
+        return "inventory [id(int), name(text), quantity(text), expiration(text), ingredient_food_id(int)]"
     
     def create_table(self):
         query = """
@@ -105,18 +105,22 @@ class Inventory:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             quantity TEXT NOT NULL,
-            expiration TEXT 
+            expiration TEXT,
+            ingredient_food_id INTEGER, 
+            FOREIGN KEY (ingredient_food_id) REFERENCES ingredients_foods(id)
         )
         """
+        # Ensure ingredients_foods table exists first (or handle potential error)
+        # Might be better handled by init_tables ensuring order
         return self.db.execute_query(query)
     
-    def create(self, name, quantity, expiration=None):
+    def create(self, name, quantity, expiration=None, ingredient_food_id=None):
         expiration_str = expiration.strftime('%Y-%m-%d') if isinstance(expiration, date) else expiration
         query = """
-        INSERT INTO inventory (name, quantity, expiration)
-        VALUES (?, ?, ?)
+        INSERT INTO inventory (name, quantity, expiration, ingredient_food_id)
+        VALUES (?, ?, ?, ?)
         """
-        return self.db.execute_query(query, (name, quantity, expiration_str))
+        return self.db.execute_query(query, (name, quantity, expiration_str, ingredient_food_id))
     
     def read(self, item_id=None):
         if item_id:
@@ -126,7 +130,7 @@ class Inventory:
             query = "SELECT * FROM inventory"
             return self.db.execute_query(query, fetch=True)
     
-    def update(self, item_id, name=None, quantity=None, expiration=None):
+    def update(self, item_id, name=None, quantity=None, expiration=None, ingredient_food_id=None):
         updates = []
         params = []
         
@@ -142,6 +146,10 @@ class Inventory:
             updates.append("expiration = ?")
             expiration_str = expiration.strftime('%Y-%m-%d') if isinstance(expiration, date) else expiration
             params.append(expiration_str)
+        
+        if ingredient_food_id is not None:
+            updates.append("ingredient_food_id = ?")
+            params.append(ingredient_food_id)
         
         if not updates:
             return False
@@ -634,27 +642,58 @@ def init_tables():
         print("Failed to connect to database. Aborting table initialization.")
         return None, None # Return None if connection fails
 
-    tables = {
-        "inventory": Inventory(db),
-        "taste_profile": TasteProfile(db),
-        "saved_meals": SavedMeals(db),
-        "new_meal_ideas": NewMealIdeas(db),
-        "saved_meals_instock_ids": SavedMealsInStockIds(db),
-        "new_meal_ideas_instock_ids": NewMealIdeasInStockIds(db),
-        "daily_planner": DailyPlanner(db),
-        "shopping_list": ShoppingList(db),
-        "ingredients_foods": IngredientsFood(db) # Use consistent class name
+    # Define table classes in a dictionary for easy access
+    table_classes = {
+        "inventory": Inventory,
+        "taste_profile": TasteProfile,
+        "saved_meals": SavedMeals,
+        "new_meal_ideas": NewMealIdeas,
+        "saved_meals_instock_ids": SavedMealsInStockIds,
+        "new_meal_ideas_instock_ids": NewMealIdeasInStockIds,
+        "daily_planner": DailyPlanner,
+        "shopping_list": ShoppingList,
+        "ingredients_foods": IngredientsFood
     }
+    
+    # Define the explicit creation order
+    # ingredients_foods must be created before inventory
+    creation_order = [
+        "ingredients_foods", 
+        "inventory", # Depends on ingredients_foods
+        "taste_profile", 
+        "saved_meals", 
+        "new_meal_ideas", 
+        "saved_meals_instock_ids", # Technically depends on saved_meals
+        "new_meal_ideas_instock_ids", # Technically depends on new_meal_ideas
+        "daily_planner", 
+        "shopping_list" # Technically depends on ingredients_foods for FK (though not enforced in schema)
+    ]
 
-    # Create all tables
-    print("Initializing database tables...")
+    tables = {}
+    print("Initializing database tables in specific order...")
     all_created = True
-    for name, table_obj in tables.items():
-        print(f"Creating table: {name}...")
-        # Check result of create_table (though it currently doesn't return specific success/fail)
-        table_obj.create_table() 
-        # We could add more robust checks here if needed (e.g., check if table exists after creation)
+    for name in creation_order:
+        if name in table_classes:
+            print(f"Creating table: {name}...")
+            table_obj = table_classes[name](db)
+            tables[name] = table_obj
+            # Check result of create_table (though it currently doesn't return specific success/fail)
+            table_obj.create_table() 
+            # We could add more robust checks here if needed (e.g., check if table exists after creation)
+        else:
+             print(f"[WARN] Table '{name}' defined in creation_order but not found in table_classes.")
+             all_created = False
         
-    print("Database table initialization complete.")
+    # Check if any tables defined in classes were missed in the order
+    for name in table_classes:
+        if name not in creation_order:
+             print(f"[WARN] Table '{name}' found in table_classes but not in creation_order. It was not created.")
+             all_created = False
+             
+    if all_created:
+        print("Database table initialization complete.")
+    else:
+        print("[ERROR] Database table initialization incomplete due to warnings.")
+        
     # db.disconnect() # Optional: Disconnect after init if not needed immediately
     return db, tables

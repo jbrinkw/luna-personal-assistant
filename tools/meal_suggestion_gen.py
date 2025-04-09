@@ -104,34 +104,45 @@ class MealSuggestionFormatter:
         for i, meal_id in enumerate(meal_ids, 1):
             # Try to find the meal in saved_meals first
             meal_data = self.tables["saved_meals"].read(meal_id)
+            meal_type = "Saved Recipe"
             
             # If not found, try new_meal_ideas
             if not meal_data:
                 meal_data = self.tables["new_meal_ideas"].read(meal_id)
                 meal_type = "New Meal Idea"
-            else:
-                meal_type = "Saved Recipe"
             
             if meal_data and len(meal_data) > 0:
-                meal = meal_data[0]
-                name = meal[1]
-                prep_time = meal[2]
+                # Use dictionary access since db functions return Row objects
+                meal = meal_data[0] 
+                name = meal['name']
+                prep_time = meal['prep_time_minutes'] if meal_type == "Saved Recipe" else meal['prep_time']
                 
-                # Parse ingredients
+                # Parse ingredients (new format: [[food_id, name, quantity], ...])
                 try:
-                    ingredients_json = meal[3]
-                    if isinstance(ingredients_json, str):
-                        ingredients = json.loads(ingredients_json)
-                    else:
-                        ingredients = ingredients_json
+                    ingredients_json_str = meal['ingredients']
+                    ingredients = json.loads(ingredients_json_str) if isinstance(ingredients_json_str, str) else ingredients_json_str
                     
-                    # Format ingredients list
-                    ingredients_text = ", ".join([
-                        f"{ing['name']} ({ing['amount']})" if 'amount' in ing else ing['name']
-                        for ing in ingredients
-                    ])
-                except:
-                    ingredients_text = "Ingredients information not available"
+                    # Format ingredients list based on new format
+                    ingredients_text = ""
+                    if isinstance(ingredients, list):
+                        formatted_ings = []
+                        for ing_data in ingredients:
+                            # Expecting [food_id, name, quantity]
+                            if isinstance(ing_data, list) and len(ing_data) >= 3:
+                                # Use name (index 1) and quantity (index 2)
+                                ing_name = ing_data[1] 
+                                ing_quantity = ing_data[2]
+                                formatted_ings.append(f"{ing_name} ({ing_quantity})")
+                            else:
+                                # Handle potential older format or unexpected data gracefully
+                                formatted_ings.append(f"{str(ing_data)} (Format Error)")
+                        ingredients_text = ", ".join(formatted_ings)
+                    else:
+                        ingredients_text = "[Invalid Ingredients Data Structure]"
+
+                except (json.JSONDecodeError, TypeError) as e:
+                    print(f"[WARN] Error parsing/formatting ingredients for meal ID {meal_id}: {e}")
+                    ingredients_text = "[Ingredients Error]"
                 
                 # Add to output
                 output += f"**Suggestion {i}: {name}**\n"

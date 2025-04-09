@@ -304,25 +304,36 @@ Most recent user message: {message}
                 meal_id = meal['id']
                 name = meal['name']
                 prep_time = meal['prep_time_minutes']
-                ingredients_json = meal['ingredients'] # Already a JSON string
+                ingredients_col = meal['ingredients']
                 recipe = meal['recipe']
                 
-                # Shorten recipe for context if needed
-                recipe_snippet = recipe[:100] + '...' if len(recipe) > 100 else recipe
-                
-                # Format ingredients string for context
-                ingredients_str = "[See details]" # Keep context concise
+                # Parse and format ingredients (new format)
+                ingredients_text = ""
                 try:
-                    ingredients_list = json.loads(ingredients_json) if isinstance(ingredients_json, str) else ingredients_json
+                    ingredients_list = json.loads(ingredients_col) if isinstance(ingredients_col, str) else ingredients_col
                     if isinstance(ingredients_list, list):
-                        ingredients_str = ", ".join([f"{ing.get('name', '?')}" for ing in ingredients_list])
+                        formatted_ings = []
+                        for ing_data in ingredients_list:
+                            if isinstance(ing_data, list) and len(ing_data) >= 3:
+                                # Use name (index 1) and quantity (index 2)
+                                formatted_ings.append(f"{ing_data[1]} ({ing_data[2]})")
+                            else:
+                                formatted_ings.append(f"{str(ing_data)} (Format Error)")
+                        ingredients_text = ", ".join(formatted_ings)
                     else:
-                        ingredients_str = str(ingredients_list)
-                except (json.JSONDecodeError, TypeError):
-                     ingredients_str = "[Error parsing ingredients]"
+                         ingredients_text = "[Invalid Ingredients Structure]"
+                except (json.JSONDecodeError, TypeError, IndexError) as e:
+                    print(f"[WARN] Error parsing ingredients for context (meal ID {meal_id}): {e}")
+                    ingredients_text = "[Ingredients Error]"
 
-                context += f"ID: {meal_id}, Name: {name}, Prep: {prep_time}m, Ingredients: {ingredients_str}, Recipe: {recipe_snippet}\n"
-            return context
+                # Limit recipe length for context
+                recipe_snippet = recipe[:150] + ("..." if len(recipe) > 150 else "")
+
+                context += f"- ID: {meal_id}, Name: {name}, Prep: {prep_time} mins\n"
+                context += f"  Ingredients: {ingredients_text}\n"
+                # context += f"  Recipe Snippet: {recipe_snippet}\n"
+            
+            return context.strip()
         except Exception as e:
             print(f"[ERROR] PullRouter failed to get saved meals context: {e}")
             return "Error retrieving saved meals."

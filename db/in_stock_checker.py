@@ -1,104 +1,247 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple, Optional
 import json
 import os
+import re # Import re for quantity parsing
 from dotenv import load_dotenv
 from openai import OpenAI
-from db.ingredient_matcher import IngredientMatcher
+# Remove IngredientMatcher import
+# from db.ingredient_matcher import IngredientMatcher
+# Import ShoppingList table class
+from db.db_functions import ShoppingList 
+import sys
 
 # Load environment variables
 load_dotenv()
 
+# Add project root to sys.path if needed
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
 class InStockChecker:
     def __init__(self):
-        """Initialize the ingredient checker with OpenAI client"""
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        self.ingredient_matcher = IngredientMatcher()
+        """Initialize the ingredient checker."""
+        # Remove OpenAI client and IngredientMatcher init
+        # self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        # self.ingredient_matcher = IngredientMatcher()
+        pass # No initialization needed for now
     
-    def check_ingredients(self, ingredients: List[Dict[str, str]], inventory: List[Dict[str, Any]], 
+    def _parse_quantity(self, quantity_str: str) -> Tuple[Optional[float], Optional[str]]:
+        """Parse quantity string like '2 pounds' -> (2.0, 'pounds'). Handles fractions."""
+        if not isinstance(quantity_str, str):
+             return None, None
+             
+        quantity_str = quantity_str.strip()
+        # Find numeric part (including fractions like 1/2)
+        numeric_match = re.match(r'^([\d\./]+)', quantity_str)
+        number = None
+        unit = None
+        
+        if numeric_match:
+            amount_str = numeric_match.group(1)
+            try:
+                if '/' in amount_str:
+                    num, denom = amount_str.split('/')
+                    number = float(num) / float(denom)
+                else:
+                    number = float(amount_str)
+            except ValueError:
+                 number = None # Parsing failed
+                 
+            # Extract unit part
+            unit_part = quantity_str[len(amount_str):].strip()
+            # Basic unit extraction, might need refinement
+            unit_match = re.match(r'^([a-zA-Z]+)', unit_part)
+            if unit_match:
+                 unit = unit_match.group(1).lower()
+                 # Handle plurals simply
+                 if unit.endswith('s'):
+                      unit = unit[:-1]
+            elif unit_part: # Handle cases like '2 large' -> unit 'large'
+                 unit = unit_part.lower()
+                 
+        # If no numeric part found, maybe it's just a count like 'a dozen'? Treat as 1 for now.
+        # Or maybe just a name? For quantity check, we need a number.
+        if number is None:
+             # Try to handle 'a', 'an'
+             if quantity_str.lower().startswith('a ') or quantity_str.lower().startswith('an '):
+                 number = 1.0
+                 unit_part = quantity_str[quantity_str.find(' ')+1:].strip()
+                 # Extract unit if possible
+                 unit_match = re.match(r'^([a-zA-Z]+)', unit_part)
+                 if unit_match:
+                      unit = unit_match.group(1).lower()
+                      if unit.endswith('s'):
+                           unit = unit[:-1]
+                 elif unit_part:
+                      unit = unit_part.lower()
+             else:
+                  # Cannot parse a number, assume 1 unit? Or None?
+                  # Let's return None for number if unparseable, requiring downstream handling.
+                  number = None 
+                  unit = quantity_str # Keep original string as unit if no number
+                  
+        # Fallback unit if needed
+        if number is not None and unit is None:
+            unit = 'unit' # Default unit if number exists but no unit found
+            
+        return number, unit
+
+    # This method is DEPRECATED and will be removed, use check_ingredients_availability
+    def check_ingredients(self, ingredients: List[List[Any]], inventory: List[Dict[str, Any]], 
                          add_to_shopping_list: bool = False, db=None) -> List[Dict[str, str]]:
         """
-        Check if ingredients are in stock based on inventory
+        DEPRECATED - Use check_ingredients_availability.
+        Checks if ingredients are in stock based on inventory using name matching.
         Args:
-            ingredients: List of ingredient dictionaries with 'name' and 'quantity' keys
-            inventory: List of inventory items from the database
+            ingredients: List of ingredient lists [food_id, name, quantity]
+            inventory: List of inventory items (sqlite3.Row objects) from the database
             add_to_shopping_list: If True, adds missing ingredients to shopping list
             db: Database connection (required if add_to_shopping_list is True)
         
         Returns:
-            List of missing ingredients (empty list if all available)
+            List of missing ingredients (formatted as {'name': ..., 'quantity': ...})
         """
-        # Process inventory into a more usable format
-        inventory_dict = {}
-        for item in inventory:
-            inventory_dict[item[1].lower()] = {
-                'id': item[0],
-                'quantity': item[2],
-                'expiration': item[3] if len(item) > 3 else None
-            }
-        
+        print("[WARN] Calling deprecated check_ingredients method in InStockChecker.")
+        # Basic implementation to maintain structure but not recommended
         missing_ingredients = []
-        
-        for ingredient in ingredients:
-            if not self._is_ingredient_available(ingredient['name'], inventory_dict):
-                missing_ingredients.append(ingredient)
-                
-                # Add to shopping list if specified
-                if add_to_shopping_list and db:
-                    self.ingredient_matcher.add_to_shopping_list(ingredient, db)
-        
+        inventory_names = {item['name'].lower() for item in inventory} if inventory else set()
+        for food_id, name, quantity in ingredients:
+            if name.lower() not in inventory_names:
+                missing_ingredients.append({'name': name, 'quantity': quantity})
         return missing_ingredients
     
-    def _is_ingredient_available(self, ingredient_name: str, inventory: Dict[str, Any]) -> bool:
+    # Removed LLM-based _is_ingredient_available method
+    # Removed legacy _add_to_shopping_list method
+    # Removed legacy _find_matching_ingredient method
+
+    def check_ingredients_availability(self, ingredients: List[List[Any]], inventory_rows: List[Any], 
+                                      add_to_shopping_list: bool = False, db=None) -> Tuple[bool, List[List[Any]]]:
         """
-        Use AI to check if an ingredient is available in inventory, accounting for similar names
+        Check if ingredients are in stock based on inventory using food_id matching.
         Args:
-            ingredient_name: Name of the ingredient to check
-            inventory: Dictionary of inventory items
+            ingredients: List of required ingredient lists [food_id, name, quantity].
+            inventory_rows: List of inventory items (sqlite3.Row objects) from the database.
+            add_to_shopping_list: If True, adds missing ingredients to the shopping list.
+            db: Database connection (required if add_to_shopping_list is True).
         
         Returns:
-            Boolean indicating if ingredient is available
+            Tuple containing:
+                - bool: True if all ingredients are available in sufficient quantity, False otherwise.
+                - List: List of missing ingredients in the format [food_id, name, quantity_needed].
         """
-        if not inventory:
-            return False
-        
-        # Simple exact match check first
-        if ingredient_name.lower() in inventory:
-            return True
-        
-        # Format inventory for AI prompt
-        inventory_list = "\n".join([f"- {item}" for item in inventory.keys()])
-        
-        # Ask AI to determine if the ingredient is available
-        prompt = f"""You are an ingredient matching assistant.
-Check if this ingredient can be found in the inventory, accounting for similar names and variations.
-Consider common substitutions and different forms of the same ingredient.
-Answer ONLY "AVAILABLE" or "NOT_AVAILABLE".
+        # Process inventory: Create a dictionary mapping food_id to a list of inventory items
+        # Also sum total quantity for each food_id, attempting basic unit consistency.
+        inventory_by_food_id: Dict[int, List[Dict[str, Any]]] = {}
+        inventory_totals: Dict[int, Dict[str, float]] = {} # Stores {food_id: {unit: total_quantity}}
 
-Required Ingredient: {ingredient_name}
+        try:
+            for item in inventory_rows:
+                food_id = item['ingredient_food_id']
+                if food_id is None:
+                    # print(f"[WARN] Inventory item '{item['name']}' (ID: {item['id']}) has no food_id, skipping for availability check.")
+                    continue
+                    
+                # Store the full item details
+                if food_id not in inventory_by_food_id:
+                    inventory_by_food_id[food_id] = []
+                inventory_by_food_id[food_id].append(dict(item)) # Convert Row to dict
+                
+                # Attempt to parse and sum quantity
+                inv_qty_num, inv_unit = self._parse_quantity(item['quantity'])
+                if inv_qty_num is not None and inv_unit is not None:
+                     if food_id not in inventory_totals:
+                          inventory_totals[food_id] = {}
+                     if inv_unit not in inventory_totals[food_id]:
+                          inventory_totals[food_id][inv_unit] = 0.0
+                     inventory_totals[food_id][inv_unit] += inv_qty_num
+                # else:
+                     # print(f"[WARN] Could not parse quantity for inventory item '{item['name']}': '{item['quantity']}'")
 
-Available Inventory:
-{inventory_list}
+        except Exception as e:
+             print(f"[ERROR] Failed to process inventory: {e}. Inventory item format might be unexpected.")
+             print(f"Sample inventory item: {inventory_rows[0] if inventory_rows else 'Empty'}")
+             # Return False and an empty list or an error indicator
+             return (False, [[None, 'Error processing inventory', '']]) 
 
-Answer:"""
-
-        response = self.client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0
-        )
+        missing_ingredients = []
+        all_available = True
         
-        return response.choices[0].message.content.strip() == "AVAILABLE"
-    
-    # Legacy method, replaced by ingredient_matcher.add_to_shopping_list
-    def _add_to_shopping_list(self, ingredient: Dict[str, str], db) -> None:
-        """
-        Legacy method - use ingredient_matcher.add_to_shopping_list instead
-        """
-        self.ingredient_matcher.add_to_shopping_list(ingredient, db)
-    
-    # Legacy method, replaced by ingredient_matcher.find_matching_ingredient
-    def _find_matching_ingredient(self, ingredient_name: str, ingredient_names: List[str], all_ingredients: List[tuple]) -> int:
-        """
-        Legacy method - use ingredient_matcher.find_matching_ingredient instead
-        """
-        return self.ingredient_matcher.find_matching_ingredient(ingredient_name, ingredient_names, all_ingredients) 
+        print("\n--- Checking Ingredient Availability ---")
+        for ingredient_data in ingredients:
+            if not isinstance(ingredient_data, list) or len(ingredient_data) != 3:
+                 print(f"[WARN] Skipping invalid required ingredient format: {ingredient_data}")
+                 continue
+                 
+            req_food_id, req_name, req_quantity_str = ingredient_data
+            print(f"Checking for: {req_name} (FoodID: {req_food_id}, Needed: {req_quantity_str})")
+
+            if req_food_id is None:
+                print(f"  [WARN] Required ingredient '{req_name}' has no FoodID. Cannot check availability by ID.")
+                # Optionally, could fall back to name matching here if desired, but skipping for now
+                # We add it to missing, as we can't confirm it by ID
+                missing_ingredients.append([req_food_id, req_name, req_quantity_str])
+                all_available = False
+                continue
+
+            # Check if present in inventory by food_id
+            if req_food_id not in inventory_totals:
+                print(f"  [Missing] Ingredient not found in inventory by FoodID {req_food_id}.")
+                missing_ingredients.append([req_food_id, req_name, req_quantity_str])
+                all_available = False
+            else:
+                # Ingredient type exists, now check quantity
+                req_qty_num, req_unit = self._parse_quantity(req_quantity_str)
+                
+                if req_qty_num is None:
+                    print(f"  [WARN] Could not parse required quantity '{req_quantity_str}' for '{req_name}'. Assuming available.")
+                    # Cannot check quantity, assume okay for now? Or mark as missing?
+                    # Let's assume available if quantity is unparseable
+                    print(f"  [OK] Ingredient found (quantity check skipped due to unparsed requirement).")
+                    continue
+                    
+                # Check available quantity for the required unit (or compatible units)
+                available_units = inventory_totals[req_food_id]
+                
+                # Simple check: Does the inventory have this exact unit?
+                if req_unit in available_units:
+                    available_amount = available_units[req_unit]
+                    if available_amount < req_qty_num:
+                        print(f"  [Low Stock] Have {available_amount:.2f} {req_unit}, need {req_qty_num:.2f} {req_unit}.")
+                        missing_qty_str = f"{req_qty_num - available_amount:.2f} {req_unit}"
+                        missing_ingredients.append([req_food_id, req_name, missing_qty_str])
+                        all_available = False
+                    else:
+                        print(f"  [OK] Sufficient quantity ({available_amount:.2f} {req_unit}) available.")
+                else:
+                    # Unit mismatch - requires conversion logic or assuming unavailable
+                    # TODO: Implement unit conversion (e.g., lbs to oz, cups to ml)
+                    print(f"  [Missing/Unit Mismatch] Need unit '{req_unit}', but have units: {list(available_units.keys())}. Cannot confirm quantity.")
+                    missing_ingredients.append([req_food_id, req_name, req_quantity_str + f" (Unit '{req_unit}' needed)"])
+                    all_available = False
+        
+        print("--- Availability Check Finished ---")
+
+        # Add missing ingredients to the shopping list if the flag is set
+        if not all_available and add_to_shopping_list and db:
+            print("\n  Adding missing/low stock ingredients to shopping list...")
+            try:
+                 # Get ShoppingList table object
+                 shopping_list_table = ShoppingList(db)
+                 
+                 for missing_info in missing_ingredients:
+                     food_id, name, qty_needed_str = missing_info
+                     
+                     if food_id is not None:
+                         # Attempt to parse the needed quantity for shopping list amount
+                         qty_num, qty_unit = self._parse_quantity(qty_needed_str)
+                         # Use a default amount (e.g., 1) if parsing fails or complex unit
+                         amount_to_add = qty_num if qty_num is not None and qty_num > 0 else 1.0 
+                         
+                         # Add/Update the shopping list
+                         shopping_list_table.create(food_id, amount_to_add)
+                         print(f"    - Added/Updated {name} (FoodID: {food_id}) to shopping list, amount: {amount_to_add}")
+                     else:
+                         print(f"    - Cannot add {name} to shopping list, missing FoodID.")
+            except Exception as e:
+                 print(f"[ERROR] Failed to add items to shopping list: {e}")
+            
+        return all_available, missing_ingredients

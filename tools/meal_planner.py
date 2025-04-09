@@ -530,27 +530,48 @@ class MealPlanningTool:
         """Execute the meal planning process based on conversation history."""
         print("[MealPlanningTool] Executing...")
         try:
-            # Use the internal router to decide the current state/action
-            state, user_message, history_context = self.router.route(chat_history)
-            print(f"[MealPlanningTool] Router state: {state}")
+            # Determine the correct layer using the internal router
+            layer_intent = self.router.determine_intent(chat_history)
+            print(f"[MealPlanningTool] Determined intent: {layer_intent}")
             
-            response_content = ""
+            # Get the latest user message from the history
+            user_message = ""
+            if chat_history and isinstance(chat_history[-1], HumanMessage):
+                user_message = chat_history[-1].content
+            else:
+                 print("[WARN] Could not extract latest user message from history.")
+                 # Handle case where history is empty or last message isn't human
+                 # Might need a default user_message or return an error
 
-            if state == "generate_intents":
-                print("[MealPlanningTool] Generating meal intents...")
-                # Layer 1: Extract date range and generate intents
-                date_range = self.intent_generator.extract_date_range(user_message)
+            response_content = ""
+            
+            # --- Layer 1: Generate Intents --- 
+            if layer_intent == "LAYER_1_INTENT_GENERATION":
+                print("[MealPlanningTool] Executing Layer 1: Generate Intents...")
+                
+                if not user_message:
+                    return "I couldn't understand your request for meal planning. Could you please provide more details?"
+                    
+                # Extract date range 
+                date_range = self.note_intent_generator.extract_date_range(user_message) # Use note_intent_generator for better error handling
+                
+                if date_range is None or date_range.days_count == 0:
+                    return "I need a bit more information to plan your meals. Please specify for which day(s) or how long you'd like to plan (e.g., 'next 3 days', 'Monday to Wednesday')."
+                    
                 start_date = date_range.start_date
                 days_count = date_range.days_count
                 
-                # Clear existing plans in the range (or adjust logic as needed)
-                self.intent_generator.clear_date_range(start_date, days_count)
+                print(f"  Planning for {days_count} days starting from {start_date}")
+
+                # Clear existing meal IDs (preserving notes) for the range
+                self.note_intent_generator.clear_date_range(start_date, days_count)
                 
                 all_intents = []
                 current_planning_date = start_date
                 for _ in range(days_count):
-                    meal_intent = self.intent_generator.generate_meal_intent(user_message, current_planning_date)
-                    self.intent_generator.save_meal_intent_to_db(current_planning_date, meal_intent)
+                    # Use note_intent_generator to create/update intents in notes
+                    meal_intent = self.note_intent_generator.generate_meal_intent(user_message, current_planning_date)
+                    self.note_intent_generator.save_meal_intent_to_db(current_planning_date, meal_intent)
                     all_intents.append((current_planning_date, meal_intent))
                     current_planning_date += timedelta(days=1)
                     
@@ -563,38 +584,93 @@ class MealPlanningTool:
                     response_content += f"  - Dinner: {intent.dinner}\n"
                 response_content += "\nWould you like me to select specific meals based on these intents?"
             
-            elif state == "select_meals":
-                print("[MealPlanningTool] Selecting specific meals...")
-                # Layer 2: Select meals based on existing intents
-                planned_meals = self.meal_selector.plan_meals_for_range(start_date, days_count)
+            # --- Layer 2: Select Specific Meals --- 
+            elif layer_intent == "LAYER_2_MEAL_SELECTION":
+                print("[MealPlanningTool] Executing Layer 2: Select Meals...")
                 
-                if not planned_meals:
-                    response_content = "I couldn't find any suitable meals based on the planned intents. You might need to add more recipes or adjust the intents."
+                # Need to determine the date range again or retrieve it from context/history
+                # For simplicity, let's re-extract from the *previous* relevant user message if possible
+                # or assume a default range (e.g., next 7 days where intents exist)
+                
+                # Find the message where Layer 1 likely generated intents
+                relevant_user_message_for_range = user_message # Default to current
+                for i in range(len(chat_history) - 2, -1, -1): # Search backwards
+                    msg = chat_history[i]
+                    # Look for the user message that likely triggered Layer 1
+                    if isinstance(msg, HumanMessage): # and some keyword check?
+                         # Check if the *next* message was the AI presenting intents
+                         if i + 1 < len(chat_history) and isinstance(chat_history[i+1], AIMessage) and "meal intents" in chat_history[i+1].content.lower():
+                             relevant_user_message_for_range = msg.content
+                             print(f"  Found relevant user message for range extraction: '{relevant_user_message_for_range[:50]}...'")
+                             break
+                
+                date_range = self.note_intent_generator.extract_date_range(relevant_user_message_for_range)
+                
+                if date_range is None or date_range.days_count == 0:
+                     # Fallback: Scan planner for dates with notes but no meals in near future? Or ask user?
+                     return "I couldn't determine the date range for which to select meals. Please specify the dates again."
+                     
+                start_date = date_range.start_date
+                days_count = date_range.days_count
+                print(f"  Selecting meals for {days_count} days starting from {start_date}")
+
+                # Select meals based on existing intents in the DB
+                self.meal_selector.plan_meals_for_range(start_date, days_count)
+                
+                # Fetch the updated plan to show the user
+                response_content = "Okay, I've selected specific meals based on the planned intents:\n\n"
+                end_date = start_date + timedelta(days=days_count - 1)
+                current_check_date = start_date
+                meals_found = False
+                while current_check_date <= end_date:
+                    daily_plan = self.tables['daily_planner'].read(current_check_date)
+                    if daily_plan and daily_plan[0]:
+                        day_data = daily_plan[0]
+                        meal_ids = []
+                        try:
+                            loaded_ids = json.loads(day_data['meal_ids'] or '[]')
+                            if isinstance(loaded_ids, list):
+                                meal_ids = loaded_ids
+                        except json.JSONDecodeError:
+                            pass
+                            
+                        notes_text = day_data['notes'] or "No specific intents."
+                        
+                        response_content += f"**{current_check_date.strftime('%Y-%m-%d, %A')}**:\n"
+                        # Try to map selected IDs back to names (optional enhancement)
+                        if meal_ids:
+                             meals_found = True
+                             meal_names = []
+                             for meal_id in meal_ids:
+                                 # Check saved meals
+                                 saved_meal = self.tables['saved_meals'].read(meal_id)
+                                 if saved_meal and saved_meal[0]:
+                                     meal_names.append(f"{saved_meal[0]['name']} (Saved Meal)")
+                                     continue
+                                 # Check new meal ideas
+                                 new_idea = self.tables['new_meal_ideas'].read(meal_id)
+                                 if new_idea and new_idea[0]:
+                                      meal_names.append(f"{new_idea[0]['name']} (New Idea)")
+                                      continue
+                                 meal_names.append(f"Meal ID {meal_id}") # Fallback
+                             response_content += f"  Meals: { ', '.join(meal_names) }\n"
+                        else:
+                            response_content += f"  Meals: None selected\n"
+                        # Optionally include notes again for context
+                        # response_content += f"  Intents: {notes_text}\n"
+                    current_check_date += timedelta(days=1)
+                    
+                if not meals_found:
+                    response_content = "I finished the selection process, but no specific meals were assigned based on the intents and available suggestions. You might need to add more recipes or adjust the intents."
                 else:
-                    response_content = "Here are the specific meals selected for your plan:\n\n"
-                    for plan_date_str, meals in planned_meals.items():
-                        plan_date = datetime.strptime(plan_date_str, '%Y-%m-%d').date()
-                        response_content += f"**{plan_date.strftime('%Y-%m-%d, %A')}**:\n"
-                        response_content += f"  - Breakfast: {meals.get('breakfast', 'Not selected')}\n"
-                        response_content += f"  - Lunch: {meals.get('lunch', 'Not selected')}\n"
-                        response_content += f"  - Dinner: {meals.get('dinner', 'Not selected')}\n"
-                    response_content += "\nYour daily planner has been updated."
-
-            elif state == "handle_notes":
-                 print("[MealPlanningTool] Handling notes/intents...")
-                 # Layer 2.5: Handle specific notes or intent changes for a day
-                 date_to_update, updated_intent = self.note_intent_generator.generate_notes_and_intents(user_message, history_context)
-                 
-                 if date_to_update and updated_intent:
-                     self.note_intent_generator.save_notes_and_intents_to_db(date_to_update, updated_intent)
-                     response_content = f"Okay, I've updated the plan notes/intents for {date_to_update.strftime('%Y-%m-%d')}."
-                     # Optionally, ask if they want to re-select meals for that day
-                     response_content += " Would you like me to select specific meals for this updated day?"
-                 else:
-                     response_content = "Sorry, I couldn't figure out which date or notes to update. Could you please clarify?"
-
-            else: # Default or error state
-                response_content = "I'm ready to help with meal planning. What period would you like to plan for?"
+                     response_content += "\nYour daily planner has been updated."
+            
+            # --- General Chat (Tool shouldn't have been called) ---
+            else: # GENERAL_CHAT or unexpected value
+                print("[WARN] MealPlanningTool called inappropriately for general chat.")
+                # This tool should ideally only be called by the ToolRouter for specific planning tasks.
+                # Returning a generic message or indicating confusion.
+                response_content = "I'm ready to help with meal planning. What period would you like to plan for, or would you like me to select meals based on existing intents?"
 
             return response_content
 
