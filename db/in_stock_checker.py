@@ -163,8 +163,9 @@ class InStockChecker:
              return (False, [[None, 'Error processing inventory', '']]) 
 
         missing_ingredients = []
-        all_available = True
-        
+        # Assume available unless a required food_id is completely missing
+        all_available = True 
+
         print("\n--- Checking Ingredient Availability ---")
         for ingredient_data in ingredients:
             if not isinstance(ingredient_data, list) or len(ingredient_data) != 3:
@@ -176,53 +177,51 @@ class InStockChecker:
 
             if req_food_id is None:
                 print(f"  [WARN] Required ingredient '{req_name}' has no FoodID. Cannot check availability by ID.")
-                # Optionally, could fall back to name matching here if desired, but skipping for now
-                # We add it to missing, as we can't confirm it by ID
-                missing_ingredients.append([req_food_id, req_name, req_quantity_str])
-                all_available = False
+                # Cannot confirm, add to missing list for info, but don't block availability yet
+                missing_ingredients.append([req_food_id, req_name, req_quantity_str + " (Missing FoodID)"])
+                # all_available = False # Don't set to false just for missing ID if we relax check
                 continue
 
-            # Check if present in inventory by food_id
+            # --- MODIFIED CHECK: Focus on presence of FoodID first --- 
             if req_food_id not in inventory_totals:
-                print(f"  [Missing] Ingredient not found in inventory by FoodID {req_food_id}.")
+                print(f"  [Missing] Ingredient Type (FoodID: {req_food_id}) not found in inventory.")
                 missing_ingredients.append([req_food_id, req_name, req_quantity_str])
-                all_available = False
+                all_available = False # If the core ingredient type is missing, the meal IS unavailable
             else:
-                # Ingredient type exists, now check quantity
+                # Ingredient type exists, attempt quantity check for logging/shopping list, but don't fail the meal based on it
                 req_qty_num, req_unit = self._parse_quantity(req_quantity_str)
-                
+
                 if req_qty_num is None:
-                    print(f"  [WARN] Could not parse required quantity '{req_quantity_str}' for '{req_name}'. Assuming available.")
-                    # Cannot check quantity, assume okay for now? Or mark as missing?
-                    # Let's assume available if quantity is unparseable
-                    print(f"  [OK] Ingredient found (quantity check skipped due to unparsed requirement).")
-                    continue
-                    
+                    print(f"  [WARN] Could not parse required quantity '{req_quantity_str}' for '{req_name}'. Skipping detailed check.")
+                    # Add to missing list for info, but don't block availability
+                    missing_ingredients.append([req_food_id, req_name, req_quantity_str + " (Unparsed Quantity)"])
+                    continue # Skip further quantity checks for this ingredient
+
                 # Check available quantity for the required unit (or compatible units)
                 available_units = inventory_totals[req_food_id]
-                
+
                 # Simple check: Does the inventory have this exact unit?
                 if req_unit in available_units:
                     available_amount = available_units[req_unit]
                     if available_amount < req_qty_num:
                         print(f"  [Low Stock] Have {available_amount:.2f} {req_unit}, need {req_qty_num:.2f} {req_unit}.")
-                        missing_qty_str = f"{req_qty_num - available_amount:.2f} {req_unit}"
+                        missing_qty_str = f"{req_qty_num - available_amount:.2f} {req_unit} needed"
                         missing_ingredients.append([req_food_id, req_name, missing_qty_str])
-                        all_available = False
+                        # all_available = False # Don't set to false for low stock with relaxed check
                     else:
-                        print(f"  [OK] Sufficient quantity ({available_amount:.2f} {req_unit}) available.")
+                        print(f"  [OK] Sufficient quantity ({available_amount:.2f} {req_unit}) confirmed.")
                 else:
                     # Unit mismatch - requires conversion logic or assuming unavailable
                     # TODO: Implement unit conversion (e.g., lbs to oz, cups to ml)
-                    print(f"  [Missing/Unit Mismatch] Need unit '{req_unit}', but have units: {list(available_units.keys())}. Cannot confirm quantity.")
-                    missing_ingredients.append([req_food_id, req_name, req_quantity_str + f" (Unit '{req_unit}' needed)"])
-                    all_available = False
-        
+                    print(f"  [Unit Mismatch] Need unit '{req_unit}', have units: {list(available_units.keys())}. Cannot confirm quantity.")
+                    missing_ingredients.append([req_food_id, req_name, req_quantity_str + f" (Unit '{req_unit}' needed, have {list(available_units.keys())})"])
+                    # all_available = False # Don't set to false for unit mismatch with relaxed check
+
         print("--- Availability Check Finished ---")
 
         # Add missing ingredients to the shopping list if the flag is set
-        if not all_available and add_to_shopping_list and db:
-            print("\n  Adding missing/low stock ingredients to shopping list...")
+        if missing_ingredients and add_to_shopping_list and db:
+            print("\n  Adding missing/low stock/mismatch ingredients to shopping list...")
             try:
                  # Get ShoppingList table object
                  shopping_list_table = ShoppingList(db)
