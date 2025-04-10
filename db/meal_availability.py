@@ -2,7 +2,6 @@ import json
 from typing import List, Dict, Any
 from db.db_functions import Database, Inventory, SavedMeals, NewMealIdeas, SavedMealsInStockIds, NewMealIdeasInStockIds
 from db.in_stock_checker import InStockChecker
-from db.ingredient_matcher import IngredientMatcher
 
 class MealAvailabilityUpdater:
     def __init__(self, db: Database):
@@ -14,7 +13,6 @@ class MealAvailabilityUpdater:
         self.saved_meals_in_stock = SavedMealsInStockIds(db)
         self.new_meal_ideas_in_stock = NewMealIdeasInStockIds(db)
         self.checker = InStockChecker()
-        self.ingredient_matcher = IngredientMatcher()
     
     def get_inventory_items(self) -> List[dict]:
         """Get all inventory items from database (as list of dicts)"""
@@ -29,7 +27,7 @@ class MealAvailabilityUpdater:
             add_to_shopping_list: If True, adds missing ingredients to shopping list
             
         Returns:
-            Dict with 'available' boolean and 'missing' list of ingredients
+            Dict with 'available' boolean and 'missing' list of ingredients [[id, name, quantity_needed], ...]
         """
         # Get meal details
         meal_data = self.saved_meals.read(meal_id)
@@ -53,17 +51,17 @@ class MealAvailabilityUpdater:
              print(f"[ERROR] Could not parse ingredients for saved meal ID {meal_id}: {e}")
              return {'available': False, 'missing': [], 'error': 'Invalid ingredients format'}
         
-        # Check ingredients against inventory - PASS THE ingredients_list DIRECTLY
-        missing_ingredients = self.checker.check_ingredients(
+        # Check ingredients against inventory using the new method
+        is_available, missing_ingredients_list = self.checker.check_ingredients_availability(
             ingredients=ingredients_list, # Pass the [[id, name, quantity], ...] list
-            inventory=inventory_items, 
+            inventory_rows=inventory_items, 
             add_to_shopping_list=add_to_shopping_list,
             db=self.db if add_to_shopping_list else None
         )
         
         return {
-            'available': len(missing_ingredients) == 0,
-            'missing': missing_ingredients # check_ingredients returns [{'name':..,'quantity':..}] format
+            'available': is_available,
+            'missing': missing_ingredients_list # This is now [[id, name, quantity_needed], ...]
         }
     
     def check_new_meal_idea(self, meal_id: int, add_to_shopping_list: bool = False) -> Dict[str, Any]:
@@ -75,7 +73,7 @@ class MealAvailabilityUpdater:
             add_to_shopping_list: If True, adds missing ingredients to shopping list
             
         Returns:
-            Dict with 'available' boolean and 'missing' list of ingredients
+            Dict with 'available' boolean and 'missing' list of ingredients [[id, name, quantity_needed], ...]
         """
         # Get meal details
         meal_data = self.new_meal_ideas.read(meal_id)
@@ -97,17 +95,17 @@ class MealAvailabilityUpdater:
              print(f"[ERROR] Could not parse ingredients for new meal idea ID {meal_id}: {e}")
              return {'available': False, 'missing': [], 'error': 'Invalid ingredients format'}
 
-        # Check ingredients against inventory - PASS THE ingredients_list DIRECTLY
-        missing_ingredients = self.checker.check_ingredients(
+        # Check ingredients against inventory using the new method
+        is_available, missing_ingredients_list = self.checker.check_ingredients_availability(
             ingredients=ingredients_list, # Pass the [[id, name, quantity], ...] list
-            inventory=inventory_items,
+            inventory_rows=inventory_items,
             add_to_shopping_list=add_to_shopping_list,
             db=self.db if add_to_shopping_list else None
         )
         
         return {
-            'available': len(missing_ingredients) == 0,
-            'missing': missing_ingredients # check_ingredients returns [{'name':..,'quantity':..}] format
+            'available': is_available,
+            'missing': missing_ingredients_list # This is now [[id, name, quantity_needed], ...]
         }
     
     def update_saved_meals_availability(self, add_to_shopping_list: bool = False) -> List[int]:
@@ -128,15 +126,17 @@ class MealAvailabilityUpdater:
         
         available_meal_ids = []
         
-        for meal in all_meals:
-            meal_id = meal[0]
-            result = self.check_saved_meal(meal_id, add_to_shopping_list)
+        # Need to handle potential Row object if all_meals is not empty
+        if all_meals: 
+            for meal_row in all_meals:
+                meal_id = meal_row['id'] # Access ID by key
+                result = self.check_saved_meal(meal_id, add_to_shopping_list)
             
-            if result['available']:
-                # Add to available list
-                available_meal_ids.append(meal_id)
-                # Add to database
-                self.saved_meals_in_stock.create(meal_id)
+                if result.get('available', False): # Use .get for safety
+                    # Add to available list
+                    available_meal_ids.append(meal_id)
+                    # Add to database
+                    self.saved_meals_in_stock.create(meal_id)
         
         return available_meal_ids
     
@@ -158,15 +158,16 @@ class MealAvailabilityUpdater:
         
         available_meal_ids = []
         
-        for meal in all_meals:
-            meal_id = meal[0]
-            result = self.check_new_meal_idea(meal_id, add_to_shopping_list)
+        if all_meals:
+            for meal_row in all_meals:
+                meal_id = meal_row['id'] # Access ID by key
+                result = self.check_new_meal_idea(meal_id, add_to_shopping_list)
             
-            if result['available']:
-                # Add to available list
-                available_meal_ids.append(meal_id)
-                # Add to database
-                self.new_meal_ideas_in_stock.create(meal_id)
+                if result.get('available', False): # Use .get for safety
+                    # Add to available list
+                    available_meal_ids.append(meal_id)
+                    # Add to database
+                    self.new_meal_ideas_in_stock.create(meal_id)
         
         return available_meal_ids
     
@@ -186,21 +187,38 @@ def update_all_meal_availability(add_to_shopping_list: bool = False):
     Args:
         add_to_shopping_list: If True, adds missing ingredients to shopping list
     """
-    db = Database()
-    updater = MealAvailabilityUpdater(db)
+    db = None # Initialize db to None
+    try:
+        db = Database()
+        # Ensure connection is established before proceeding
+        if not db.connect(): 
+             print("[ERROR] Failed to connect to database in update_all_meal_availability.")
+             return {'saved_meals': [], 'new_meal_ideas': []} # Return empty if connection fails
+             
+        updater = MealAvailabilityUpdater(db)
     
-    # Update saved meals
-    available_saved_meals = updater.update_saved_meals_availability(add_to_shopping_list)
-    print(f"Updated saved meals availability. {len(available_saved_meals)} meals are available.")
+        # Update saved meals
+        available_saved_meals = updater.update_saved_meals_availability(add_to_shopping_list)
+        print(f"Updated saved meals availability. {len(available_saved_meals)} meals are available.")
     
-    # Update new meal ideas
-    available_meal_ideas = updater.update_new_meal_ideas_availability(add_to_shopping_list)
-    print(f"Updated new meal ideas availability. {len(available_meal_ideas)} meal ideas are available.")
+        # Update new meal ideas
+        available_meal_ideas = updater.update_new_meal_ideas_availability(add_to_shopping_list)
+        print(f"Updated new meal ideas availability. {len(available_meal_ideas)} meal ideas are available.")
     
-    return {
-        'saved_meals': available_saved_meals,
-        'new_meal_ideas': available_meal_ideas
-    }
+        return {
+            'saved_meals': available_saved_meals,
+            'new_meal_ideas': available_meal_ideas
+        }
+    except Exception as e:
+         print(f"[ERROR] An error occurred in update_all_meal_availability: {e}")
+         import traceback
+         traceback.print_exc()
+         # Return empty lists on error
+         return {'saved_meals': [], 'new_meal_ideas': []}
+    finally:
+         # Ensure database connection is closed
+         if db and db.conn:
+             db.disconnect()
 
 
 if __name__ == "__main__":
