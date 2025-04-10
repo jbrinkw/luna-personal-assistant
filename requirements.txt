@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+langchain
+langchain-openai
+psycopg2-binary
+pydantic>=2.0.0
+streamlit
+requests

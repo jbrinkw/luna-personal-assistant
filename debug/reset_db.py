@@ -114,280 +114,280 @@ class ResetDB:
         
         # Hardcoded meals list - **Updated ingredient format**
         self.meals = [
-            ["Bacon Cheeseburger", 20, 
+            ["Bacon Cheeseburger", 20,
              [
-                 [self._get_food_id_by_name("Ground beef"), "Ground beef", "to taste"], 
-                 [self._get_food_id_by_name("Bacon"), "bacon", "to taste"], 
-                 [self._get_food_id_by_name("Hamburger Bun"), "burger bun", "to taste"], 
-                 [self._get_food_id_by_name("Extra Sharp Cheddar"), "extra sharp cheddar", "to taste"], 
-                 [None, "condiments", "to taste"]
-             ], 
+                 [self._get_food_id_by_name("Ground beef"), "Ground beef", "1 patty (4-6 oz)"],
+                 [self._get_food_id_by_name("Bacon"), "bacon", "2 strips"],
+                 [self._get_food_id_by_name("Hamburger Bun"), "burger bun", "1"],
+                 [self._get_food_id_by_name("Extra Sharp Cheddar"), "extra sharp cheddar", "1 slice"],
+                 [None, "condiments", "1 tbsp each"]
+             ],
              "Form beef patties, cook to desired doneness; fry bacon; assemble patty with bacon and cheese on bun."],
-            ["Sesame Chicken", 25, 
+            ["Sesame Chicken", 25,
              [
-                 [self._get_food_id_by_name("Pre-cooked chicken"), "Chicken pieces", "to taste"], 
-                 [self._get_food_id_by_name("Sesame seeds"), "sesame seeds", "to taste"], 
-                 [self._get_food_id_by_name("Soy sauce"), "soy sauce", "to taste"], 
-                 [self._get_food_id_by_name("Garlic"), "garlic", "to taste"], 
-                 [self._get_food_id_by_name("Ginger"), "ginger", "to taste"], 
-                 [self._get_food_id_by_name("Cornstarch"), "cornstarch", "to taste"]
-             ], 
+                 [self._get_food_id_by_name("Pre-cooked chicken"), "Chicken pieces", "6 oz"],
+                 [self._get_food_id_by_name("Sesame seeds"), "sesame seeds", "1 tsp"],
+                 [self._get_food_id_by_name("Soy sauce"), "soy sauce", "2 tbsp"],
+                 [self._get_food_id_by_name("Garlic"), "garlic", "1 clove, minced"],
+                 [self._get_food_id_by_name("Ginger"), "ginger", "1/2 tsp, minced"],
+                 [self._get_food_id_by_name("Cornstarch"), "cornstarch", "1 tsp"]
+             ],
              "Marinate chicken in soy sauce, garlic, and ginger; coat lightly with cornstarch; stir-fry until cooked; sprinkle sesame seeds."],
-            ["Magic Spaghetti", 15, 
+            ["Magic Spaghetti", 15,
              [
-                 [self._get_food_id_by_name("Spaghetti"), "Spaghetti", "to taste"], 
-                 [self._get_food_id_by_name("Parmesan cheese"), "parmesan cheese", "to taste"], 
-                 [self._get_food_id_by_name("Butter"), "butter", "to taste"], 
-                 [self._get_food_id_by_name("Olive oil"), "olive oil", "to taste"], 
-                 [self._get_food_id_by_name("Pepper"), "pepper", "to taste"]
-             ], 
+                 [self._get_food_id_by_name("Spaghetti"), "Spaghetti", "1 serving (2 oz dry)"],
+                 [self._get_food_id_by_name("Parmesan cheese"), "parmesan cheese", "2 tbsp, grated"],
+                 [self._get_food_id_by_name("Butter"), "butter", "1 tbsp"],
+                 [self._get_food_id_by_name("Olive oil"), "olive oil", "1 tbsp"],
+                 [self._get_food_id_by_name("Pepper"), "pepper", "1/4 tsp"]
+             ],
              "Cook spaghetti; toss with butter, olive oil, parmesan, and pepper."],
-            ["Steak Burrito", 25, 
+            ["Steak Burrito", 25,
              [
-                 [self._get_food_id_by_name("Thin-sliced steak"), "Thin-sliced steak", "to taste"], 
-                 [self._get_food_id_by_name("White rice"), "white rice", "to taste"], 
-                 [self._get_food_id_by_name("Black beans"), "black beans", "to taste"], 
-                 [self._get_food_id_by_name("Tortilla"), "tortilla", "to taste"], 
-                 [self._get_food_id_by_name("Shredded cheese"), "extra cheese", "to taste"], 
-                 [self._get_food_id_by_name("Mayo"), "mayo", "to taste"]
-             ], 
+                 [self._get_food_id_by_name("Thin-sliced steak"), "Thin-sliced steak", "4-6 oz"],
+                 [self._get_food_id_by_name("White rice"), "white rice", "1/2 cup, cooked"],
+                 [self._get_food_id_by_name("Black beans"), "black beans", "1/4 cup"],
+                 [self._get_food_id_by_name("Tortilla"), "tortilla", "1 large"],
+                 [self._get_food_id_by_name("Shredded cheese"), "extra cheese", "1/4 cup"],
+                 [self._get_food_id_by_name("Mayo"), "mayo", "1 tbsp"]
+             ],
              "Sauté steak strips; warm rice and beans; layer steak, rice, beans, cheese, and mayo on tortilla; roll up."],
-            ["Breakfast Egg Sandwich", 15, 
+            ["Breakfast Egg Sandwich", 15,
              [
-                 [self._get_food_id_by_name("Eggs"), "Eggs", "to taste"], 
-                 [self._get_food_id_by_name("Shredded cheese"), "cheese", "to taste"], 
-                 [self._get_food_id_by_name("Turkey sausage patties"), "turkey sausage patties", "to taste"], 
-                 [self._get_food_id_by_name("Sourdough bread"), "sourdough bread", "to taste"], 
-                 [self._get_food_id_by_name("Mayo"), "mayo", "to taste"]
-             ], 
+                 [self._get_food_id_by_name("Eggs"), "Eggs", "1-2"],
+                 [self._get_food_id_by_name("Shredded cheese"), "cheese", "1 slice or 2 tbsp"],
+                 [self._get_food_id_by_name("Turkey sausage patties"), "turkey sausage patties", "1-2"],
+                 [self._get_food_id_by_name("Sourdough bread"), "sourdough bread", "2 slices"],
+                 [self._get_food_id_by_name("Mayo"), "mayo", "1 tsp"]
+             ],
              "Scramble eggs with cheese; heat sausage patties; toast sourdough with mayo; assemble sandwich."],
-            ["Homemade McChicken", 20, 
+            ["Homemade McChicken", 20,
              [
-                 [self._get_food_id_by_name("Chicken patties"), "Chicken patties", "to taste"], 
-                 [self._get_food_id_by_name("Hamburger Bun"), "burger buns", "to taste"], 
-                 [self._get_food_id_by_name("Mayo"), "mayo", "to taste"]
-             ], 
+                 [self._get_food_id_by_name("Chicken patties"), "Chicken patties", "1"],
+                 [self._get_food_id_by_name("Hamburger Bun"), "burger buns", "1"],
+                 [self._get_food_id_by_name("Mayo"), "mayo", "1 tbsp"]
+             ],
              "Cook chicken patties; toast buns with a bit of mayo; place patty between buns."],
-            ["Chicken Caesar Wrap", 15, 
+            ["Chicken Caesar Wrap", 15,
              [
-                 [self._get_food_id_by_name("Pre-cooked chicken"), "Pre-cooked chicken", "to taste"], 
-                 [self._get_food_id_by_name("Tortilla"), "tortilla", "to taste"], 
-                 [self._get_food_id_by_name("Shredded cheese"), "shredded cheese", "to taste"], 
-                 [self._get_food_id_by_name("Caesar dressing"), "Caesar dressing", "to taste"]
-             ], 
+                 [self._get_food_id_by_name("Pre-cooked chicken"), "Pre-cooked chicken", "3-4 oz, sliced"],
+                 [self._get_food_id_by_name("Tortilla"), "tortilla", "1 large"],
+                 [self._get_food_id_by_name("Shredded cheese"), "shredded cheese", "1/4 cup"],
+                 [self._get_food_id_by_name("Caesar dressing"), "Caesar dressing", "2 tbsp"]
+             ],
              "Layer sliced chicken, cheese, and Caesar dressing in tortilla; roll tightly."],
-            ["Turkey and Cheese Sandwich", 10, 
+            ["Turkey and Cheese Sandwich", 10,
              [
-                 [self._get_food_id_by_name("Sliced turkey"), "Sliced turkey", "to taste"], 
-                 [self._get_food_id_by_name("Shredded cheese"), "cheese", "to taste"], 
-                 [self._get_food_id_by_name("Sourdough bread"), "toasted sourdough or bagel", "to taste"], # Map bagel to sourdough 
-                 [self._get_food_id_by_name("Mayo"), "mayo", "to taste"]
-             ], 
+                 [self._get_food_id_by_name("Sliced turkey"), "Sliced turkey", "3-4 slices"],
+                 [self._get_food_id_by_name("Shredded cheese"), "cheese", "1-2 slices or 1/4 cup"], # Allow shredded or sliced
+                 [self._get_food_id_by_name("Sourdough bread"), "toasted sourdough or bagel", "2 slices / 1 bagel"], # Map bagel to sourdough
+                 [self._get_food_id_by_name("Mayo"), "mayo", "1 tbsp"]
+             ],
              "Layer turkey and cheese on toasted bread/bagel with mayo."],
-            ["Grilled Cheese Sandwich", 10, 
+            ["Grilled Cheese Sandwich", 10,
              [
-                 [self._get_food_id_by_name("Bread"), "Bread", "to taste"], # Assumes generic Bread ID exists
-                 [self._get_food_id_by_name("Butter"), "butter", "to taste"], 
-                 [self._get_food_id_by_name("Sliced cheese"), "sliced cheese", "to taste"] # Assumes ID exists
-             ], 
+                 [self._get_food_id_by_name("Bread"), "Bread", "2 slices"], # Assumes generic Bread ID exists
+                 [self._get_food_id_by_name("Butter"), "butter", "1 tbsp"],
+                 [self._get_food_id_by_name("Sliced cheese"), "sliced cheese", "2 slices"] # Assumes ID exists
+             ],
              "Butter bread on outside, add cheese in between; grill until golden."],
-            ["Quesadilla", 15, 
+            ["Quesadilla", 15,
              [
-                 [self._get_food_id_by_name("Tortilla"), "Tortilla", "to taste"], 
-                 [self._get_food_id_by_name("Shredded cheese"), "cheese", "to taste"], 
-                 [self._get_food_id_by_name("Pre-cooked chicken"), "pre-cooked chicken or turkey", "to taste"] # Map turkey to chicken
-             ], 
+                 [self._get_food_id_by_name("Tortilla"), "Tortilla", "1 large"],
+                 [self._get_food_id_by_name("Shredded cheese"), "cheese", "1/2 cup"],
+                 [self._get_food_id_by_name("Pre-cooked chicken"), "pre-cooked chicken or turkey", "3 oz"] # Map turkey to chicken
+             ],
              "Fill tortilla with cheese and meat; cook in pan until tortilla is crispy and cheese melts."],
-            ["Mac and Cheese with Bacon", 15, 
+            ["Mac and Cheese with Bacon", 15,
              [
-                 [self._get_food_id_by_name("Boxed mac and cheese"), "Boxed mac and cheese", "to taste"], # Assumes ID exists
-                 [self._get_food_id_by_name("Bacon"), "bacon bits", "to taste"] # Map bits to bacon
-             ], 
+                 [self._get_food_id_by_name("Boxed mac and cheese"), "Boxed mac and cheese", "1 box (prepared)"], # Assumes ID exists
+                 [self._get_food_id_by_name("Bacon"), "bacon bits", "2 tbsp, cooked & crumbled"] # Map bits to bacon
+             ],
              "Prepare mac and cheese per box directions; stir in cooked bacon bits."],
-            ["Instant Ramen with Egg", 10, 
+            ["Instant Ramen with Egg", 10,
              [
-                 [self._get_food_id_by_name("Instant ramen"), "Instant ramen", "to taste"], 
-                 [self._get_food_id_by_name("Eggs"), "egg", "to taste"], 
-                 [None, "water", "to taste"] # No ID for water
-             ], 
+                 [self._get_food_id_by_name("Instant ramen"), "Instant ramen", "1 package"],
+                 [self._get_food_id_by_name("Eggs"), "egg", "1"],
+                 [None, "water", "per package"] # No ID for water
+             ],
              "Cook ramen as directed; add a boiled or poached egg before serving."],
-            ["Bagel with Cream Cheese and Bacon", 10, 
+            ["Bagel with Cream Cheese and Bacon", 10,
              [
-                 [self._get_food_id_by_name("Bagel"), "Bagel", "to taste"], # Assumes ID exists
-                 [self._get_food_id_by_name("Cream cheese"), "cream cheese", "to taste"], 
-                 [self._get_food_id_by_name("Bacon"), "bacon", "to taste"]
-             ], 
+                 [self._get_food_id_by_name("Bagel"), "Bagel", "1"], # Assumes ID exists
+                 [self._get_food_id_by_name("Cream cheese"), "cream cheese", "2 tbsp"],
+                 [self._get_food_id_by_name("Bacon"), "bacon", "2 strips, cooked"]
+             ],
              "Toast bagel; spread cream cheese; add cooked bacon."],
-            ["Spaghetti with Meat Sauce", 25, 
+            ["Spaghetti with Meat Sauce", 25,
              [
-                 [self._get_food_id_by_name("Spaghetti"), "Spaghetti", "to taste"], 
-                 [self._get_food_id_by_name("Ground beef"), "ground beef", "to taste"], 
-                 [self._get_food_id_by_name("Non-chunky tomato sauce"), "non-chunky tomato sauce", "to taste"], 
-                 [self._get_food_id_by_name("Parmesan cheese"), "parmesan", "to taste"]
-             ], 
+                 [self._get_food_id_by_name("Spaghetti"), "Spaghetti", "1 serving (2 oz dry)"],
+                 [self._get_food_id_by_name("Ground beef"), "ground beef", "4 oz"],
+                 [self._get_food_id_by_name("Non-chunky tomato sauce"), "non-chunky tomato sauce", "1/2 cup"],
+                 [self._get_food_id_by_name("Parmesan cheese"), "parmesan", "1 tbsp, grated"]
+             ],
              "Cook spaghetti; brown ground beef; mix with tomato sauce; serve over pasta with parmesan."],
-            ["Chicken Alfredo", 20, 
+            ["Chicken Alfredo", 20,
              [
-                 [self._get_food_id_by_name("Pasta"), "Pasta", "to taste"], # Assumes generic Pasta ID exists
-                 [self._get_food_id_by_name("Alfredo sauce"), "store-bought Alfredo sauce", "to taste"], # Assumes ID exists
-                 [self._get_food_id_by_name("Pre-cooked chicken"), "pre-cooked chicken", "to taste"]
-             ], 
+                 [self._get_food_id_by_name("Pasta"), "Pasta", "1 serving (2 oz dry)"], # Assumes generic Pasta ID exists
+                 [self._get_food_id_by_name("Alfredo sauce"), "store-bought Alfredo sauce", "1/2 cup"], # Assumes ID exists
+                 [self._get_food_id_by_name("Pre-cooked chicken"), "pre-cooked chicken", "4 oz"]
+             ],
              "Cook pasta; heat Alfredo sauce and chicken together; combine with pasta."],
-            ["Pulled Pork with BBQ", 25, 
+            ["Pulled Pork with BBQ", 25,
              [
-                 [self._get_food_id_by_name("Pre-cooked pulled pork"), "Pre-cooked pulled pork", "to taste"], 
-                 [self._get_food_id_by_name("BBQ sauce"), "BBQ sauce", "to taste"], 
-                 [self._get_food_id_by_name("Instant mashed potatoes"), "instant mashed potatoes or rice", "to taste"] # Map rice to potatoes
-             ], 
+                 [self._get_food_id_by_name("Pre-cooked pulled pork"), "Pre-cooked pulled pork", "6 oz"],
+                 [self._get_food_id_by_name("BBQ sauce"), "BBQ sauce", "1/4 cup"],
+                 [self._get_food_id_by_name("Instant mashed potatoes"), "instant mashed potatoes or rice", "1 serving"] # Map rice to potatoes
+             ],
              "Heat pulled pork with BBQ sauce; serve with instant mashed potatoes or rice."],
-            ["Shrimp Scampi", 15, 
+            ["Shrimp Scampi", 15,
              [
-                 [self._get_food_id_by_name("Pre-cooked shrimp"), "Pre-cooked shrimp", "to taste"], 
-                 [self._get_food_id_by_name("Pasta"), "pasta", "to taste"], 
-                 [self._get_food_id_by_name("Garlic"), "garlic", "to taste"], 
-                 [self._get_food_id_by_name("Butter"), "butter", "to taste"], 
-                 [self._get_food_id_by_name("Olive oil"), "olive oil", "to taste"], 
-                 [self._get_food_id_by_name("Parsley"), "parsley", "to taste"] # Assumes ID exists
-             ], 
+                 [self._get_food_id_by_name("Pre-cooked shrimp"), "Pre-cooked shrimp", "4 oz"],
+                 [self._get_food_id_by_name("Pasta"), "pasta", "1 serving (2 oz dry)"],
+                 [self._get_food_id_by_name("Garlic"), "garlic", "1 clove, minced"],
+                 [self._get_food_id_by_name("Butter"), "butter", "1 tbsp"],
+                 [self._get_food_id_by_name("Olive oil"), "olive oil", "1 tbsp"],
+                 [self._get_food_id_by_name("Parsley"), "parsley", "1 tsp, chopped"] # Assumes ID exists
+             ],
              "Cook pasta; sauté garlic in butter and olive oil; add shrimp; toss with pasta and parsley."],
-            ["Philly Cheesesteak Sliders", 25, 
+            ["Philly Cheesesteak Sliders", 25,
              [
-                 [self._get_food_id_by_name("Thinly sliced steak"), "Thinly sliced steak", "to taste"], 
-                 [self._get_food_id_by_name("Slider buns"), "slider buns", "to taste"], # Assumes ID exists
-                 [self._get_food_id_by_name("Shredded cheese"), "cheese", "to taste"], 
-                 [self._get_food_id_by_name("Onions"), "onions", "to taste"]
-             ], 
+                 [self._get_food_id_by_name("Thin-sliced steak"), "Thinly sliced steak", "6 oz"], # Corrected typo here
+                 [self._get_food_id_by_name("Slider buns"), "slider buns", "3"], # Assumes ID exists
+                 [self._get_food_id_by_name("Shredded cheese"), "cheese", "1/2 cup"],
+                 [self._get_food_id_by_name("Onions"), "onions", "1/4 cup, sliced"]
+             ],
              "Sauté steak and onions; place mixture and cheese on slider buns; heat until cheese melts."],
-            ["Chicken Tenders and Fries", 25, 
+            ["Chicken Tenders and Fries", 25,
              [
-                 [self._get_food_id_by_name("Chicken tenders"), "Pre-breaded chicken tenders", "to taste"], # Assumes ID exists
-                 [self._get_food_id_by_name("Frozen fries"), "frozen fries", "to taste"] # Assumes ID exists
-             ], 
+                 [self._get_food_id_by_name("Chicken tenders"), "Pre-breaded chicken tenders", "3-4"], # Assumes ID exists
+                 [self._get_food_id_by_name("Frozen fries"), "frozen fries", "1 serving"] # Assumes ID exists
+             ],
              "Bake chicken tenders and fries as per package instructions; serve together."],
-            ["Beef Tacos", 20, 
+            ["Beef Tacos", 20,
              [
-                 [self._get_food_id_by_name("Ground beef"), "Ground beef", "to taste"], 
-                 [self._get_food_id_by_name("Taco seasoning"), "taco seasoning", "to taste"], 
-                 [self._get_food_id_by_name("Taco shells"), "taco shells", "to taste"], 
-                 [self._get_food_id_by_name("Shredded cheese"), "cheese", "to taste"]
-             ], 
+                 [self._get_food_id_by_name("Ground beef"), "Ground beef", "4 oz"],
+                 [self._get_food_id_by_name("Taco seasoning"), "taco seasoning", "1 tbsp"],
+                 [self._get_food_id_by_name("Taco shells"), "taco shells", "2-3"],
+                 [self._get_food_id_by_name("Shredded cheese"), "cheese", "1/4 cup"]
+             ],
              "Cook beef with taco seasoning; fill taco shells with beef and top with cheese."],
-            ["Stir-Fry with Pre-Cooked Chicken", 20, 
+            ["Stir-Fry with Pre-Cooked Chicken", 20,
              [
-                 [self._get_food_id_by_name("Pre-cooked chicken"), "Pre-cooked chicken strips", "to taste"], 
-                 [self._get_food_id_by_name("Frozen mixed vegetables"), "frozen mixed vegetables", "to taste"], 
-                 [self._get_food_id_by_name("Soy sauce"), "soy sauce", "to taste"], 
-                 [self._get_food_id_by_name("Microwaveable rice"), "microwaveable rice", "to taste"]
-             ], 
+                 [self._get_food_id_by_name("Pre-cooked chicken"), "Pre-cooked chicken strips", "4 oz"],
+                 [self._get_food_id_by_name("Frozen mixed vegetables"), "frozen mixed vegetables", "1 cup"],
+                 [self._get_food_id_by_name("Soy sauce"), "soy sauce", "2 tbsp"],
+                 [self._get_food_id_by_name("Microwaveable rice"), "microwaveable rice", "1 serving"]
+             ],
              "Stir-fry chicken and vegetables with soy sauce; serve over heated rice."],
-            ["Pasta with Pesto", 15, 
+            ["Pasta with Pesto", 15,
              [
-                 [self._get_food_id_by_name("Pasta"), "Pasta", "to taste"], 
-                 [self._get_food_id_by_name("Pesto"), "store-bought pesto", "to taste"], # Assumes ID exists
-                 [self._get_food_id_by_name("Parmesan cheese"), "parmesan cheese", "to taste"]
-             ], 
+                 [self._get_food_id_by_name("Pasta"), "Pasta", "1 serving (2 oz dry)"],
+                 [self._get_food_id_by_name("Pesto"), "store-bought pesto", "1/4 cup"], # Assumes ID exists
+                 [self._get_food_id_by_name("Parmesan cheese"), "parmesan cheese", "1 tbsp, grated"]
+             ],
              "Cook pasta; toss with pesto and sprinkle parmesan on top."],
-            ["Sloppy Joes", 20, 
+            ["Sloppy Joes", 20,
              [
-                 [self._get_food_id_by_name("Ground beef"), "Ground beef", "to taste"], 
-                 [self._get_food_id_by_name("Sloppy joe sauce"), "sloppy joe sauce", "to taste"], # Assumes ID exists
-                 [self._get_food_id_by_name("Hamburger buns"), "hamburger buns", "to taste"]
-             ], 
+                 [self._get_food_id_by_name("Ground beef"), "Ground beef", "4 oz"],
+                 [self._get_food_id_by_name("Sloppy joe sauce"), "sloppy joe sauce", "1/4 cup"], # Assumes ID exists
+                 [self._get_food_id_by_name("Hamburger buns"), "hamburger buns", "1"] # Corrected ID lookup here
+             ],
              "Brown ground beef; mix with sloppy joe sauce; spoon onto hamburger buns."]
         ]
         
         # Hardcoded meal ideas list - **Updated ingredient format**
         self.meal_ideas = [
-            ('Garlic Salmon Pasta', 30, 
+            ('Garlic Salmon Pasta', 30,
              [
-                 [self._get_food_id_by_name("Salmon"), "salmon", "to taste"], 
-                 [self._get_food_id_by_name("Spaghetti"), "spaghetti", "to taste"], 
-                 [self._get_food_id_by_name("Garlic"), "garlic", "to taste"], 
-                 [self._get_food_id_by_name("Olive oil"), "olive oil", "to taste"], 
-                 [self._get_food_id_by_name("Parmesan cheese"), "parmesan cheese", "to taste"]
-             ], 
+                 [self._get_food_id_by_name("Salmon"), "salmon", "1 fillet (4-6 oz)"],
+                 [self._get_food_id_by_name("Spaghetti"), "spaghetti", "1 serving (2 oz dry)"],
+                 [self._get_food_id_by_name("Garlic"), "garlic", "2 cloves, minced"],
+                 [self._get_food_id_by_name("Olive oil"), "olive oil", "2 tbsp"],
+                 [self._get_food_id_by_name("Parmesan cheese"), "parmesan cheese", "2 tbsp, grated"]
+             ],
              '1. Cook spaghetti according to package instructions. \n2. In a pan, heat olive oil and garlic, then add salmon and cook until done. \n3. Combine cooked pasta with salmon, garlic, and olive oil. \n4. Serve with grated parmesan cheese on top.'),
-            ('Bacon Egg Sourdough Toast', 20, 
+            ('Bacon Egg Sourdough Toast', 20,
              [
-                 [self._get_food_id_by_name("Sourdough bread"), "sourdough bread", "to taste"], 
-                 [self._get_food_id_by_name("Eggs"), "eggs", "to taste"], 
-                 [self._get_food_id_by_name("Bacon"), "bacon", "to taste"], 
-                 [self._get_food_id_by_name("Shredded cheese"), "shredded cheese", "to taste"], 
-                 [self._get_food_id_by_name("Butter"), "butter", "to taste"]
+                 [self._get_food_id_by_name("Sourdough bread"), "sourdough bread", "2 slices"],
+                 [self._get_food_id_by_name("Eggs"), "eggs", "2"],
+                 [self._get_food_id_by_name("Bacon"), "bacon", "2 strips, cooked"],
+                 [self._get_food_id_by_name("Shredded cheese"), "shredded cheese", "1/4 cup"],
+                 [self._get_food_id_by_name("Butter"), "butter", "1 tbsp"]
              ],
              '1. Cook bacon until crispy, then scramble eggs. \n2. Toast sourdough bread slices. \n3. Assemble by placing scrambled eggs and bacon on top of the toast. \n4. Sprinkle shredded cheese and melt under broiler. \n5. Serve hot with a side of butter.'),
-            ('Sesame Ginger Chicken Wrap', 25, 
+            ('Sesame Ginger Chicken Wrap', 25,
              [
-                 [self._get_food_id_by_name("Rotisserie chicken"), "rotisserie chicken", "to taste"], 
-                 [self._get_food_id_by_name("Tortilla"), "tortilla", "to taste"], 
-                 [self._get_food_id_by_name("Garlic"), "garlic", "to taste"], 
-                 [self._get_food_id_by_name("Ginger"), "ginger", "to taste"], 
-                 [self._get_food_id_by_name("Sesame seeds"), "sesame seeds", "to taste"], 
-                 [self._get_food_id_by_name("Soy sauce"), "soy sauce", "to taste"], 
-                 [self._get_food_id_by_name("Shredded cheese"), "shredded cheese", "to taste"]
+                 [self._get_food_id_by_name("Rotisserie chicken"), "rotisserie chicken", "4 oz, shredded"],
+                 [self._get_food_id_by_name("Tortilla"), "tortilla", "1 large"],
+                 [self._get_food_id_by_name("Garlic"), "garlic", "1 clove, minced"],
+                 [self._get_food_id_by_name("Ginger"), "ginger", "1/2 tsp, minced"],
+                 [self._get_food_id_by_name("Sesame seeds"), "sesame seeds", "1 tsp"],
+                 [self._get_food_id_by_name("Soy sauce"), "soy sauce", "1 tbsp"],
+                 [self._get_food_id_by_name("Shredded cheese"), "shredded cheese", "1/4 cup"]
              ],
              '1. Shred rotisserie chicken and mix with garlic, ginger, sesame seeds, and soy sauce. \n2. Warm tortilla and fill with the chicken mixture. \n3. Sprinkle shredded cheese on top. \n4. Roll up the wrap and enjoy.'),
-            ('Cheesy Chicken Tortilla Bake', 40, 
+            ('Cheesy Chicken Tortilla Bake', 40,
              [
-                 [self._get_food_id_by_name("Pre-cooked chicken"), "pre-cooked chicken", "to taste"], 
-                 [self._get_food_id_by_name("Tortilla"), "tortilla", "to taste"], 
-                 [self._get_food_id_by_name("Non-chunky tomato sauce"), "non-chunky tomato sauce", "to taste"], 
-                 [self._get_food_id_by_name("Shredded cheese"), "shredded cheese", "to taste"], 
-                 [self._get_food_id_by_name("Onions"), "onions", "to taste"]
+                 [self._get_food_id_by_name("Pre-cooked chicken"), "pre-cooked chicken", "6 oz, chopped"],
+                 [self._get_food_id_by_name("Tortilla"), "tortilla", "3-4 small"],
+                 [self._get_food_id_by_name("Non-chunky tomato sauce"), "non-chunky tomato sauce", "1 cup"],
+                 [self._get_food_id_by_name("Shredded cheese"), "shredded cheese", "1 cup"],
+                 [self._get_food_id_by_name("Onions"), "onions", "1/4 cup, chopped"]
              ],
              '1. Preheat oven to 350°F. \n2. Layer tortillas, chicken, tomato sauce, onions, and shredded cheese in a baking dish. \n3. Repeat layers and top with more cheese. \n4. Bake for 25-30 minutes until cheese is melted and bubbly. \n5. Serve hot.'),
-            ('Bacon Egg Fried Rice', 25, 
+            ('Bacon Egg Fried Rice', 25,
              [
-                 [self._get_food_id_by_name("Bacon"), "Bacon", "to taste"], 
-                 [self._get_food_id_by_name("Eggs"), "Eggs", "to taste"], 
-                 [self._get_food_id_by_name("White rice"), "White rice", "to taste"], 
-                 [self._get_food_id_by_name("Onions"), "Onion", "to taste"], 
-                 [self._get_food_id_by_name("Garlic"), "Garlic", "to taste"], 
-                 [self._get_food_id_by_name("Frozen mixed vegetables"), "Frozen mixed vegetables", "to taste"], 
-                 [self._get_food_id_by_name("Soy sauce"), "Soy sauce", "to taste"], 
-                 [self._get_food_id_by_name("Olive oil"), "Olive oil", "to taste"]
+                 [self._get_food_id_by_name("Bacon"), "Bacon", "2 strips, chopped"],
+                 [self._get_food_id_by_name("Eggs"), "Eggs", "1-2"],
+                 [self._get_food_id_by_name("White rice"), "White rice", "1 cup, cooked & cooled"],
+                 [self._get_food_id_by_name("Onions"), "Onion", "1/4 cup, chopped"],
+                 [self._get_food_id_by_name("Garlic"), "Garlic", "1 clove, minced"],
+                 [self._get_food_id_by_name("Frozen mixed vegetables"), "Frozen mixed vegetables", "1/2 cup"],
+                 [self._get_food_id_by_name("Soy sauce"), "Soy sauce", "1-2 tbsp"],
+                 [self._get_food_id_by_name("Olive oil"), "Olive oil", "1 tbsp"]
              ],
              '1. Cook bacon until crispy, then set aside. \n2. In the same pan, sauté onions and garlic. \n3. Add cooked white rice and frozen mixed vegetables. \n4. Push rice to the side, scramble eggs, and mix in. \n5. Crumble bacon and add to the rice. \n6. Season with soy sauce and serve hot.'),
-            ('Chicken Tomato Garlic Pasta', 30, 
+            ('Chicken Tomato Garlic Pasta', 30,
              [
-                 [self._get_food_id_by_name("Rotisserie chicken"), "Rotisserie chicken", "to taste"], 
-                 [self._get_food_id_by_name("Spaghetti"), "Spaghetti", "to taste"], 
-                 [self._get_food_id_by_name("Non-chunky tomato sauce"), "Non-chunky tomato sauce", "to taste"], 
-                 [self._get_food_id_by_name("Garlic"), "Garlic", "to taste"], 
-                 [self._get_food_id_by_name("Olive oil"), "Olive oil", "to taste"], 
-                 [self._get_food_id_by_name("Parmesan cheese"), "Parmesan cheese", "to taste"]
+                 [self._get_food_id_by_name("Rotisserie chicken"), "Rotisserie chicken", "4 oz, shredded"],
+                 [self._get_food_id_by_name("Spaghetti"), "Spaghetti", "1 serving (2 oz dry)"],
+                 [self._get_food_id_by_name("Non-chunky tomato sauce"), "Non-chunky tomato sauce", "1/2 cup"],
+                 [self._get_food_id_by_name("Garlic"), "Garlic", "2 cloves, minced"],
+                 [self._get_food_id_by_name("Olive oil"), "Olive oil", "1 tbsp"],
+                 [self._get_food_id_by_name("Parmesan cheese"), "Parmesan cheese", "2 tbsp, grated"]
              ],
              '1. Cook spaghetti according to package instructions. \n2. In a pan, heat olive oil and garlic, then add shredded rotisserie chicken. \n3. Pour in tomato sauce and simmer. \n4. Toss cooked pasta in the sauce. \n5. Serve with grated parmesan cheese on top.'),
-            ('Ginger Soy Salmon Stir-Fry', 25, 
+            ('Ginger Soy Salmon Stir-Fry', 25,
              [
-                 [self._get_food_id_by_name("Salmon"), "Salmon", "to taste"], 
-                 [self._get_food_id_by_name("Frozen mixed vegetables"), "Frozen mixed vegetables", "to taste"], 
-                 [self._get_food_id_by_name("Onions"), "Onion", "to taste"], 
-                 [self._get_food_id_by_name("Garlic"), "Garlic", "to taste"], 
-                 [self._get_food_id_by_name("Ginger"), "Ginger", "to taste"], 
-                 [self._get_food_id_by_name("Soy sauce"), "Soy sauce", "to taste"], 
-                 [self._get_food_id_by_name("Microwaveable rice"), "Microwaveable rice", "to taste"]
+                 [self._get_food_id_by_name("Salmon"), "Salmon", "1 fillet (4-6 oz)"],
+                 [self._get_food_id_by_name("Frozen mixed vegetables"), "Frozen mixed vegetables", "1 cup"],
+                 [self._get_food_id_by_name("Onions"), "Onion", "1/4 cup, chopped"],
+                 [self._get_food_id_by_name("Garlic"), "Garlic", "1 clove, minced"],
+                 [self._get_food_id_by_name("Ginger"), "Ginger", "1/2 tsp, minced"],
+                 [self._get_food_id_by_name("Soy sauce"), "Soy sauce", "2 tbsp"],
+                 [self._get_food_id_by_name("Microwaveable rice"), "Microwaveable rice", "1 serving"]
              ],
              '1. In a pan, stir-fry salmon, vegetables, onion, garlic, and ginger. \n2. Add soy sauce and cook until salmon is done. \n3. Microwave rice according to package instructions. \n4. Serve stir-fry over rice.'),
-            ('Steak Cheddar Sourdough Melt', 35, 
+            ('Steak Cheddar Sourdough Melt', 35,
              [
-                 [self._get_food_id_by_name("Thin-sliced steak"), "Thin-sliced steak", "to taste"], 
-                 [self._get_food_id_by_name("Sourdough bread"), "Sourdough bread", "to taste"], 
-                 [self._get_food_id_by_name("Shredded cheese"), "Shredded cheese", "to taste"], # Changed from cheddar
-                 [self._get_food_id_by_name("Onions"), "Onion", "to taste"], 
-                 [self._get_food_id_by_name("Butter"), "Butter", "to taste"], 
-                 [self._get_food_id_by_name("Mayo"), "Mayo", "to taste"]
+                 [self._get_food_id_by_name("Thin-sliced steak"), "Thin-sliced steak", "4-6 oz"],
+                 [self._get_food_id_by_name("Sourdough bread"), "Sourdough bread", "2 slices"],
+                 [self._get_food_id_by_name("Shredded cheese"), "Shredded cheese", "1/4 cup"], # Changed from cheddar
+                 [self._get_food_id_by_name("Onions"), "Onion", "1/4 cup, sliced"],
+                 [self._get_food_id_by_name("Butter"), "Butter", "1 tbsp"],
+                 [self._get_food_id_by_name("Mayo"), "Mayo", "1 tbsp"]
              ],
              '1. Cook steak slices in a pan until desired doneness. \n2. Butter sourdough bread slices and toast. \n3. Spread mayo on one side of the bread. \n4. Layer steak, shredded cheese, and onions on the other side. \n5. Close the sandwich and grill until cheese melts. \n6. Serve hot.'),
-            ('Shrimp and Bacon Carbonara', 30, 
+            ('Shrimp and Bacon Carbonara', 30,
              [
-                 [self._get_food_id_by_name("Pre-cooked shrimp"), "Pre-cooked shrimp", "to taste"], 
-                 [self._get_food_id_by_name("Bacon"), "Bacon", "to taste"], 
-                 [self._get_food_id_by_name("Eggs"), "Eggs", "to taste"], 
-                 [self._get_food_id_by_name("Spaghetti"), "Spaghetti", "to taste"], 
-                 [self._get_food_id_by_name("Parmesan cheese"), "Parmesan cheese", "to taste"], 
-                 [self._get_food_id_by_name("Olive oil"), "Olive oil", "to taste"], 
-                 [self._get_food_id_by_name("Garlic"), "Garlic", "to taste"]
+                 [self._get_food_id_by_name("Pre-cooked shrimp"), "Pre-cooked shrimp", "4 oz"],
+                 [self._get_food_id_by_name("Bacon"), "Bacon", "2 strips, chopped"],
+                 [self._get_food_id_by_name("Eggs"), "Eggs", "1 yolk + 1 whole"],
+                 [self._get_food_id_by_name("Spaghetti"), "Spaghetti", "1 serving (2 oz dry)"],
+                 [self._get_food_id_by_name("Parmesan cheese"), "Parmesan cheese", "1/4 cup, grated"],
+                 [self._get_food_id_by_name("Olive oil"), "Olive oil", "1 tbsp"],
+                 [self._get_food_id_by_name("Garlic"), "Garlic", "1 clove, minced"]
              ],
              '1. Cook bacon until crispy, then set aside. \n2. In the same pan, sauté garlic and shrimp. \n3. Cook spaghetti according to package instructions. \n4. Whisk eggs and parmesan cheese in a bowl. \n5. Drain pasta and toss with egg mixture. \n6. Add shrimp and crumbled bacon. \n7. Serve hot.')
         ]
