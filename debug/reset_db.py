@@ -15,7 +15,6 @@ from db.db_functions import Database, Inventory, TasteProfile, SavedMeals
 from db.db_functions import NewMealIdeas, SavedMealsInStockIds, NewMealIdeasInStockIds
 from db.db_functions import DailyPlanner, ShoppingList, IngredientsFood, init_tables, DB_PATH
 from db.meal_availability import MealAvailabilityUpdater, update_all_meal_availability
-from db.ingredient_matcher import IngredientMatcher
 
 class ResetDB:
     def __init__(self, add_to_shopping_list=False):
