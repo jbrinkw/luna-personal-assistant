@@ -481,26 +481,32 @@ class MealPlanningRouter:
         self.llm_model = llm_model
         self.chat = ChatOpenAI(model=self.llm_model, openai_api_key=self.api_key)
         self.router_prompt = (
-            "You are a meal planning assistant that routes user requests to the appropriate layer based on conversation history.\n\n"
-            "Determine the user's intent based on the flow of the conversation:\n"
-            "1. Is the user initiating meal planning or asking to update meal *intents* (preferences, time constraints, etc.) for specific dates? → LAYER_1_INTENT_GENERATION\n"
-            "2. Did the assistant *just* present meal intents (e.g., 'Breakfast: quick and easy...') AND is the user now asking to select *actual meals* based on those intents? → LAYER_2_MEAL_SELECTION\n"
-            "3. Is the user making a general chat request unrelated to these two steps? → GENERAL_CHAT\n\n"
-            "CRITICAL CONTEXT: Layer 1 is the default for starting or modifying the *plan* itself. Layer 2 ONLY happens *after* Layer 1 has shown the generated intents, and the user confirms they want to proceed with *selecting the specific meals*.\n"
-            "Pay close attention to the *most recent* assistant message and the user's reply to determine if the transition to Layer 2 is appropriate.\n\n"
-            "Input: Recent conversation history\n{message_history}\n\n"
+            "You are a meal planning assistant that routes user requests to the appropriate layer. "
+            "Analyze the **single user message provided** to determine the user's current intent within the meal planning flow.\n\n"
+            "Determine the intent:\n"
+            "1. **LAYER_1_INTENT_GENERATION:** If the user is asking to *start* planning, *modify* existing plans/intents, or asking *about* the plan for specific dates (e.g., 'plan my week', 'change Wednesday', 'what is the plan for Friday?'). This is the default if unsure. \n"
+            "2. **LAYER_2_MEAL_SELECTION:** If the user's message clearly indicates they want to proceed with selecting *specific meals* based on previously presented intents (e.g., contains keywords like 'select meals', 'choose meals', 'proceed', 'go ahead', 'pick recipes', 'use those intents'). \n"
+            "3. **GENERAL_CHAT:** If the message is unrelated to planning or selecting meals (e.g., 'hello', 'thank you').\n\n"
+            "User Message:\n{user_message}\n\n"
             "Output: Respond ONLY with 'LAYER_1_INTENT_GENERATION', 'LAYER_2_MEAL_SELECTION', or 'GENERAL_CHAT'."
         )
 
     def determine_intent(self, message_history: List[Union[AIMessage, HumanMessage, SystemMessage]]) -> str:
-        formatted_history = "\n".join([
-            f"{'User' if isinstance(msg, HumanMessage) else 'Assistant'}: {msg.content}"
-            for msg in message_history[-10:]
-        ])
+        # Extract the single user message from the (minimal) history
+        user_message = ""
+        if message_history and isinstance(message_history[-1], HumanMessage):
+            user_message = message_history[-1].content
+        else:
+            # Fallback or handle error if no user message found
+            print("[WARN MealPlanningRouter] No user message found in history.")
+            return "GENERAL_CHAT" 
+            
         prompt = ChatPromptTemplate.from_template(self.router_prompt)
-        formatted_prompt = prompt.format(message_history=formatted_history)
+        # Pass only the single message to the prompt
+        formatted_prompt = prompt.format(user_message=user_message) 
         response = self.chat.invoke(formatted_prompt)
         intent = response.content.strip()
+        # Simplify intent checking
         if "LAYER_1" in intent:
             return "LAYER_1_INTENT_GENERATION"
         elif "LAYER_2" in intent:
@@ -526,98 +532,162 @@ class MealPlanningTool:
         
         print("[MealPlanningTool] Initialized")
 
+    # --- NEW HELPER METHOD ---
+    def find_meal_by_name(self, name: str) -> Optional[int]:
+        """Find a meal ID by name using the tool's saved_meals table access."""
+        if not name or 'saved_meals' not in self.tables:
+            return None
+        
+        saved_meals = self.tables['saved_meals']
+        try:
+            all_meals = saved_meals.read()
+            if not all_meals:
+                return None
+                
+            # Case-insensitive comparison
+            name_lower = name.lower()
+            
+            # First try exact match
+            for meal in all_meals:
+                if meal['name'].lower() == name_lower:
+                    return meal['id']
+                    
+            # Then try partial match (e.g., "tuna ramen" matches "Spicy Tuna Ramen")
+            for meal in all_meals:
+                if name_lower in meal['name'].lower():
+                    return meal['id']
+                    
+            return None
+        except Exception as e:
+             print(f"[ERROR MealPlanningTool] Failed to find meal by name '{name}': {e}")
+             return None
+    # --- END NEW HELPER METHOD ---
+
     def execute(self, chat_history: List) -> str:
         """Execute the meal planning process based on conversation history."""
-        print("[MealPlanningTool] Executing...")
+        # print("-- [MealPlanningTool] START execute --") # Log Start (Removed)
         try:
             # Determine the correct layer using the internal router
+            # print("  Calling internal router...") # Log Router Call (Removed)
             layer_intent = self.router.determine_intent(chat_history)
-            print(f"[MealPlanningTool] Determined intent: {layer_intent}")
+            # print(f"  Internal router returned: {layer_intent}") # Log Router Result (Removed)
             
             # Get the latest user message from the history
             user_message = ""
             if chat_history and isinstance(chat_history[-1], HumanMessage):
                 user_message = chat_history[-1].content
-            else:
-                 print("[WARN] Could not extract latest user message from history.")
-                 # Handle case where history is empty or last message isn't human
-                 # Might need a default user_message or return an error
+            # else:
+                 # print("  [WARN] Could not extract latest user message from history.") # Log Warn (Removed)
+                 # user_message = "" # Default to empty if not found
 
             response_content = ""
             
             # --- Layer 1: Generate Intents --- 
             if layer_intent == "LAYER_1_INTENT_GENERATION":
-                print("[MealPlanningTool] Executing Layer 1: Generate Intents...")
+                # print("  Entering Layer 1: Generate Intents...") # Log Layer 1 (Removed)
                 
                 if not user_message:
+                    # print("  [WARN] Empty user message for Layer 1.") # Log Warn Empty (Removed)
                     return "I couldn't understand your request for meal planning. Could you please provide more details?"
+                
+                # --- Check for Specific Meal Planning --- 
+                # print("  Checking for specific meal name in request...") # Log Specific Check (Removed)
+                specific_meal_match = re.search(r"plan\s+(?:an?|the)?\s*(.*?)\s+(?:for|on)\b", user_message, re.IGNORECASE)
+                meal_name_to_plan = None
+                meal_id_to_plan = None
+                if specific_meal_match:
+                    potential_meal_name = specific_meal_match.group(1).strip().replace("'", "") # Clean up name
+                    # print(f"  Potential specific meal: '{potential_meal_name}'") # Log Potential Name (Removed)
+                    found_id = self.find_meal_by_name(potential_meal_name) 
+                    if found_id:
+                        meal_id_to_plan = found_id
+                        meal_data = self.tables['saved_meals'].read(found_id)
+                        meal_name_to_plan = meal_data[0]['name'] if meal_data and meal_data[0] else potential_meal_name
+                        # print(f"  Found Saved Meal ID: {meal_id_to_plan} ({meal_name_to_plan})") # Log Found ID (Removed)
+                    # else:
+                        # print(f"  Specific meal '{potential_meal_name}' not found in saved meals.") # Log Not Found (Removed)
+                # --- END Specific Check ---
                     
                 # Extract date range 
-                date_range = self.note_intent_generator.extract_date_range(user_message) # Use note_intent_generator for better error handling
+                # print("  Extracting date range...") # Log Date Extract (Removed)
+                date_range = self.note_intent_generator.extract_date_range(user_message)
                 
                 if date_range is None or date_range.days_count == 0:
+                    # print("  Date range extraction failed or returned 0 days.") # Log Date Fail (Removed)
                     return "I need a bit more information to plan your meals. Please specify for which day(s) or how long you'd like to plan (e.g., 'next 3 days', 'Monday to Wednesday')."
                     
                 start_date = date_range.start_date
                 days_count = date_range.days_count
                 
-                print(f"  Planning for {days_count} days starting from {start_date}")
+                # print(f"  Date range extracted: Start={start_date}, Days={days_count}") # Log Date Success (Removed)
 
                 # Clear existing meal IDs (preserving notes) for the range
+                # print("  Clearing existing meal IDs for date range...") # Log Clear IDs (Removed)
                 self.note_intent_generator.clear_date_range(start_date, days_count)
+                # print("  Meal IDs cleared.") # Log Clear Done (Removed)
                 
-                all_intents = []
-                current_planning_date = start_date
-                for _ in range(days_count):
-                    # Use note_intent_generator to create/update intents in notes
-                    meal_intent = self.note_intent_generator.generate_meal_intent(user_message, current_planning_date)
-                    self.note_intent_generator.save_meal_intent_to_db(current_planning_date, meal_intent)
-                    all_intents.append((current_planning_date, meal_intent))
-                    current_planning_date += timedelta(days=1)
+                # --- Plan Specific Meal or Generate Intents ---
+                if meal_id_to_plan and days_count == 1: # Only plan specific meal if found and for a single day request
+                    # print(f"  Attempting to plan specific meal ID {meal_id_to_plan} for {start_date}...") # Log Plan Specific (Removed)
+                    # Update the database directly with the meal ID
+                    self.tables["daily_planner"].update( # CHANGE: Use update instead of create
+                        day=start_date,
+                        notes=f"Planned: {meal_name_to_plan}", # Simple note
+                        meal_ids=json.dumps([meal_id_to_plan])
+                    )
+                    response_content = f"Okay, I've planned **{meal_name_to_plan}** for {start_date.strftime('%A, %B %d')}."
+                    # print("  Specific meal planned successfully.") # Log Plan Specific Done (Removed)
+                else:
+                    # Fallback to generating intents if no specific meal found or multi-day request
+                    # if meal_id_to_plan: print("  Specific meal found, but multi-day request. Generating intents instead.") # Log Intent Fallback (Multi-day) (Removed)
+                    # else: print("  No specific meal found in request. Generating intents...") # Log Intent Fallback (Not Found) (Removed)
                     
-                # Format response for the user
-                response_content = "Okay, I've created initial meal intents based on your request:\n\n"
-                for plan_date, intent in all_intents:
-                    response_content += f"**{plan_date.strftime('%Y-%m-%d, %A')}**:\n"
-                    response_content += f"  - Breakfast: {intent.breakfast}\n"
-                    response_content += f"  - Lunch: {intent.lunch}\n"
-                    response_content += f"  - Dinner: {intent.dinner}\n"
-                response_content += "\nWould you like me to select specific meals based on these intents?"
+                    all_intents = []
+                    current_planning_date = start_date
+                    for i in range(days_count):
+                        # print(f"    Generating intent for day {i+1} ({current_planning_date})...") # Log Intent Gen Loop (Removed)
+                        meal_intent = self.note_intent_generator.generate_meal_intent(user_message, current_planning_date)
+                        # print(f"    Intent generated for {current_planning_date}: B={intent.breakfast}, L={intent.lunch}, D={intent.dinner}") # Log Intent Gen Result (Removed)
+                        # print(f"    Saving intent for {current_planning_date}...") # Log Intent Save (Removed)
+                        self.note_intent_generator.save_meal_intent_to_db(current_planning_date, meal_intent)
+                        all_intents.append((current_planning_date, meal_intent))
+                        current_planning_date += timedelta(days=1)
+                        
+                    # Format response for the user
+                    response_content = "Okay, I've created initial meal intents based on your request:\n\n"
+                    for plan_date, intent in all_intents:
+                        response_content += f"**{plan_date.strftime('%Y-%m-%d, %A')}**:\n"
+                        response_content += f"  - Breakfast: {intent.breakfast}\n"
+                        response_content += f"  - Lunch: {intent.lunch}\n"
+                        response_content += f"  - Dinner: {intent.dinner}\n"
+                    response_content += "\nWould you like me to select specific meals based on these intents?"
+                    # print("  Intent generation and response formatting complete.") # Log Intent Done (Removed)
             
             # --- Layer 2: Select Specific Meals --- 
             elif layer_intent == "LAYER_2_MEAL_SELECTION":
-                print("[MealPlanningTool] Executing Layer 2: Select Meals...")
-                
-                # Need to determine the date range again or retrieve it from context/history
-                # For simplicity, let's re-extract from the *previous* relevant user message if possible
-                # or assume a default range (e.g., next 7 days where intents exist)
+                # print("  Entering Layer 2: Select Meals...") # Log Layer 2 (Removed)
                 
                 # Find the message where Layer 1 likely generated intents
                 relevant_user_message_for_range = user_message # Default to current
-                for i in range(len(chat_history) - 2, -1, -1): # Search backwards
-                    msg = chat_history[i]
-                    # Look for the user message that likely triggered Layer 1
-                    if isinstance(msg, HumanMessage): # and some keyword check?
-                         # Check if the *next* message was the AI presenting intents
-                         if i + 1 < len(chat_history) and isinstance(chat_history[i+1], AIMessage) and "meal intents" in chat_history[i+1].content.lower():
-                             relevant_user_message_for_range = msg.content
-                             print(f"  Found relevant user message for range extraction: '{relevant_user_message_for_range[:50]}...'")
-                             break
                 
-                date_range = self.note_intent_generator.extract_date_range(relevant_user_message_for_range)
+                # print("  Attempting to re-extract date range for Layer 2 (may be inaccurate without full history)... ") # Log L2 Date Extract (Removed)
+                date_range = self.note_intent_generator.extract_date_range(relevant_user_message_for_range) 
                 
                 if date_range is None or date_range.days_count == 0:
-                     # Fallback: Scan planner for dates with notes but no meals in near future? Or ask user?
+                     # print("  [WARN] Could not determine date range for Layer 2 selection.") # Log Warn (Removed)
                      return "I couldn't determine the date range for which to select meals. Please specify the dates again."
                      
                 start_date = date_range.start_date
                 days_count = date_range.days_count
-                print(f"  Selecting meals for {days_count} days starting from {start_date}")
+                # print(f"  Layer 2 using date range: Start={start_date}, Days={days_count}") # Log L2 Date Range (Removed)
 
                 # Select meals based on existing intents in the DB
+                # print("  Calling meal_selector.plan_meals_for_range...") # Log Meal Select Call (Removed)
                 self.meal_selector.plan_meals_for_range(start_date, days_count)
+                # print("  meal_selector.plan_meals_for_range finished.") # Log Meal Select Done (Removed)
                 
                 # Fetch the updated plan to show the user
+                # print("  Fetching updated plan for response...") # Log Fetch Plan (Removed)
                 response_content = "Okay, I've selected specific meals based on the planned intents:\n\n"
                 end_date = start_date + timedelta(days=days_count - 1)
                 current_check_date = start_date
@@ -637,46 +707,42 @@ class MealPlanningTool:
                         notes_text = day_data['notes'] or "No specific intents."
                         
                         response_content += f"**{current_check_date.strftime('%Y-%m-%d, %A')}**:\n"
-                        # Try to map selected IDs back to names (optional enhancement)
                         if meal_ids:
                              meals_found = True
                              meal_names = []
                              for meal_id in meal_ids:
-                                 # Check saved meals
                                  saved_meal = self.tables['saved_meals'].read(meal_id)
                                  if saved_meal and saved_meal[0]:
                                      meal_names.append(f"{saved_meal[0]['name']} (Saved Meal)")
                                      continue
-                                 # Check new meal ideas
                                  new_idea = self.tables['new_meal_ideas'].read(meal_id)
                                  if new_idea and new_idea[0]:
                                       meal_names.append(f"{new_idea[0]['name']} (New Idea)")
                                       continue
-                                 meal_names.append(f"Meal ID {meal_id}") # Fallback
+                                 meal_names.append(f"Meal ID {meal_id}") 
                              response_content += f"  Meals: { ', '.join(meal_names) }\n"
                         else:
                             response_content += f"  Meals: None selected\n"
-                        # Optionally include notes again for context
-                        # response_content += f"  Intents: {notes_text}\n"
                     current_check_date += timedelta(days=1)
                     
                 if not meals_found:
                     response_content = "I finished the selection process, but no specific meals were assigned based on the intents and available suggestions. You might need to add more recipes or adjust the intents."
                 else:
                      response_content += "\nYour daily planner has been updated."
+                # print("  Layer 2 response generation complete.") # Log L2 Done (Removed)
             
-            # --- General Chat (Tool shouldn't have been called) ---
+            # --- General Chat (Tool shouldn't have been called) --- 
             else: # GENERAL_CHAT or unexpected value
-                print("[WARN] MealPlanningTool called inappropriately for general chat.")
-                # This tool should ideally only be called by the ToolRouter for specific planning tasks.
-                # Returning a generic message or indicating confusion.
+                # print("  [WARN] MealPlanningTool execute called for GENERAL_CHAT intent.") # Log General Chat (Removed)
                 response_content = "I'm ready to help with meal planning. What period would you like to plan for, or would you like me to select meals based on existing intents?"
 
+            # print("-- [MealPlanningTool] END execute (returning response) --") # Log Return (Removed)
             return response_content
 
         except Exception as e:
-            print(f"[ERROR] MealPlanningTool execution failed: {e}")
-            print(traceback.format_exc())
+            # print(f"[FATAL ERROR] MealPlanningTool execution failed: {e}") # Log Fatal Error (Removed)
+            print(traceback.format_exc()) # Keep actual error traceback
+            # print("-- [MealPlanningTool] END execute (with error) --") # Log Error End (Removed)
             return "Sorry, I encountered an error during meal planning."
 
 # --- Main function called by tool_router.py --- 

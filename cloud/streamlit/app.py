@@ -6,7 +6,7 @@ import os
 # Determine the API URL based on environment (e.g., local vs. deployed)
 # For local development, we assume the API runs on localhost:8000
 # You might need to adjust this if your API runs elsewhere
-API_BASE_URL = os.getenv("API_URL", "http://localhost:8000")
+API_BASE_URL = os.getenv("API_URL", "http://44.215.171.173:8000")
 CHAT_ENDPOINT = f"{API_BASE_URL}/chat"
 RESET_ENDPOINT = f"{API_BASE_URL}/reset"
 

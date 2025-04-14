@@ -58,7 +58,7 @@ Resources:
           OPENAI_API_KEY='${OpenAIApiKey}'
           ENV_EOF
           # Build and run the Docker container
-          docker build -t luna-personal-assistant .
+          docker build -t luna-personal-assistant -f cloud/Dockerfile .
           docker run -d -p 8000:8000 --name luna luna-personal-assistant
 
   LunaEIPAssociation:

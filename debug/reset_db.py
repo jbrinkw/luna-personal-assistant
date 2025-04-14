@@ -759,9 +759,43 @@ Dislikes:
         print("[OK] Daily planner populated for 2025")
     
     def load_shopping_list(self):
-        """Initializes the shopping_list table."""
+        """Loads sample items into the shopping_list table."""
         print("\nLoading shopping list...")
-        print("[OK] Shopping list initialized (empty)")
+        
+        # Ensure table exists
+        shopping_list_table = self.tables.get("shopping_list")
+        if not shopping_list_table:
+            print("[FAIL] Shopping list table object not found.")
+            return
+        shopping_list_table.create_table() # Ensure it exists
+        
+        # Define items to add [ingredient_food_id, amount]
+        # IDs are from self.ingredients_foods
+        default_items = [
+            [102, 1.0], # Whole milk
+            [101, 1.0]  # Fairlife chocolate milk
+        ]
+        
+        added_count = 0
+        failed_count = 0
+        for item_id, amount in default_items:
+            try:
+                success = shopping_list_table.create(item_id, amount)
+                if success:
+                    added_count += 1
+                    # Optional: print confirmation for each item
+                    # print(f"  [OK] Added item ID {item_id} to shopping list.")
+                else:
+                    failed_count += 1
+                    print(f"  [FAIL] Failed to add item ID {item_id} to shopping list.")
+            except Exception as e:
+                failed_count += 1
+                print(f"  [ERROR] Exception adding item ID {item_id} to shopping list: {e}")
+                
+        if failed_count == 0:
+            print(f"[OK] Shopping list loaded with {added_count} default items.")
+        else:
+            print(f"[WARN] Shopping list loaded with {added_count} items, but {failed_count} failures occurred.")
     
     def load_ingredients_foods(self):
         """Loads sample data into the ingredients_foods table using direct INSERT with hardcoded IDs."""
@@ -875,13 +909,14 @@ Dislikes:
         print("Starting complete database load...")
         
         # Load all tables
+        # Load ingredients first, as other loads might depend on it for lookups
+        self.load_ingredients_foods()
         self.load_saved_meals()
         self.load_new_meal_ideas()
         self.load_taste_profile()
         self.load_inventory()
         self.load_daily_planner()
         self.load_shopping_list()
-        self.load_ingredients_foods()
         
         # Update meal availability after loading inventory and meals
         self.update_all_meal_availability()
