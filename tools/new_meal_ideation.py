@@ -69,26 +69,23 @@ class MealIdeationEngine:
         
         # Initialize the Pydantic output parsers
         self.router_parser = PydanticOutputParser(pydantic_object=RouterDecision)
-        # Add parsers for Layer 1 and Layer 2 outputs if needed for validation/structure
-        # self.description_parser = PydanticOutputParser(pydantic_object=List[MealDescription])
-        # self.recipe_parser = PydanticOutputParser(pydantic_object=List[MealRecipe])
+        self.recipe_parser = PydanticOutputParser(pydantic_object=List[MealRecipe])
         
         # Router prompt template
         self.router_prompt = (
-            "You are an AI assistant that analyzes user message history to determine their meal generation needs.\n"
-            "Based on the conversation, decide:\n"
+            "You are an AI assistant analyzing a user message to route meal ideation requests.\n"
+            "Based **only on the single user message provided**, decide:\n"
             "1. Which generation layer to activate:\n"
-            "   - Layer 1: Generate initial meal descriptions (if user is asking for meal ideas or suggestions)\n"
-            "   - Layer 2: Generate full recipes (if user has selected meal descriptions and wants recipes)\n"
-            "   - Layer 3: Save recipes to database (if user has reviewed recipes and wants to save them)\n\n"
+            "   - Layer 1 (Descriptions): If user is asking for initial meal *ideas* or *suggestions* (e.g., 'give me ideas', 'suggest meals'). Use this as default if unsure.\n"
+            "   - Layer 2 (Recipes): If user explicitly asks for full *recipes* for previously mentioned ideas (e.g., 'get recipe for option 1', 'show me how to make the first one'). \n"
+            "   - Layer 3 (Save): If user explicitly asks to *save* the recipes just presented (e.g., 'save these', 'add them to my list'). \n\n"
             "2. Whether to limit suggestions to current inventory:\n"
-            "   - True if the user explicitly asks for meals they can make with what they have\n"
-            "   - False otherwise (default)\n\n"
-            "3. Which numbered items the user has selected (if any):\n"
-            "   - If user has said something like 'I like options 1 and 3' or 'Let's go with the first meal'\n"
-            "   - Return those numbers in the selected_items field (e.g., [1, 3] or [1])\n"
-            "   - Return an empty list if no selections are made\n\n"
-            "Message History:\n{message_history}\n\n"
+            "   - True if the user's message explicitly asks for meals they can make *now* or *with current ingredients*.\n"
+            "   - False otherwise (default).\n\n"
+            "3. Which numbered items the user selected (if Layer 2 or 3 is chosen):\n"
+            "   - Extract numbers if the user refers to specific options (e.g., 'recipe for 1 and 3', 'save number 2').\n"
+            "   - Return an empty list otherwise.\n\n"
+            "User Message:\n{user_message}\n\n"
             "{format_instructions}"
         )
         
@@ -242,38 +239,36 @@ class MealIdeationEngine:
             print(f"Error clearing new meal ideas table: {str(e)}")
 
     def router(self, message_history: List) -> Tuple[int, bool, List[int]]:
-        """Determine which layer to activate, whether to limit to inventory, and selected items."""
-        # Format the message history for the prompt
-        history_text = ""
-        for i, message in enumerate(message_history):
-            role = "User" if isinstance(message, HumanMessage) else "Assistant"
-            history_text += f"{role}: {message.content}\n"
-            
+        """Determine which layer to activate, whether to limit to inventory, and selected items, based on the latest message."""
+        # Extract the single user message
+        user_message = ""
+        if message_history and isinstance(message_history[-1], HumanMessage):
+            user_message = message_history[-1].content
+        else:
+            print("[WARN MealIdeationEngine Router] No user message found in history.")
+            # Default to layer 1, no inventory limit, no selections
+            return 1, False, [] 
+
         format_instructions = self.router_parser.get_format_instructions()
-        
-        # The LLM should analyze the message history to determine:
-        # 1. Which layer to activate based on the conversation context
-        # 2. Whether to limit suggestions to inventory
-        # 3. Which numbered items the user has selected
         prompt = ChatPromptTemplate.from_template(self.router_prompt)
+        # Format prompt using only the single user message
         formatted_prompt = prompt.format(
-            message_history=history_text,
+            user_message=user_message,
             format_instructions=format_instructions
         )
-        
+
         try:
             response = self.chat.invoke(formatted_prompt)
-            print("\n=== ROUTER RESPONSE ===")
-            print(response.content.strip())
-            print("=== END ROUTER RESPONSE ===\n")
-            
-            # Parse the router decision
             decision = self.router_parser.parse(response.content)
-            return decision.layer, decision.limit_to_inventory, decision.selected_items
-            
+            # Basic validation
+            layer = max(1, min(3, decision.layer)) # Ensure layer is 1, 2, or 3
+            limit = bool(decision.limit_to_inventory)
+            # Ensure selected_items is a list of integers
+            items = [int(item) for item in decision.selected_items if isinstance(item, (int, str)) and str(item).isdigit()] 
+            return layer, limit, items
         except Exception as e:
-            print(f"Error in router: {str(e)}")
-            # Default to layer 1, no inventory limitation, no selections
+            print(f"Error parsing router decision: {e}")
+            # Fallback to layer 1 if parsing fails
             return 1, False, []
 
     def generate_meal_descriptions(self, message_history: List, limit_to_inventory: bool) -> str:

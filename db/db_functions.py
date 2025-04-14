@@ -28,31 +28,33 @@ class Database:
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         # self.connect() # Connect explicitly or ensure connection in execute_query
 
-    def connect(self):
+    def connect(self, verbose=True):
         """Establish connection to the SQLite database."""
         if self.conn is None:
             try:
                 self.conn = sqlite3.connect(self.db_path)
                 # Use Row factory for dictionary-like access (optional but convenient)
                 self.conn.row_factory = sqlite3.Row 
-                print(f"Connected to SQLite database at: {self.db_path}")
+                if verbose: print(f"Connected to SQLite database at: {self.db_path}")
                 return True
             except sqlite3.Error as e:
-                print(f"SQLite connection error: {e}")
+                # Only print error if verbose or connection fails critically
+                if verbose: print(f"SQLite connection error: {e}")
                 self.conn = None # Ensure conn is None if connection failed
                 return False
         return True # Already connected
 
-    def disconnect(self):
+    def disconnect(self, verbose=True):
         """Close the database connection."""
         if self.conn:
             self.conn.close()
             self.conn = None
-            print("Disconnected from SQLite database.")
+            if verbose: print("Disconnected from SQLite database.")
 
     def execute_query(self, query, params=None, fetch=False):
         """Execute a SQL query."""
-        if not self.connect(): # Ensure connection exists
+        # Connect silently if not already connected
+        if not self.connect(verbose=False): # Ensure connection exists, don't print here
              print("Cannot execute query, no database connection.")
              return None
              
@@ -68,7 +70,9 @@ class Database:
             last_id = None
 
             if fetch:
-                result = cursor.fetchall()
+                rows = cursor.fetchall()
+                # Convert sqlite3.Row objects to standard dictionaries
+                result = [dict(row) for row in rows] if rows else []
             # For INSERT statements that generate an ID
             elif query.strip().upper().startswith("INSERT"):
                  last_id = cursor.lastrowid
@@ -634,66 +638,49 @@ class IngredientsFood:
 
 
 # Initialize all tables
-def init_tables():
+def init_tables(verbose=True):
     # The Database class now handles the path and directory creation
-    db = Database() 
-    # Ensure connection is attempted before creating tables
-    if not db.connect():
-        print("Failed to connect to database. Aborting table initialization.")
-        return None, None # Return None if connection fails
-
-    # Define table classes in a dictionary for easy access
-    table_classes = {
-        "inventory": Inventory,
-        "taste_profile": TasteProfile,
-        "saved_meals": SavedMeals,
-        "new_meal_ideas": NewMealIdeas,
-        "saved_meals_instock_ids": SavedMealsInStockIds,
-        "new_meal_ideas_instock_ids": NewMealIdeasInStockIds,
-        "daily_planner": DailyPlanner,
-        "shopping_list": ShoppingList,
-        "ingredients_foods": IngredientsFood
-    }
-    
-    # Define the explicit creation order
-    # ingredients_foods must be created before inventory
-    creation_order = [
-        "ingredients_foods", 
-        "inventory", # Depends on ingredients_foods
-        "taste_profile", 
-        "saved_meals", 
-        "new_meal_ideas", 
-        "saved_meals_instock_ids", # Technically depends on saved_meals
-        "new_meal_ideas_instock_ids", # Technically depends on new_meal_ideas
-        "daily_planner", 
-        "shopping_list" # Technically depends on ingredients_foods for FK (though not enforced in schema)
-    ]
-
+    db = Database()
+    # Connect silently within init_tables if verbose is False for the overall init
+    if not db.connect(verbose=verbose): # Pass the verbose flag to connect
+         print("Failed to connect to the database during initialization.")
+         return None, None # Return None if connection fails
+         
     tables = {}
-    print("Initializing database tables in specific order...")
-    all_created = True
-    for name in creation_order:
-        if name in table_classes:
-            print(f"Creating table: {name}...")
-            table_obj = table_classes[name](db)
-            tables[name] = table_obj
-            # Check result of create_table (though it currently doesn't return specific success/fail)
-            table_obj.create_table() 
-            # We could add more robust checks here if needed (e.g., check if table exists after creation)
-        else:
-             print(f"[WARN] Table '{name}' defined in creation_order but not found in table_classes.")
-             all_created = False
+    
+    # Define table order based on potential dependencies (e.g., foreign keys)
+    table_creation_order = [
+        ("ingredients_foods", IngredientsFood),
+        ("inventory", Inventory), # Depends on ingredients_foods
+        ("taste_profile", TasteProfile),
+        ("saved_meals", SavedMeals),
+        ("new_meal_ideas", NewMealIdeas),
+        ("saved_meals_instock_ids", SavedMealsInStockIds), # Depends on saved_meals
+        ("new_meal_ideas_instock_ids", NewMealIdeasInStockIds), # Depends on new_meal_ideas
+        ("daily_planner", DailyPlanner), # Depends on saved_meals, new_meal_ideas implicitly via usage
+        ("shopping_list", ShoppingList) # Depends on ingredients_foods
+    ]
+    
+    if verbose:
+        print("Initializing database tables in specific order...")
         
-    # Check if any tables defined in classes were missed in the order
-    for name in table_classes:
-        if name not in creation_order:
-             print(f"[WARN] Table '{name}' found in table_classes but not in creation_order. It was not created.")
-             all_created = False
-             
-    if all_created:
+    for name, table_class in table_creation_order:
+        try:
+            if verbose: print(f"Creating table: {name}...")
+            table_instance = table_class(db)
+            table_instance.create_table()
+            tables[name] = table_instance
+        except Exception as e:
+            print(f"Error creating table {name}: {e}")
+            # Decide if failure is critical - maybe disconnect and return None?
+            # db.disconnect()
+            # return None, None
+            # For now, let's just print the error and continue, maybe some tables can still be used
+    
+    if verbose:
         print("Database table initialization complete.")
-    else:
-        print("[ERROR] Database table initialization incomplete due to warnings.")
         
-    # db.disconnect() # Optional: Disconnect after init if not needed immediately
+    # Keep connection open for potential immediate use, caller should disconnect
+    # db.disconnect() # Remove explicit disconnect here
+    
     return db, tables

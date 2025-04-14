@@ -92,7 +92,8 @@ Return only the meal IDs as a JSON array.
 class MealSuggestionFormatter:
     """Formats meal suggestions for display"""
     def __init__(self):
-        self.db, self.tables = init_tables()
+        # Initialize db connection silently
+        self.db, self.tables = init_tables(verbose=False) 
         
     def format_meal_suggestions(self, meal_ids: List[int]) -> str:
         """Format meal suggestions for display"""
