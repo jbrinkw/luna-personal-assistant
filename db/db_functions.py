@@ -684,3 +684,34 @@ def init_tables(verbose=True):
     # db.disconnect() # Remove explicit disconnect here
     
     return db, tables
+
+from contextlib import contextmanager
+
+@contextmanager
+def db_session(verbose: bool = False):
+    """Yield a connected DB and tables dictionary, disconnecting on exit."""
+    db, tables = init_tables(verbose=verbose)
+    if not db or not tables:
+        raise ConnectionError("Failed to initialize database")
+    try:
+        yield db, tables
+    finally:
+        if db and db.conn:
+            db.disconnect(verbose=verbose)
+
+
+@contextmanager
+def pull_helper_session(verbose: bool = False):
+    """Yield a PullHelper instance with an active database session."""
+    from helpers.pull_helper import PullHelper
+    with db_session(verbose=verbose) as (db, tables):
+        yield PullHelper(db, tables)
+
+
+@contextmanager
+def processor_session(processor_cls, table_key: str, verbose: bool = False):
+    """Yield an initialized processor with an active DB session."""
+    with db_session(verbose=verbose) as (db, tables):
+        if table_key not in tables:
+            raise KeyError(f"{table_key} table not initialized")
+        yield processor_cls(tables[table_key], db)

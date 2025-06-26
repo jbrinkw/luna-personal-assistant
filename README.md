@@ -38,3 +38,32 @@ The assistant is powered by open-source LLMs like DeepSeek R1 and LLaMA 3, orche
 The backend is built with FastAPI, containerized with Docker, and hosted on AWS EC2. The SQL database runs on Azure.
 
 The frontend is a Streamlit-based interface deployed on Hugging Face Spaces.
+
+## MCP Servers
+
+The push, pull and tool routers are now exposed as independent MCP servers
+using a lightweight `fastmcp` wrapper around FastAPI.
+
+Run each server in a separate terminal:
+
+```bash
+uvicorn servers.pull_server:app --port 8001
+uvicorn servers.push_server:app --port 8002
+uvicorn servers.tool_server:app --port 8003
+```
+
+Each tool from the corresponding router is available as a POST endpoint at
+`/<tool_name>` returning JSON `{ "result": "..." }`.
+
+## Testing
+
+The project ships with a small SQLite database located at `data/chefbyte.db`.
+Unit tests rely on this file, so no additional database setup is required.
+
+Install the Python dependencies and run the tests with:
+
+```bash
+pip install -r requirements.txt
+pytest -q
+```
+

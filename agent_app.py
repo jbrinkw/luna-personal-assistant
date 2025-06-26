@@ -1,4 +1,4 @@
-from agents import Agent, Runner, function_tool
+from agents import Agent, Runner
 from dotenv import load_dotenv
 import os
 import sys
@@ -20,16 +20,19 @@ if parent_dir not in sys.path:
 try:
     from agents_def import ChefByteAgent
     from agent_tools import (
-        get_inventory_context, update_inventory, 
-        get_taste_profile_context, get_saved_meals_context, get_shopping_list_context, 
-        get_daily_notes_context, get_new_meal_ideas_context, get_instock_meals_context, 
+        get_inventory_context, update_inventory,
+        get_taste_profile_context, get_saved_meals_context, get_shopping_list_context,
+        get_daily_notes_context, get_new_meal_ideas_context, get_instock_meals_context,
         get_ingredients_info_context,
         update_taste_profile, update_saved_meals, update_shopping_list, update_daily_plan
-    ) 
-    # Import functional tool entry points/classes
-    from tools.meal_planner import MealPlanningTool
-    from tools.meal_suggestion_gen import generate_meal_suggestions as original_generate_suggestions
-    from tools.new_meal_ideation import MealIdeationEngine
+    )
+    # Import functional tool wrappers
+    from extracted_tool.tool import (
+        run_meal_planner,
+        run_meal_suggestion_generator,
+        run_new_meal_ideator,
+    )
+    # original layer wrappers are also available if needed
     from db.db_functions import init_tables, Database
 except ImportError as e:
     print(f"Error importing local modules: {e}")
@@ -92,85 +95,6 @@ update_agent = Agent(
 
 # --- Functional Tool Wrappers ---
 
-@function_tool
-def run_meal_planner(user_request: str) -> str:
-    """
-    Initiates or continues structured meal planning. Handles requests like 'plan my meals for next week' 
-    or 'select meals for the plan'. Determines the planning stage (intent generation or meal selection) 
-    based on the conversation flow implied by the user_request.
-    Args:
-        user_request: The user's request related to meal planning.
-    """
-    db = None
-    try:
-        db, tables = init_tables(verbose=False)
-        if not db or not tables:
-            return "Error: Could not initialize database for meal planner."
-        
-        planner = MealPlanningTool(db, tables)
-        
-        # Pass request as a minimal history. Planner's internal router will use this.
-        minimal_history = [HumanMessage(content=user_request)] 
-        
-        result = planner.execute(minimal_history) 
-        
-        return result
-    except Exception as e:
-        print(f"[ERROR] in run_meal_planner: {e}")
-        traceback.print_exc()
-        return f"Sorry, an error occurred during meal planning: {e}"
-    finally:
-        # Ensure disconnection even on error
-        if db and db.conn: 
-            db.disconnect(verbose=False)
-
-@function_tool
-def run_meal_suggestion_generator(user_request: str) -> str:
-    """
-    Generates meal suggestions based on user criteria like available ingredients, preferences, or general requests for ideas.
-    Args:
-        user_request: The user's request for meal suggestions (e.g., 'what can I make?', 'suggest some quick dinners').
-    """
-    print(f"[Tool Wrapper] run_meal_suggestion_generator called with: {user_request[:100]}...")
-    try:
-        # The original function expects history. We pass the request as minimal history.
-        minimal_history = [HumanMessage(content=user_request)]
-        # This function initializes its own DB connection internally. Ensure it's silent.
-        # TODO: Refactor meal_suggestion_gen.py to accept db/tables or use verbose=False.
-        result = original_generate_suggestions(minimal_history)
-        return result
-    except Exception as e:
-        print(f"[ERROR] in run_meal_suggestion_generator: {e}")
-        traceback.print_exc()
-        return f"Sorry, an error occurred while generating meal suggestions: {e}"
-
-@function_tool
-def run_new_meal_ideator(user_request: str) -> str:
-    """
-    Generates creative, novel meal concepts or recipes based on user prompts, focusing on ideation rather than just suggesting existing meals.
-    Args:
-        user_request: The user's request for new meal ideas (e.g., 'invent a dish with chicken and apples', 'give me a unique breakfast idea').
-    """
-    print(f"[Tool Wrapper] run_new_meal_ideator called with: {user_request[:100]}...")
-    db = None
-    try:
-        db, tables = init_tables(verbose=False)
-        if not db or not tables:
-            return "Error: Could not initialize database for meal ideator."
-
-        engine = MealIdeationEngine(db, tables)
-        # Pass request as minimal history.
-        minimal_history = [HumanMessage(content=user_request)]
-        result = engine.execute(minimal_history)
-        return result
-    except Exception as e:
-        print(f"[ERROR] in run_new_meal_ideator: {e}")
-        traceback.print_exc()
-        return f"Sorry, an error occurred during meal ideation: {e}"
-    finally:
-        # Ensure disconnection even on error
-        if db and db.conn: 
-            db.disconnect(verbose=False)
 
 # Replace placeholder list with the actual wrapped tools
 functional_tools = [
@@ -326,3 +250,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
