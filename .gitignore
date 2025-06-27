@@ -6,3 +6,6 @@ pig.py
 pig2.py
 pig3.py
 pig4.py
+# Node
+node_modules/
+dist/
