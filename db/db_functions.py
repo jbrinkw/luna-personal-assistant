@@ -684,3 +684,35 @@ def init_tables(verbose=True):
     # db.disconnect() # Remove explicit disconnect here
     
     return db, tables
+
+
+def with_db(func):
+    """Decorator to provide a temporary database connection and tables.
+
+    The wrapped function should accept ``db`` and ``tables`` as its first two
+    parameters. ``with_db`` handles connecting, initializing tables, and
+    disconnecting automatically. Any exception raised by the wrapped function
+    will be propagated after cleanup.
+    """
+
+    from functools import wraps
+    from inspect import Signature, Parameter, signature
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        db = None
+        try:
+            db, tables = init_tables(verbose=False)
+            if not db or not tables:
+                raise ConnectionError("DB init failed.")
+            return func(db, tables, *args, **kwargs)
+        finally:
+            if db and db.conn:
+                db.disconnect(verbose=False)
+    # Adjust signature to hide db and tables parameters
+    sig = signature(func)
+    params = list(sig.parameters.values())[2:]
+    wrapper.__signature__ = Signature(parameters=params, return_annotation=sig.return_annotation)
+
+    return wrapper
+
