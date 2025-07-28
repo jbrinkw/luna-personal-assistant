@@ -1,11 +1,27 @@
-"""Run the ChefByte MCP tool server."""
+"""Run the ChefByte MCP tool server (aggregate of all tool modules)."""
 
-from mcp_tools import mcp  # FastMCP instance
-import mcp_tools.push_tools  # noqa: F401 - register tools
-import mcp_tools.pull_tools  # noqa: F401 - register tools
-import mcp_tools.action_tools  # noqa: F401 - register tools
+from fastmcp import FastMCP
+import push_tools
+import pull_tools
+import action_tools
+
+# Create an aggregator FastMCP server
+mcp = FastMCP("ChefByte Aggregated Tools")
+
+# Mount individual servers under prefixes
+mcp.mount(push_tools.mcp, prefix="push")
+mcp.mount(pull_tools.mcp, prefix="pull")
+mcp.mount(action_tools.mcp, prefix="action")
 
 if __name__ == "__main__":
-    # Run an HTTP server on localhost for testing
-    mcp.run(transport="http", port=8000)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run the aggregated ChefByte MCP server")
+    parser.add_argument("--host", default="0.0.0.0", help="Host (default 0.0.0.0)")
+    parser.add_argument("--port", type=int, default=8000, help="Port (default 8000)")
+    args = parser.parse_args()
+
+    url = f"http://{args.host if args.host != '0.0.0.0' else 'localhost'}:{args.port}/sse"
+    print(f"[ChefByte Aggregated] Running via SSE at {url}")
+    mcp.run(transport="sse", host=args.host, port=args.port)
 

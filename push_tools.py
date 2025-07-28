@@ -7,7 +7,7 @@ classes, and returns a confirmation string describing the
 changes made.
 """
 
-from . import mcp
+from fastmcp import FastMCP
 from db.db_functions import with_db
 from helpers.push_helpers.inventory_processor import NaturalLanguageInventoryProcessor
 from helpers.push_helpers.taste_profile_processor import TasteProfileProcessor
@@ -15,6 +15,9 @@ from helpers.push_helpers.saved_meals_processor import SavedMealsProcessor
 from helpers.push_helpers.shopping_list_processor import ShoppingListProcessor
 from helpers.push_helpers.daily_notes_processor import DailyNotesProcessor
 import traceback
+
+# Create a dedicated MCP server for push/update tools
+mcp = FastMCP("ChefByte Push Tools")
 
 
 @mcp.tool
@@ -129,3 +132,40 @@ def update_daily_plan(db, tables, user_input: str) -> str:
         print(f"[ERROR] Tool 'update_daily_plan' failed: {e}")
         print(traceback.format_exc())
         return f"An error occurred while processing daily plan changes: {str(e)}"
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Run the ChefByte Push Tools MCP server",
+    )
+    parser.add_argument(
+        "--transport",
+        default="sse",
+        choices=["http", "stdio", "sse"],
+        help="Transport protocol to use (default: sse)",
+    )
+    parser.add_argument(
+        "--host",
+        default="0.0.0.0",
+        help="Host to bind the server (default: 0.0.0.0)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8010,
+        help="Port to run the server on (default: 8010)",
+    )
+    args = parser.parse_args()
+
+    # Compute and log the access URL for convenience
+    if args.transport == "sse":
+        url = f"http://{args.host if args.host != '0.0.0.0' else 'localhost'}:{args.port}/sse"
+    elif args.transport == "http":
+        url = f"http://{args.host if args.host != '0.0.0.0' else 'localhost'}:{args.port}/mcp"
+    else:
+        url = "stdio (process stdio)"
+    print(f"[ChefByte Push Tools] Running via {args.transport.upper()} at {url}")
+
+    mcp.run(transport=args.transport, host=args.host, port=args.port)
