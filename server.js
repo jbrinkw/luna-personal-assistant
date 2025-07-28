@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const Database = require('better-sqlite3');
+const path = require('path');
 
 const DB_PATH = 'data/chefbyte.db';
 const db = new Database(DB_PATH);
@@ -8,6 +9,7 @@ const db = new Database(DB_PATH);
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname, 'dist')));
 
 function getPrimaryKey(table) {
   try {
@@ -64,6 +66,10 @@ app.put('/api/tables/:table/:id', (req, res) => {
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
+});
+
+app.use((req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
 app.listen(3000, () => {

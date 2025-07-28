@@ -1,33 +1,35 @@
-"""Simple client test for the MCP server."""
+"""Client-only test script that connects to a remote ChefByte MCP server.
+
+Assumes the aggregated server is running on 192.168.1.234:8000 over
+SSE (URL ends with /sse). Adjust the URL or tool name as needed.
+"""
 
 import asyncio
-import subprocess
-import sys
-import time
-
 from fastmcp import Client
 
-SERVER_SCRIPT = "mcp_server.py"
-# FastMCP defaults to serving under /mcp when using HTTP transport
-SERVER_URL = "http://localhost:8000/mcp"
+SERVER_URL = "http://192.168.1.234:8000/sse"
 
-async def call_inventory():
+
+def main() -> None:
+    asyncio.run(run_client())
+
+
+async def run_client():
+    print(f"Connecting to MCP server at {SERVER_URL} ...")
     async with Client(SERVER_URL) as client:
         tools = await client.list_tools()
         print("Tools on server:", [t.name for t in tools])
-        result = await client.call_tool("get_inventory_context")
-        text = result[0].text if result else "(no content)"
-        print("Inventory context:\n", text)
 
+        # Example: call the inventory context tool (namespaced under pull)
+        if any(t.name == "pull_get_inventory_context" for t in tools):
+            result = await client.call_tool("pull_get_inventory_context")
+            if result:
+                first_part = result[0]
+                text = getattr(first_part, "text", str(first_part))
+                print("Inventory context:\n", text)
+        else:
+            print("Tool 'pull_get_inventory_context' not found on remote server.")
 
-def main():
-    server = subprocess.Popen([sys.executable, SERVER_SCRIPT])
-    try:
-        time.sleep(2)  # wait for server to start
-        asyncio.run(call_inventory())
-    finally:
-        server.terminate()
-        server.wait()
 
 if __name__ == "__main__":
     main()

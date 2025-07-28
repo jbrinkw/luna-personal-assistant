@@ -5,10 +5,13 @@ requested data using the ``PullHelper`` utility class and
 returns a plain string summary for the agent to use.
 """
 
-from . import mcp
+from fastmcp import FastMCP
 from db.db_functions import with_db
 from helpers.pull_helper import PullHelper
 import traceback
+
+# Create a dedicated MCP server for pull/query tools
+mcp = FastMCP("ChefByte Pull Tools")
 
 
 @mcp.tool
@@ -146,3 +149,39 @@ def get_ingredients_info_context(db, tables) -> str:
     except Exception as e:
         print(f"[ERROR] Tool 'get_ingredients_info_context' failed: {e}")
         return f"Error retrieving ingredients information: {str(e)}"
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Run the ChefByte Pull Tools MCP server",
+    )
+    parser.add_argument(
+        "--transport",
+        default="sse",
+        choices=["http", "stdio", "sse"],
+        help="Transport protocol to use (default: sse)",
+    )
+    parser.add_argument(
+        "--host",
+        default="0.0.0.0",
+        help="Host to bind the server (default: 0.0.0.0)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8020,
+        help="Port to run the server on (default: 8020)",
+    )
+    args = parser.parse_args()
+
+    # Compute and log the access URL
+    if args.transport == "sse":
+        url = f"http://{args.host if args.host != '0.0.0.0' else 'localhost'}:{args.port}/sse"
+    elif args.transport == "http":
+        url = f"http://{args.host if args.host != '0.0.0.0' else 'localhost'}:{args.port}/mcp"
+    else:
+        url = "stdio"
+    print(f"[ChefByte Pull Tools] Running via {args.transport.upper()} at {url}")
+    mcp.run(transport=args.transport, host=args.host, port=args.port)
