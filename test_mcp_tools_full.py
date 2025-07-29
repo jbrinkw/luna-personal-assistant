@@ -13,30 +13,32 @@ from debug.reset_db import reset_database
 from db.db_functions import Database, Inventory, TasteProfile, SavedMeals, ShoppingList, DailyPlanner, NewMealIdeas
 
 SERVER_SCRIPT = "mcp_server.py"
-SERVER_URL = "http://localhost:8000/mcp"
+# FastMCP server now runs using SSE at the /sse endpoint
+SERVER_URL = "http://localhost:8000/sse"
 
 class SimpleAgent:
     """Very basic agent that maps keyword phrases to MCP tools."""
 
     def __init__(self, client: Client):
         self.client = client
+        # Tool names are namespaced by server prefix (pull, push, action)
         self.tool_map = {
-            "inventory context": "get_inventory_context",
-            "taste profile": "get_taste_profile_context",
-            "saved meals": "get_saved_meals_context",
-            "shopping list": "get_shopping_list_context",
-            "daily plan": "get_daily_notes_context",
-            "meal ideas": "get_new_meal_ideas_context",
-            "meals i can make": "get_instock_meals_context",
-            "ingredient info": "get_ingredients_info_context",
-            "add to inventory": "update_inventory",
-            "change taste": "update_taste_profile",
-            "save meal": "update_saved_meals",
-            "shopping add": "update_shopping_list",
-            "plan update": "update_daily_plan",
-            "plan meals": "run_meal_planner",
-            "suggest meal": "run_meal_suggestion_generator",
-            "new recipe": "run_new_meal_ideator",
+            "inventory context": "pull_get_inventory_context",
+            "taste profile": "pull_get_taste_profile_context",
+            "saved meals": "pull_get_saved_meals_context",
+            "shopping list": "pull_get_shopping_list_context",
+            "daily plan": "pull_get_daily_notes_context",
+            "meal ideas": "pull_get_new_meal_ideas_context",
+            "meals i can make": "pull_get_instock_meals_context",
+            "ingredient info": "pull_get_ingredients_info_context",
+            "add to inventory": "push_update_inventory",
+            "change taste": "push_update_taste_profile",
+            "save meal": "push_update_saved_meals",
+            "shopping add": "push_update_shopping_list",
+            "plan update": "push_update_daily_plan",
+            "plan meals": "action_run_meal_planner",
+            "suggest meal": "action_run_meal_suggestion_generator",
+            "new recipe": "action_run_new_meal_ideator",
         }
 
     async def run(self, prompt: str) -> str:
@@ -50,9 +52,9 @@ class SimpleAgent:
             return "(no tool matched)"
 
         args = {}
-        if tool in {"update_inventory", "update_saved_meals", "update_shopping_list", "update_daily_plan"}:
+        if tool in {"push_update_inventory", "push_update_saved_meals", "push_update_shopping_list", "push_update_daily_plan"}:
             args["user_input"] = prompt
-        elif tool in {"update_taste_profile", "run_meal_planner", "run_meal_suggestion_generator", "run_new_meal_ideator"}:
+        elif tool in {"push_update_taste_profile", "action_run_meal_planner", "action_run_meal_suggestion_generator", "action_run_new_meal_ideator"}:
             args["user_request"] = prompt
         
         result = await self.client.call_tool(tool, args)

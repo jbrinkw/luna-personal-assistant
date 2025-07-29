@@ -167,8 +167,9 @@ class PullHelper:
             today = date.today()
             tomorrow = today + timedelta(days=1)
             end_date = today + timedelta(days=7)
-            
-            all_entries = daily_planner_table.read()
+
+            # Query only the upcoming week directly
+            all_entries = daily_planner_table.read_range(today, end_date)
             if not all_entries:
                 return "No meal plans found for the upcoming week."
                 

@@ -500,6 +500,13 @@ class DailyPlanner:
         else:
             query = "SELECT * FROM daily_planner ORDER BY day"
             return self.db.execute_query(query, fetch=True)
+
+    def read_range(self, start_day, end_day):
+        """Read planner entries within a date range (inclusive)."""
+        start_str = start_day.strftime('%Y-%m-%d') if isinstance(start_day, date) else start_day
+        end_str = end_day.strftime('%Y-%m-%d') if isinstance(end_day, date) else end_day
+        query = "SELECT * FROM daily_planner WHERE day BETWEEN ? AND ? ORDER BY day"
+        return self.db.execute_query(query, (start_str, end_str), fetch=True)
     
     def update(self, day, notes=None, meal_ids=None):
         updates = []

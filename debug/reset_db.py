@@ -744,19 +744,13 @@ Dislikes:
                 print(f"[FAIL] Failed to add meal idea: {name}")
     
     def load_daily_planner(self):
-        """Loads sample data into the daily_planner table for 2025."""
+        """Ensure the daily_planner table exists."""
         print("\nLoading daily planner...")
-        
-        # Insert entries for each day of 2025
-        start_date = datetime(2025, 1, 1).date()
-        end_date = datetime(2025, 12, 31).date()
-        current_date = start_date
-        
-        while current_date <= end_date:
-            success = self.tables["daily_planner"].create(current_date, None, [])
-            current_date += timedelta(days=1)
-        
-        print("[OK] Daily planner populated for 2025")
+
+        # Simply create the table without pre-populating every day
+        self.tables["daily_planner"].create_table()
+
+        print("[OK] Daily planner table ready")
     
     def load_shopping_list(self):
         """Loads sample items into the shopping_list table."""

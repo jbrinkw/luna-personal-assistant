@@ -166,16 +166,22 @@ class OriginalGenerator:
         
         current_date = extended_start
         while current_date <= extended_end:
-            # Check if there's an entry for this date
             existing = self.tables["daily_planner"].read(current_date)
             if existing:
-                # Clear the entry
+                # Clear existing entry
                 self.tables["daily_planner"].update(
                     day=current_date,
                     notes="",
                     meal_ids=json.dumps([])
                 )
                 print(f"Cleared daily planner entry for {current_date.strftime('%Y-%m-%d')}")
+            else:
+                # Create an empty entry so future planning has a row to update
+                self.tables["daily_planner"].create(
+                    day=current_date,
+                    notes="",
+                    meal_ids=json.dumps([])
+                )
             current_date += timedelta(days=1)
         
         print(f"Cleared date range from {extended_start.strftime('%Y-%m-%d')} to {extended_end.strftime('%Y-%m-%d')}")
