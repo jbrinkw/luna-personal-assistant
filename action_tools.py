@@ -18,8 +18,6 @@ from tools.meal_suggestion_gen import generate_meal_suggestions as original_gene
 from tools.new_meal_ideation import MealIdeationEngine
 import traceback
 
-# pyright: reportGeneralTypeIssues=false
-
 @mcp.tool
 @with_db
 def run_meal_planner(db, tables, user_request: str) -> str:
@@ -33,8 +31,8 @@ def run_meal_planner(db, tables, user_request: str) -> str:
     """
     try:
         planner = MealPlanningTool(db, tables)
-        minimal_history = [HumanMessage(content=user_request)]  # type: ignore[arg-type]
-        return planner.execute(minimal_history)  # type: ignore[arg-type]
+        minimal_history = [HumanMessage(content=user_request)]
+        return planner.execute(minimal_history)
     except Exception as e:
         print(f"[ERROR] in run_meal_planner: {e}")
         traceback.print_exc()
@@ -53,8 +51,8 @@ def run_meal_suggestion_generator(user_request: str) -> str:
     """
     print(f"[Tool Wrapper] run_meal_suggestion_generator called with: {user_request[:100]}...")
     try:
-        minimal_history = [HumanMessage(content=user_request)]  # type: ignore[arg-type]
-        result = original_generate_suggestions(minimal_history)  # type: ignore[arg-type]
+        minimal_history = [HumanMessage(content=user_request)]
+        result = original_generate_suggestions(minimal_history)
         return result
     except Exception as e:
         print(f"[ERROR] in run_meal_suggestion_generator: {e}")
@@ -76,8 +74,8 @@ def run_new_meal_ideator(db, tables, user_request: str) -> str:
     print(f"[Tool Wrapper] run_new_meal_ideator called with: {user_request[:100]}...")
     try:
         engine = MealIdeationEngine(db, tables)
-        minimal_history = [HumanMessage(content=user_request)]  # type: ignore[arg-type]
-        return engine.execute(minimal_history)  # type: ignore[arg-type]
+        minimal_history = [HumanMessage(content=user_request)]
+        return engine.execute(minimal_history)
     except Exception as e:
         print(f"[ERROR] in run_new_meal_ideator: {e}")
         traceback.print_exc()
