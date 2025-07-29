@@ -52,19 +52,30 @@ app.get('/api/tables/:table/info', (req, res) => {
 });
 
 app.put('/api/tables/:table/:id', (req, res) => {
-  const table = req.params.table;
-  const idVal = req.params.id;
+  const { table, id } = req.params;
   const data = req.body;
-  const pk = getPrimaryKey(table) || 'id';
-  const columns = Object.keys(data);
-  const set = columns.map(c => `${c} = ?`).join(', ');
-  const values = columns.map(c => data[c]);
-  values.push(idVal);
+  const primaryKey = getPrimaryKey(table);
+
+  if (!primaryKey) {
+    return res.status(400).json({ error: 'Primary key not found for table.' });
+  }
+
+  const setClause = Object.keys(data)
+    .filter(key => key !== primaryKey)
+    .map(key => `${key} = ?`)
+    .join(', ');
+
+  const values = [
+    ...Object.values(data).filter((v, i) => Object.keys(data)[i] !== primaryKey),
+    id,
+  ];
+
   try {
-    db.prepare(`UPDATE ${table} SET ${set} WHERE ${pk} = ?`).run(...values);
-    res.json({ success: true });
-  } catch (e) {
-    res.status(400).json({ error: e.message });
+    const stmt = db.prepare(`UPDATE ${table} SET ${setClause} WHERE ${primaryKey} = ?`);
+    stmt.run(values);
+    res.status(200).json({ message: 'Update successful.' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
