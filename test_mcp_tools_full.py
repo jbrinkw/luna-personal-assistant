@@ -70,7 +70,9 @@ class SimpleAgent:
             args["user_request"] = prompt
         
         result = await self.client.call_tool(tool, args)
-        return result[0].text if result else ""
+        if result and result.content:
+            return result.content[0].text
+        return ""
 
 # Helper functions to read tables -------------------------------------------
 
