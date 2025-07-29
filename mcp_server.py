@@ -1,5 +1,6 @@
 """Run the ChefByte MCP tool server (aggregate of all tool modules)."""
 
+import asyncio
 from fastmcp import FastMCP
 import push_tools
 import pull_tools
@@ -8,7 +9,6 @@ import action_tools
 # Create an aggregator FastMCP server
 mcp = FastMCP("ChefByte Aggregated Tools")
 
-# Mount individual servers under prefixes
 mcp.mount(push_tools.mcp, prefix="push")
 mcp.mount(pull_tools.mcp, prefix="pull")
 mcp.mount(action_tools.mcp, prefix="action")
@@ -23,5 +23,6 @@ if __name__ == "__main__":
 
     url = f"http://{args.host if args.host != '0.0.0.0' else 'localhost'}:{args.port}/sse"
     print(f"[ChefByte Aggregated] Running via SSE at {url}")
+
     mcp.run(transport="sse", host=args.host, port=args.port)
 
