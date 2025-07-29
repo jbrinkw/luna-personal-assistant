@@ -1,10 +1,14 @@
 # Virtual Personal Chef
 
-The long-term goal of this project is to build a multifaceted personal assistant that can track and assist with any part of your life through natural language interactions. It will consist of a series of specialized AI agents, each handling its own domain.
+The long‑term goal of this project is to build a multifaceted personal assistant that can track and assist with many aspects of daily life via natural language.  The first major component is **ChefByte**, a food‑focused assistant that manages inventory, meal planning and shopping.
 
-Currently, the only working agent is ChefByte, which helps with a range of food-related tasks such as inventory tracking, meal planning, automated grocery ordering, and more.
+ChefByte exposes a collection of *tools* which can be called by LLM agents or other programs.  These tools wrap the underlying database layer and various helper engines.  They are grouped into **push**, **pull** and **action** categories:
 
-The next planned agent is a virtual personal trainer that will track workout progress and collaborate with ChefByte to generate meals aligned with daily activity.
+* **Push tools** – update data tables such as the pantry inventory or meal planner.
+* **Pull tools** – retrieve formatted context from the database.
+* **Action tools** – orchestrate higher‑level flows like generating new recipes or planning meals.
+
+Upcoming work includes additional agents (for example a fitness planner) that will integrate with ChefByte so meals can align with workout goals.
 
 ---
 
@@ -28,6 +32,18 @@ This update includes rough drafts of all major system components, except for the
 **Automated shopping list generation** compares your inventory against selected meals and compiles a list of missing items.
 
 **Walmart order placement** automates the process of purchasing missing items directly from Walmart based on the shopping list.
+
+## Using the Tools
+
+ChefByte's capabilities are exposed as a series of FastMCP tools.  Each tool can be invoked over HTTP, SSE or stdio when the corresponding server is running.  Tools fall into three categories:
+
+* **Push** – modify data such as inventory or saved meals.
+* **Pull** – retrieve context like the current shopping list.
+* **Action** – run multi‑step workflows such as planning meals.
+
+Refer to [docs/tools.md](docs/tools.md) for a complete reference of available tools and example invocations.
+
+See [docs/database.md](docs/database.md) for the database schema used by these tools.
 
 ---
 
