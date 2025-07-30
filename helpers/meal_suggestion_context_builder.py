@@ -159,7 +159,7 @@ class MealSuggestionContextBuilder:
             if not in_stock_ids:
                 return result
                 
-            in_stock_id_list = [item[0] for item in in_stock_ids]
+            in_stock_id_list = [item['id'] for item in in_stock_ids]
             
             # Get details of these meals
             for meal_id in in_stock_id_list:
@@ -167,11 +167,11 @@ class MealSuggestionContextBuilder:
                 if meal_data and len(meal_data) > 0:
                     meal = meal_data[0]
                     result.append(MealSuggestion(
-                        meal_id=meal[0],
-                        name=meal[1],
+                        meal_id=meal["id"],
+                        name=meal["name"],
                         meal_type="saved",
-                        prep_time=meal[2],
-                        description=self.generate_description_from_recipe(meal[4])
+                        prep_time=meal["prep_time_minutes"],
+                        description=self.generate_description_from_recipe(meal["recipe"])
                     ))
         except Exception as e:
             print(f"Error getting saved meals in stock: {str(e)}")
@@ -189,7 +189,7 @@ class MealSuggestionContextBuilder:
             if not in_stock_ids:
                 return result
                 
-            in_stock_id_list = [item[0] for item in in_stock_ids]
+            in_stock_id_list = [item['id'] for item in in_stock_ids]
             
             # Get details of these meals
             for meal_id in in_stock_id_list:
@@ -197,11 +197,11 @@ class MealSuggestionContextBuilder:
                 if meal_data and len(meal_data) > 0:
                     meal = meal_data[0]
                     result.append(MealSuggestion(
-                        meal_id=meal[0],
-                        name=meal[1],
+                        meal_id=meal["id"],
+                        name=meal["name"],
                         meal_type="new",
-                        prep_time=meal[2],
-                        description=self.generate_description_from_recipe(meal[4])
+                        prep_time=meal["prep_time"],
+                        description=self.generate_description_from_recipe(meal["recipe"])
                     ))
         except Exception as e:
             print(f"Error getting new meals in stock: {str(e)}")
@@ -221,11 +221,11 @@ class MealSuggestionContextBuilder:
                 
             for meal in saved_meals:
                 result.append(MealSuggestion(
-                    meal_id=meal[0],
-                    name=meal[1],
+                    meal_id=meal["id"],
+                    name=meal["name"],
                     meal_type="saved",
-                    prep_time=meal[2],
-                    description=self.generate_description_from_recipe(meal[4])
+                    prep_time=meal["prep_time_minutes"],
+                    description=self.generate_description_from_recipe(meal["recipe"])
                 ))
         except Exception as e:
             print(f"Error getting saved meals: {str(e)}")
@@ -245,11 +245,11 @@ class MealSuggestionContextBuilder:
                 
             for meal in new_meals:
                 result.append(MealSuggestion(
-                    meal_id=meal[0],
-                    name=meal[1],
+                    meal_id=meal["id"],
+                    name=meal["name"],
                     meal_type="new",
-                    prep_time=meal[2],
-                    description=self.generate_description_from_recipe(meal[4])
+                    prep_time=meal["prep_time"],
+                    description=self.generate_description_from_recipe(meal["recipe"])
                 ))
         except Exception as e:
             print(f"Error getting new meals: {str(e)}")
