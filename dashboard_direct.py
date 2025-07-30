@@ -12,38 +12,36 @@ import os
 DB_PATH = "data/chefbyte.db"
 PUSH_SERVER_URL = "http://localhost:8010"  # Push tools server for updates
 
+@st.cache_resource
 def get_db_connection():
-    """Get a connection to the SQLite database."""
+    """Get a cached connection to the SQLite database."""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, check_same_thread=False)
         conn.row_factory = sqlite3.Row  # Enable dictionary-like access
         return conn
     except Exception as e:
         st.error(f"Database connection error: {e}")
         return None
 
+@st.cache_data(ttl=5)
 def get_table_data(table_name: str) -> List[Dict]:
     """Get all data from a specific table directly from the database."""
     conn = get_db_connection()
     if not conn:
         return []
-    
+
     try:
         cursor = conn.cursor()
         cursor.execute(f"SELECT * FROM {table_name}")
         rows = cursor.fetchall()
-        
+
         # Convert to list of dictionaries
-        data = []
-        for row in rows:
-            data.append(dict(row))
-        
+        data = [dict(row) for row in rows]
+
         return data
     except Exception as e:
         st.error(f"Error fetching {table_name}: {e}")
         return []
-    finally:
-        conn.close()
 
 def call_push_tool(tool_name: str, user_input: str) -> str:
     """Call a push tool to update data."""
@@ -133,12 +131,11 @@ def display_inventory():
                                 (name, quantity, expiration.strftime('%Y-%m-%d'), ingredient_food_id if ingredient_food_id > 0 else None)
                             )
                             conn.commit()
+                            get_table_data.clear()
                             st.success(f"Added {quantity} {name} to inventory")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Database error: {e}")
-                        finally:
-                            conn.close()
 
 def display_saved_meals():
     """Display and manage saved meals."""
@@ -185,12 +182,11 @@ def display_saved_meals():
                             cursor = conn.cursor()
                             cursor.execute("DELETE FROM saved_meals WHERE id = ?", (meal['id'],))
                             conn.commit()
+                            get_table_data.clear()
                             st.success(f"Deleted {meal['name']}")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error deleting meal: {e}")
-                        finally:
-                            conn.close()
     else:
         st.info("No saved meals available")
     
@@ -267,12 +263,11 @@ def display_shopping_list():
                                 (ingredient_id, amount)
                             )
                             conn.commit()
+                            get_table_data.clear()
                             st.success(f"Added {amount} {selected_ingredient} to shopping list")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Database error: {e}")
-                        finally:
-                            conn.close()
             else:
                 st.warning("No ingredients available in database")
 
@@ -317,12 +312,11 @@ def display_daily_planner():
                                 cursor = conn.cursor()
                                 cursor.execute("DELETE FROM daily_planner WHERE day = ?", (entry['day'].strftime('%Y-%m-%d'),))
                                 conn.commit()
+                                get_table_data.clear()
                                 st.success(f"Deleted planner entry for {entry['day'].strftime('%Y-%m-%d')}")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Error deleting entry: {e}")
-                            finally:
-                                conn.close()
     else:
         st.info("No daily planner entries")
     
@@ -354,12 +348,11 @@ def display_daily_planner():
                                 (day.strftime('%Y-%m-%d'), notes, json.dumps(meal_ids_list))
                             )
                             conn.commit()
+                            get_table_data.clear()
                             st.success(f"Added planner entry for {day.strftime('%Y-%m-%d')}")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Database error: {e}")
-                        finally:
-                            conn.close()
 
 def display_taste_profile():
     """Display and manage taste profile."""
@@ -455,12 +448,11 @@ def display_ingredients_foods():
                                 cursor = conn.cursor()
                                 cursor.execute("DELETE FROM ingredients_foods WHERE id = ?", (ingredient['id'],))
                                 conn.commit()
+                                get_table_data.clear()
                                 st.success(f"Deleted {ingredient['name']}")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Error deleting ingredient: {e}")
-                            finally:
-                                conn.close()
         
         # Also show as a table for quick overview
         st.subheader("📋 Ingredients Overview")
@@ -487,12 +479,11 @@ def display_ingredients_foods():
                                 (name, min_amount, walmart_link if walmart_link else None)
                             )
                             conn.commit()
+                            get_table_data.clear()
                             st.success(f"Added {name} to ingredients")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Database error: {e}")
-                        finally:
-                            conn.close()
 
 def display_instock_meals():
     """Display meals that can be cooked with current inventory."""
@@ -545,12 +536,11 @@ def display_instock_meals():
                                     cursor = conn.cursor()
                                     cursor.execute("DELETE FROM saved_meals_instock_ids WHERE id = ?", (meal_id,))
                                     conn.commit()
+                                    get_table_data.clear()
                                     st.success(f"Removed {meal_info['name']} from in-stock list")
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Error removing meal: {e}")
-                                finally:
-                                    conn.close()
             else:
                 st.write(f"• Saved Meal ID {meal_id} (details not found)")
     else:
@@ -597,12 +587,11 @@ def display_instock_meals():
                                     cursor = conn.cursor()
                                     cursor.execute("DELETE FROM new_meal_ideas_instock_ids WHERE id = ?", (idea_id,))
                                     conn.commit()
+                                    get_table_data.clear()
                                     st.success(f"Removed {idea_info['name']} from in-stock list")
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Error removing idea: {e}")
-                                finally:
-                                    conn.close()
             else:
                 st.write(f"• New Meal Idea ID {idea_id} (details not found)")
     else:
@@ -650,8 +639,6 @@ def display_database_stats():
     
     except Exception as e:
         st.error(f"Error getting statistics: {e}")
-    finally:
-        conn.close()
 
 def main():
     st.set_page_config(
@@ -667,36 +654,20 @@ def main():
     # Sidebar navigation
     st.sidebar.title("Navigation")
     
-    # Navigation buttons
-    if st.sidebar.button("📊 Database Stats", use_container_width=True):
-        st.session_state['current_page'] = "📊 Database Stats"
-    
-    if st.sidebar.button("🏠 Inventory", use_container_width=True):
-        st.session_state['current_page'] = "🏠 Inventory"
-    
-    if st.sidebar.button("🥕 Ingredients Foods", use_container_width=True):
-        st.session_state['current_page'] = "🥕 Ingredients Foods"
-    
-    if st.sidebar.button("🍽️ Saved Meals", use_container_width=True):
-        st.session_state['current_page'] = "🍽️ Saved Meals"
-    
-    if st.sidebar.button("🛒 Shopping List", use_container_width=True):
-        st.session_state['current_page'] = "🛒 Shopping List"
-    
-    if st.sidebar.button("📅 Daily Planner", use_container_width=True):
-        st.session_state['current_page'] = "📅 Daily Planner"
-    
-    if st.sidebar.button("👅 Taste Profile", use_container_width=True):
-        st.session_state['current_page'] = "👅 Taste Profile"
-    
-    if st.sidebar.button("💡 Meal Ideas", use_container_width=True):
-        st.session_state['current_page'] = "💡 Meal Ideas"
-    
-    if st.sidebar.button("✅ In-Stock Meals", use_container_width=True):
-        st.session_state['current_page'] = "✅ In-Stock Meals"
-    
-    # Get current page from session state, default to Database Stats
-    page = st.session_state.get('current_page', "📊 Database Stats")
+    pages = [
+        "📊 Database Stats",
+        "🏠 Inventory",
+        "🥕 Ingredients Foods",
+        "🍽️ Saved Meals",
+        "🛒 Shopping List",
+        "📅 Daily Planner",
+        "👅 Taste Profile",
+        "💡 Meal Ideas",
+        "✅ In-Stock Meals",
+    ]
+    page = st.sidebar.radio("Jump to section:", pages,
+                            index=pages.index(st.session_state.get('current_page', pages[0])))
+    st.session_state['current_page'] = page
     
     # Auto-refresh toggle
     auto_refresh = st.sidebar.checkbox("🔄 Auto-refresh (30s)", value=False)
@@ -713,9 +684,6 @@ def main():
     conn = get_db_connection()
     db_status = "🟢 Connected" if conn else "🔴 Disconnected"
     st.sidebar.write(f"Database: {db_status}")
-    
-    if conn:
-        conn.close()
     
     # Test push tools connection
     try:
