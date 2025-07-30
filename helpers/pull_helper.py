@@ -195,9 +195,6 @@ class PullHelper:
                     start_dt = end_dt - timedelta(days=7)
                 elif start_dt is not None and end_dt is None:
                     end_dt = start_dt + timedelta(days=7)
-                elif start_dt is None and end_dt is None:
-                    start_dt = today
-                    end_dt = start_dt + timedelta(days=7)
 
             tomorrow = today + timedelta(days=1)
 
