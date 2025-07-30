@@ -496,10 +496,10 @@ class DailyPlanner:
 
         Args:
             day: Specific day to fetch.
-            start_date: Beginning of range (inclusive). Defaults to 7 days ago
-                if neither ``day`` nor ``start_date``/``end_date`` supplied.
-            end_date: End of range (inclusive). Defaults to today when a range is
-                requested but ``end_date`` is not provided.
+            start_date: Beginning of range (inclusive). Defaults to today when
+                no date parameters are supplied.
+            end_date: End of range (inclusive). Defaults to one week from
+                ``start_date``.
 
         Returns:
             List of row dictionaries matching the query.
@@ -509,21 +509,34 @@ class DailyPlanner:
             query = "SELECT * FROM daily_planner WHERE day = ?"
             return self.db.execute_query(query, (day_str,), fetch=True)
 
-        # Determine range defaults
-        if start_date is None and end_date is None:
-            end_date = date.today()
-            start_date = end_date - timedelta(days=7)
-        elif start_date is None:
-            end = end_date.strftime('%Y-%m-%d') if isinstance(end_date, date) else end_date
-            end_dt = datetime.strptime(end, '%Y-%m-%d').date()
-            start_date = end_dt - timedelta(days=7)
-        elif end_date is None:
-            start = start_date.strftime('%Y-%m-%d') if isinstance(start_date, date) else start_date
-            start_dt = datetime.strptime(start, '%Y-%m-%d').date()
-            end_date = start_dt + timedelta(days=7)
+        today = date.today()
 
-        start_str = start_date.strftime('%Y-%m-%d') if isinstance(start_date, date) else start_date
-        end_str = end_date.strftime('%Y-%m-%d') if isinstance(end_date, date) else end_date
+        if start_date is None and end_date is None:
+            start_date = today
+            end_date = start_date + timedelta(days=7)
+        elif start_date is None:
+            end_date = (
+                datetime.strptime(end_date, '%Y-%m-%d').date()
+                if isinstance(end_date, str)
+                else end_date
+            )
+            start_date = end_date - timedelta(days=7)
+        elif end_date is None:
+            start_date = (
+                datetime.strptime(start_date, '%Y-%m-%d').date()
+                if isinstance(start_date, str)
+                else start_date
+            )
+            end_date = start_date + timedelta(days=7)
+
+        # Normalize any string inputs after default handling
+        if isinstance(start_date, str):
+            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+        if isinstance(end_date, str):
+            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+
+        start_str = start_date.strftime('%Y-%m-%d')
+        end_str = end_date.strftime('%Y-%m-%d')
         query = "SELECT * FROM daily_planner WHERE day BETWEEN ? AND ? ORDER BY day"
         return self.db.execute_query(query, (start_str, end_str), fetch=True)
     
