@@ -337,10 +337,10 @@ class MealPlannerSelector:
             notes = ""
             current_meal_ids = []
             if daily_entry and len(daily_entry) > 0:
-                notes = daily_entry[0][1] or ""
+                notes = daily_entry[0]['notes'] or ""
                 try:
                     # Load existing meal IDs, ensure it's a list
-                    loaded_ids = json.loads(daily_entry[0][2] or '[]')
+                    loaded_ids = json.loads(daily_entry[0]['meal_ids'] or '[]')
                     if isinstance(loaded_ids, list):
                         current_meal_ids = loaded_ids
                     else:
@@ -427,7 +427,7 @@ class MealNoteIntentGenerator(OriginalGenerator):
         while current_date <= extended_end:
             existing = self.tables["daily_planner"].read(current_date)
             if existing:
-                notes = existing[0][1] or ""
+                notes = existing[0]['notes'] or ""
                 self.tables["daily_planner"].update(
                     day=current_date,
                     notes=notes,
