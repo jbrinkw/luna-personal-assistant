@@ -9,7 +9,7 @@ returns a string explaining the format used to interact with the table.
 import os
 import sqlite3
 from dotenv import load_dotenv
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import json
 import random
 
@@ -491,15 +491,41 @@ class DailyPlanner:
         """
         return self.db.execute_query(query, (day_str, notes, meal_ids_json))
     
-    def read(self, day=None):
-        if day:
-            # Format date as string
+    def read(self, day=None, start_date=None, end_date=None):
+        """Read planner entries.
+
+        Args:
+            day: Specific day to fetch.
+            start_date: Beginning of range (inclusive). Defaults to 7 days ago
+                if neither ``day`` nor ``start_date``/``end_date`` supplied.
+            end_date: End of range (inclusive). Defaults to today when a range is
+                requested but ``end_date`` is not provided.
+
+        Returns:
+            List of row dictionaries matching the query.
+        """
+        if day is not None:
             day_str = day.strftime('%Y-%m-%d') if isinstance(day, date) else day
             query = "SELECT * FROM daily_planner WHERE day = ?"
             return self.db.execute_query(query, (day_str,), fetch=True)
-        else:
-            query = "SELECT * FROM daily_planner ORDER BY day"
-            return self.db.execute_query(query, fetch=True)
+
+        # Determine range defaults
+        if start_date is None and end_date is None:
+            end_date = date.today()
+            start_date = end_date - timedelta(days=7)
+        elif start_date is None:
+            end = end_date.strftime('%Y-%m-%d') if isinstance(end_date, date) else end_date
+            end_dt = datetime.strptime(end, '%Y-%m-%d').date()
+            start_date = end_dt - timedelta(days=7)
+        elif end_date is None:
+            start = start_date.strftime('%Y-%m-%d') if isinstance(start_date, date) else start_date
+            start_dt = datetime.strptime(start, '%Y-%m-%d').date()
+            end_date = start_dt + timedelta(days=7)
+
+        start_str = start_date.strftime('%Y-%m-%d') if isinstance(start_date, date) else start_date
+        end_str = end_date.strftime('%Y-%m-%d') if isinstance(end_date, date) else end_date
+        query = "SELECT * FROM daily_planner WHERE day BETWEEN ? AND ? ORDER BY day"
+        return self.db.execute_query(query, (start_str, end_str), fetch=True)
     
     def update(self, day, notes=None, meal_ids=None):
         updates = []
