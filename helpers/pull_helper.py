@@ -156,21 +156,52 @@ class PullHelper:
             print(f"[ERROR] PullHelper failed to get shopping list context: {e}\n{traceback.format_exc()}")
             return "Error retrieving shopping list."
 
-    def get_daily_notes_context(self) -> str:
-        """Fetches the user's meal plan for the upcoming week."""
+    def get_daily_notes_context(
+        self,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> str:
+        """Fetch the user's meal plan for the given range.
+
+        Args:
+            start_date: Beginning of the desired range. Defaults to today.
+            end_date: End of the range (inclusive). Defaults to one week from
+                ``start_date``.
+
+        Returns:
+            A formatted string describing plans in the requested window or a
+            message if none exist.
+        """
         try:
             daily_planner_table = self.tables.get('daily_planner')
             saved_meals_table = self.tables.get('saved_meals')
-            if not daily_planner_table or not saved_meals_table: 
+            if not daily_planner_table or not saved_meals_table:
                 return "Error: DailyPlanner or SavedMeals table not available."
 
+            # Determine range defaults
             today = date.today()
+
+            if start_date is None and end_date is None:
+                start_dt = today
+                end_dt = start_dt + timedelta(days=7)
+            else:
+                start_dt = start_date
+                end_dt = end_date
+                if isinstance(start_dt, str):
+                    start_dt = datetime.strptime(start_dt, "%Y-%m-%d").date()
+                if isinstance(end_dt, str):
+                    end_dt = datetime.strptime(end_dt, "%Y-%m-%d").date()
+                if start_dt is None and end_dt is not None:
+                    start_dt = end_dt - timedelta(days=7)
+                elif start_dt is not None and end_dt is None:
+                    end_dt = start_dt + timedelta(days=7)
+
             tomorrow = today + timedelta(days=1)
-            end_date = today + timedelta(days=7)
-            
-            all_entries = daily_planner_table.read()
+
+            # Fetch entries within requested range
+            all_entries = daily_planner_table.read(start_date=start_dt, end_date=end_dt)
             if not all_entries:
-                return "No meal plans found for the upcoming week."
+                return "No meal plans found for the specified range."
                 
             context = ""
             found_entries = False
@@ -187,7 +218,7 @@ class PullHelper:
                 except (ValueError, TypeError):
                     continue
 
-                if today <= entry_date <= end_date:
+                if start_dt <= entry_date <= end_dt:
                     found_entries = True
                     try: notes = entry['notes']
                     except KeyError: notes = None
@@ -217,7 +248,11 @@ class PullHelper:
                     formatted_date = entry_date.strftime("%A, %B %d")
                     context += f"{relative_prefix}({formatted_date}): {meal_text} (Notes: {notes})\n"
             
-            return context.strip() if found_entries else "No meal plans found for the upcoming week."
+            return (
+                context.strip()
+                if found_entries
+                else "No meal plans found for the specified range."
+            )
         except Exception as e:
             print(f"[ERROR] PullHelper failed to get daily notes context: {e}\n{traceback.format_exc()}")
             return "Error retrieving daily meal plans."
