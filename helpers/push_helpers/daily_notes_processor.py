@@ -112,9 +112,10 @@ User input: {user_input}
             date_info = self.get_current_date_info()
             today = date_info["today_date_obj"]
             end_date = today + timedelta(days=7)
-            
+
             plans_text = "No current plans found."
-            all_entries = daily_planner.read()
+            # Only fetch entries within the upcoming week
+            all_entries = daily_planner.read(start_date=today, end_date=end_date)
             
             if all_entries:
                 formatted_entries = []
