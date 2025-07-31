@@ -1,8 +1,7 @@
 """Run the GeneralByte MCP server with Home Assistant tools."""
 
 from fastmcp import FastMCP
-from . import tool
-
+import tool
 mcp = FastMCP("GeneralByte Aggregated Tools")
 
 mcp.mount(tool.mcp, prefix="general")
