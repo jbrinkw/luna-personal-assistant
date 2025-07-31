@@ -6,6 +6,7 @@ from agents.tool import FunctionTool as AgentsFunctionTool
 from agents.tool_context import ToolContext
 import json
 import inspect
+import uuid
 
 mcp = FastMCP("CoachByte Tools")
 
@@ -16,8 +17,9 @@ def convert_tool(tool_obj: AgentsFunctionTool):
     required = set(schema.get("required", []))
 
     async def wrapper(**kwargs):
-        data = {k: v for k, v in kwargs.items() if v is not None}
-        ctx = ToolContext(context=None, tool_name=tool_obj.name, tool_call_id="fastmcp")
+        data = kwargs
+        call_id = uuid.uuid4().hex
+        ctx = ToolContext(context=None, tool_name=tool_obj.name, tool_call_id=call_id)
         result = tool_obj.on_invoke_tool(ctx, json.dumps(data))
         if inspect.isawaitable(result):
             result = await result
