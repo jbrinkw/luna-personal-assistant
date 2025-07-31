@@ -14,7 +14,7 @@ mcp = FastMCP("GeneralByte Tools")
 
 HA_URL = os.getenv("HA_URL", "http://homeassistant.local:8123")
 HA_TOKEN = os.getenv("HA_TOKEN")
-DEFAULT_NOTIFY_SERVICE = os.getenv("HA_NOTIFY_SERVICE", "mobile_app_jeremys_iphone")
+DEFAULT_NOTIFY_SERVICE = "mobile_app_jeremys_iphone"
 
 HEADERS = {
     "Authorization": f"Bearer {HA_TOKEN}",
@@ -44,7 +44,7 @@ def send_phone_notification(message: str, title: str = "Notification", service: 
 
 
 @mcp.tool
-def get_todo_list(entity_id: str, status: Optional[str] = None) -> dict:
+def get_todo_list(entity_id = "todo", status: Optional[str] = None) -> dict:
     """Return items from a Home Assistant to-do list."""
     if not HA_TOKEN:
         return {"error": "Home Assistant token not configured"}
