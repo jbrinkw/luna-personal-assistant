@@ -44,14 +44,58 @@ def send_phone_notification(message: str, title: str = "Notification", service: 
 
 
 @mcp.tool
-def get_todo_list(entity_id = "todo", status: Optional[str] = None) -> dict:
+def get_todo_list(entity_id = "todo.todo", status: Optional[str] = None) -> dict:
     """Return items from a Home Assistant to-do list."""
     if not HA_TOKEN:
         return {"error": "Home Assistant token not configured"}
-    payload = {"entity_id": entity_id}
-    if status:
-        payload["status"] = [status]
-    return call_service("todo", "get_items", payload)
+    
+    # First, let's get all available todo entities
+    url = f"{HA_URL}/api/states"
+    response = requests.get(url, headers=HEADERS, timeout=10)
+    response.raise_for_status()
+    
+    try:
+        all_states = response.json()
+        todo_entities = [state["entity_id"] for state in all_states if state["entity_id"].startswith("todo.")]
+        
+        if not todo_entities:
+            return {"error": "No todo entities found in Home Assistant"}
+        
+        # If no specific entity_id provided or the provided one doesn't exist, use the first available
+        if entity_id == "todo" or entity_id not in todo_entities:
+            if entity_id != "todo":
+                return {
+                    "error": f"Todo entity '{entity_id}' not found. Available todo entities: {todo_entities}",
+                    "available_entities": todo_entities
+                }
+            entity_id = todo_entities[0]
+        
+        # Now get the specific todo entity
+        url = f"{HA_URL}/api/states/{entity_id}"
+        response = requests.get(url, headers=HEADERS, timeout=10)
+        response.raise_for_status()
+        
+        state_data = response.json()
+        if state_data.get("state") == "unavailable":
+            return {"error": f"Todo entity '{entity_id}' is unavailable"}
+        
+        # Extract items from the attributes
+        items = state_data.get("attributes", {}).get("items", [])
+        
+        # Filter by status if specified
+        if status:
+            items = [item for item in items if item.get("status") == status]
+        
+        return {
+            "entity_id": entity_id,
+            "items": items,
+            "total_items": len(items),
+            "available_todo_entities": todo_entities
+        }
+    except ValueError:
+        return {"error": "Invalid response from Home Assistant"}
+    except requests.exceptions.RequestException as e:
+        return {"error": f"Failed to connect to Home Assistant: {str(e)}"}
 
 
 @mcp.tool
@@ -89,7 +133,7 @@ def modify_todo_item(
             return "Item name or uid required for update"
         data.update({"item": identifier})
         if rename:
-            data["rename"] = rename
+            data["name"] = rename  # Changed from 'rename' to 'name'
         if status:
             data["status"] = status
         if description:
@@ -108,5 +152,8 @@ def modify_todo_item(
     else:
         return "Invalid action. Use 'create', 'update', or 'delete'."
 
-    call_service("todo", service, data)
-    return f"Todo item {action} request sent"
+    try:
+        call_service("todo", service, data)
+        return f"Todo item {action} successful"
+    except requests.exceptions.HTTPError as e:
+        return f"Failed to {action} todo item: {str(e)}"
