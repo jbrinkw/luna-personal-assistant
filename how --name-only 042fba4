@@ -1,0 +1,7 @@
+[33mcommit 9d6d182a59eab4dd9e5aefadb48f7e92fc906264[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m
+Author: Jeremy Brinkworth <88738953+jbrinkw@users.noreply.github.com>
+Date:   Thu Jul 31 05:00:38 2025 -0400
+
+    moved .gitignore
+
+.gitignore

@@ -5,12 +5,16 @@ from typing import Optional
 
 import requests
 from fastmcp import FastMCP
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 mcp = FastMCP("GeneralByte Tools")
 
-HA_URL = os.getenv("HA_URL", "http://localhost:8123")
+HA_URL = os.getenv("HA_URL", "http://homeassistant.local:8123")
 HA_TOKEN = os.getenv("HA_TOKEN")
-DEFAULT_NOTIFY_SERVICE = os.getenv("HA_NOTIFY_SERVICE", "mobile_app_my_phone")
+DEFAULT_NOTIFY_SERVICE = os.getenv("HA_NOTIFY_SERVICE", "mobile_app_jeremys_iphone")
 
 HEADERS = {
     "Authorization": f"Bearer {HA_TOKEN}",
@@ -30,12 +34,12 @@ def call_service(domain: str, service: str, data: dict) -> dict:
 
 
 @mcp.tool
-def send_phone_notification(message: str, service: str | None = None) -> str:
+def send_phone_notification(message: str, title: str = "Notification", service: str | None = None) -> str:
     """Send a notification message to the configured phone via Home Assistant."""
     if not HA_TOKEN:
         return "Home Assistant token not configured"
     target_service = service or DEFAULT_NOTIFY_SERVICE
-    call_service("notify", target_service, {"message": message})
+    call_service("notify", target_service, {"title": title, "message": message})
     return "Notification sent"
 
 
