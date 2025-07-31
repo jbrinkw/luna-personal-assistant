@@ -5,7 +5,7 @@ from datetime import date, timedelta, datetime, timezone
 import psycopg2.extras
 
 from db import get_connection, get_today_log_id
-from agents import function_tool
+
 
 def get_corrected_time():
     """Get the current UTC time"""
@@ -36,7 +36,6 @@ def _get_exercise_id(conn, name: str) -> int:
     return cur.fetchone()['id']
 
 
-@function_tool(strict_mode=False)
 def new_daily_plan(items: List[Dict[str, Any]]):
     """Create today's daily workout plan with a list of planned sets.
     
@@ -83,7 +82,6 @@ def new_daily_plan(items: List[Dict[str, Any]]):
     return f"planned {len(items)} sets for today"
 
 
-@function_tool(strict_mode=False)
 def get_today_plan() -> List[Dict[str, Any]]:
     """Retrieve today's planned workout sets in order.
     
@@ -116,7 +114,6 @@ def get_today_plan() -> List[Dict[str, Any]]:
     return rows
 
 
-@function_tool(strict_mode=False)
 def log_completed_set(exercise: str, reps: int, load: float):
     """Record a completed set that was NOT part of the planned workout (for extra/unplanned sets).
     
@@ -153,7 +150,6 @@ def log_completed_set(exercise: str, reps: int, load: float):
     return "logged"
 
 
-@function_tool(strict_mode=False)
 def complete_planned_set(exercise: Optional[str] = None, reps: Optional[int] = None, load: Optional[float] = None):
     """Complete the next planned set in the workout queue, with optional overrides.
     
@@ -270,7 +266,6 @@ def complete_planned_set(exercise: Optional[str] = None, reps: Optional[int] = N
         conn.close()
 
 
-@function_tool(strict_mode=False)
 def update_summary(text: str):
     """Update today's workout summary with a descriptive text.
     
@@ -299,7 +294,6 @@ def update_summary(text: str):
     return "summary updated"
 
 
-@function_tool(strict_mode=False)
 def get_recent_history(days: int) -> List[Dict[str, Any]]:
     """Retrieve workout history for the specified number of recent days.
     
@@ -345,7 +339,6 @@ def get_recent_history(days: int) -> List[Dict[str, Any]]:
     return rows
 
 
-@function_tool(strict_mode=False)
 def set_weekly_split_day(day: str, items: List[Dict[str, Any]]):
     """Replace the weekly split plan for the specified day.
 
@@ -401,7 +394,6 @@ def set_weekly_split_day(day: str, items: List[Dict[str, Any]]):
     return f"split updated for {key} with {len(items)} sets"
 
 
-@function_tool(strict_mode=False)
 def get_weekly_split(day: Optional[str] = None) -> List[Dict[str, Any]]:
     """Retrieve the weekly split plan.
 
@@ -459,7 +451,6 @@ def _execute_sql(query: str, params: Optional[Dict[str, Any]] = None, confirm: b
     return rows
 
 
-@function_tool(strict_mode=False)
 def run_sql(query: str, params: Optional[Dict[str, Any]] = None, confirm: bool = False):
     """Execute SQL queries against the workout database.
     
@@ -485,7 +476,6 @@ def run_sql(query: str, params: Optional[Dict[str, Any]] = None, confirm: bool =
     return _execute_sql(query, params, confirm)
 
 
-@function_tool(strict_mode=False)
 def arbitrary_update(query: str, params: Optional[Dict[str, Any]] = None):
     """Execute UPDATE, INSERT, or DELETE SQL statements with automatic confirmation.
     
@@ -514,7 +504,6 @@ def arbitrary_update(query: str, params: Optional[Dict[str, Any]] = None):
     return _execute_sql(query, params=params, confirm=True)
 
 
-@function_tool(strict_mode=False)
 def set_timer(minutes: int):
     """Set a workout timer for rest periods or workout duration.
     
@@ -558,7 +547,6 @@ def set_timer(minutes: int):
         return f"Timer error: {e}"
 
 
-@function_tool(strict_mode=False)
 def get_timer() -> Dict[str, Any]:
     """Check the current timer status and remaining time.
     
