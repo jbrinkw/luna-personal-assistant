@@ -10,6 +10,7 @@ import uuid
 
 mcp = FastMCP("CoachByte Tools")
 
+
 def convert_tool(tool_obj: AgentsFunctionTool):
     """Convert an OpenAI Agents FunctionTool to a FastMCP compatible callable."""
     schema = tool_obj.params_json_schema
@@ -19,7 +20,20 @@ def convert_tool(tool_obj: AgentsFunctionTool):
     async def wrapper(**kwargs):
         data = kwargs
         call_id = uuid.uuid4().hex
-        ctx = ToolContext(context=None, tool_name=tool_obj.name, tool_call_id=call_id)
+
+        # ToolContext gained a ``tool_name`` parameter in newer versions of the
+        # ``openai-agents`` package.  Older versions only accept ``context`` and
+        # ``tool_call_id``.  Inspect the dataclass fields so we can support both
+        # versions gracefully.
+        if "tool_name" in getattr(ToolContext, "__dataclass_fields__", {}):
+            ctx = ToolContext(
+                context=None,
+                tool_name=tool_obj.name,
+                tool_call_id=call_id,
+            )
+        else:
+            ctx = ToolContext(context=None, tool_call_id=call_id)
+
         result = tool_obj.on_invoke_tool(ctx, json.dumps(data))
         if inspect.isawaitable(result):
             result = await result
@@ -40,6 +54,7 @@ def convert_tool(tool_obj: AgentsFunctionTool):
     wrapper.__name__ = tool_obj.name
     wrapper.__doc__ = tool_obj.description
     return wrapper
+
 
 for name in getattr(tools, "__all__", []):
     tool_obj = getattr(tools, name)
@@ -67,7 +82,9 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    url = f"http://{args.host if args.host != '0.0.0.0' else 'localhost'}:{args.port}/sse"
+    url = (
+        f"http://{args.host if args.host != '0.0.0.0' else 'localhost'}:{args.port}/sse"
+    )
     print(f"[CoachByte] Running via SSE at {url}")
 
     mcp.run(transport="sse", host=args.host, port=args.port)
