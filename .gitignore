@@ -9,3 +9,4 @@ pig4.py
 # Node
 node_modules/
 dist/
+data/
