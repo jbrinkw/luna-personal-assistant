@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, date, timedelta, timezone
 
 # Database configuration
-DB_HOST = os.environ.get("DB_HOST", "192.168.1.93")
+DB_HOST = os.environ.get("DB_HOST", "192.168.0.239")
 DB_PORT = os.environ.get("DB_PORT", "5432")
 DB_NAME = os.environ.get("DB_NAME", "workout_tracker")
 DB_USER = os.environ.get("DB_USER", "postgres")
