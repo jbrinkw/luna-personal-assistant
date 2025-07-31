@@ -7,7 +7,7 @@ You can either:
 2. Set environment variables manually
 
 Example .env file:
-DB_HOST=192.168.1.93
+DB_HOST=192.168.0.239
 DB_PORT=5432
 DB_NAME=workout_tracker
 DB_USER=postgres
@@ -24,7 +24,7 @@ load_dotenv()
 def get_db_config() -> Dict[str, str]:
     """Get database configuration from environment variables"""
     return {
-        "host": os.environ.get("DB_HOST", "192.168.1.93"),
+        "host": os.environ.get("DB_HOST", "192.168.0.239"),
         "port": os.environ.get("DB_PORT", "5432"),
         "database": os.environ.get("DB_NAME", "workout_tracker"),
         "user": os.environ.get("DB_USER", "postgres"),
