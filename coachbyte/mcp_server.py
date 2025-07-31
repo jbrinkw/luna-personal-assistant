@@ -29,12 +29,13 @@ def convert_tool(tool_obj: AgentsFunctionTool):
     parameters = []
     for name, prop in props.items():
         default = inspect._empty if name in required else None
-        param = inspect.Parameter(
-            name,
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            default=default,
+        parameters.append(
+            inspect.Parameter(
+                name,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                default=default,
+            )
         )
-        parameters.append(param)
     wrapper.__signature__ = inspect.Signature(parameters=parameters)
     wrapper.__name__ = tool_obj.name
     wrapper.__doc__ = tool_obj.description
