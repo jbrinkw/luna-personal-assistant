@@ -1,0 +1,965 @@
+{
+  "test_info": {
+    "start_time": "2025-07-31T19:13:54.724216",
+    "model": "gpt-4o",
+    "server_url": "http://localhost:8000/sse",
+    "end_time": "2025-07-31T19:16:13.347266",
+    "duration": "0:02:18.623050"
+  },
+  "crud_tests": {
+    "inventory": {
+      "table": "inventory",
+      "before_state": [
+        {
+          "id": 1,
+          "name": "Ground beef",
+          "quantity": "1 lb",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 104
+        },
+        {
+          "id": 2,
+          "name": "Bacon",
+          "quantity": "12 oz",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 105
+        },
+        {
+          "id": 3,
+          "name": "Sesame seeds",
+          "quantity": "1 tbsp",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 136
+        },
+        {
+          "id": 4,
+          "name": "Soy sauce",
+          "quantity": "1/4 cup",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 137
+        },
+        {
+          "id": 5,
+          "name": "Garlic",
+          "quantity": "3 cloves",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 106
+        },
+        {
+          "id": 6,
+          "name": "Ginger",
+          "quantity": "1 inch piece",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 107
+        },
+        {
+          "id": 7,
+          "name": "Spaghetti",
+          "quantity": "1 box",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 108
+        },
+        {
+          "id": 8,
+          "name": "Parmesan cheese",
+          "quantity": "1 wedge",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 109
+        },
+        {
+          "id": 9,
+          "name": "Butter",
+          "quantity": "1 stick",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 110
+        },
+        {
+          "id": 10,
+          "name": "Olive oil",
+          "quantity": "500ml bottle",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 111
+        },
+        {
+          "id": 11,
+          "name": "Thin-sliced steak",
+          "quantity": "1 lb",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 112
+        },
+        {
+          "id": 12,
+          "name": "White rice",
+          "quantity": "2 cups",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 113
+        },
+        {
+          "id": 13,
+          "name": "Black beans",
+          "quantity": "1 can",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 114
+        },
+        {
+          "id": 14,
+          "name": "Tortilla",
+          "quantity": "1 pack (10 ct)",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 115
+        },
+        {
+          "id": 15,
+          "name": "Mayo",
+          "quantity": "1 jar",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 116
+        },
+        {
+          "id": 16,
+          "name": "Eggs",
+          "quantity": "1 dozen",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 117
+        },
+        {
+          "id": 17,
+          "name": "Sourdough bread",
+          "quantity": "1 loaf",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 118
+        },
+        {
+          "id": 18,
+          "name": "Pre-cooked chicken",
+          "quantity": "1 lb",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 119
+        },
+        {
+          "id": 19,
+          "name": "Shredded cheese",
+          "quantity": "1 bag",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 120
+        },
+        {
+          "id": 20,
+          "name": "Caesar dressing",
+          "quantity": "1 bottle",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 121
+        },
+        {
+          "id": 21,
+          "name": "Instant ramen",
+          "quantity": "3 packs",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 122
+        },
+        {
+          "id": 22,
+          "name": "Non-chunky tomato sauce",
+          "quantity": "1 jar",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 123
+        },
+        {
+          "id": 23,
+          "name": "Pre-cooked pulled pork",
+          "quantity": "1 container",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 124
+        },
+        {
+          "id": 24,
+          "name": "BBQ sauce",
+          "quantity": "1 bottle",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 125
+        },
+        {
+          "id": 25,
+          "name": "Instant mashed potatoes",
+          "quantity": "1 box",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 126
+        },
+        {
+          "id": 26,
+          "name": "Pre-cooked shrimp",
+          "quantity": "1 lb",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 127
+        },
+        {
+          "id": 27,
+          "name": "Onions",
+          "quantity": "2",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 128
+        },
+        {
+          "id": 28,
+          "name": "Taco seasoning",
+          "quantity": "1 packet",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 129
+        },
+        {
+          "id": 29,
+          "name": "Taco shells",
+          "quantity": "1 box",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 130
+        },
+        {
+          "id": 30,
+          "name": "Frozen mixed vegetables",
+          "quantity": "1 bag",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 131
+        },
+        {
+          "id": 31,
+          "name": "Microwaveable rice",
+          "quantity": "1 pouch",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 132
+        },
+        {
+          "id": 32,
+          "name": "Rotisserie chicken",
+          "quantity": "1 whole",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 133
+        },
+        {
+          "id": 33,
+          "name": "Salmon",
+          "quantity": "1 fillet",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 134
+        },
+        {
+          "id": 34,
+          "name": "Tortilla chips",
+          "quantity": "1 bag",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 135
+        },
+        {
+          "id": 35,
+          "name": "Whole milk",
+          "quantity": "1 gallon",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 102
+        },
+        {
+          "id": 36,
+          "name": "Frozen waffles",
+          "quantity": "1 box",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 138
+        },
+        {
+          "id": 37,
+          "name": "Microwave burrito",
+          "quantity": "2",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 139
+        },
+        {
+          "id": 38,
+          "name": "Carrots",
+          "quantity": "1 bag",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 140
+        }
+      ],
+      "update_prompt": "Add 2 pounds of ground turkey to the inventory with expiration date next week",
+      "update_result": "Ground turkey has been added to the inventory with the requested details:\n\n- **Item**: Ground turkey\n- **Quantity**: 2 pounds\n- **Expiration Date**: Next week\n\nIf you need any further adjustments, feel free to ask!",
+      "after_state": [
+        {
+          "id": 1,
+          "name": "Ground beef",
+          "quantity": "1 lb",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 104
+        },
+        {
+          "id": 2,
+          "name": "Bacon",
+          "quantity": "12 oz",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 105
+        },
+        {
+          "id": 3,
+          "name": "Sesame seeds",
+          "quantity": "1 tbsp",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 136
+        },
+        {
+          "id": 4,
+          "name": "Soy sauce",
+          "quantity": "1/4 cup",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 137
+        },
+        {
+          "id": 5,
+          "name": "Garlic",
+          "quantity": "3 cloves",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 106
+        },
+        {
+          "id": 6,
+          "name": "Ginger",
+          "quantity": "1 inch piece",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 107
+        },
+        {
+          "id": 7,
+          "name": "Spaghetti",
+          "quantity": "1 box",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 108
+        },
+        {
+          "id": 8,
+          "name": "Parmesan cheese",
+          "quantity": "1 wedge",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 109
+        },
+        {
+          "id": 9,
+          "name": "Butter",
+          "quantity": "1 stick",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 110
+        },
+        {
+          "id": 10,
+          "name": "Olive oil",
+          "quantity": "500ml bottle",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 111
+        },
+        {
+          "id": 11,
+          "name": "Thin-sliced steak",
+          "quantity": "1 lb",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 112
+        },
+        {
+          "id": 12,
+          "name": "White rice",
+          "quantity": "2 cups",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 113
+        },
+        {
+          "id": 13,
+          "name": "Black beans",
+          "quantity": "1 can",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 114
+        },
+        {
+          "id": 14,
+          "name": "Tortilla",
+          "quantity": "1 pack (10 ct)",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 115
+        },
+        {
+          "id": 15,
+          "name": "Mayo",
+          "quantity": "1 jar",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 116
+        },
+        {
+          "id": 16,
+          "name": "Eggs",
+          "quantity": "1 dozen",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 117
+        },
+        {
+          "id": 17,
+          "name": "Sourdough bread",
+          "quantity": "1 loaf",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 118
+        },
+        {
+          "id": 18,
+          "name": "Pre-cooked chicken",
+          "quantity": "1 lb",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 119
+        },
+        {
+          "id": 19,
+          "name": "Shredded cheese",
+          "quantity": "1 bag",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 120
+        },
+        {
+          "id": 20,
+          "name": "Caesar dressing",
+          "quantity": "1 bottle",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 121
+        },
+        {
+          "id": 21,
+          "name": "Instant ramen",
+          "quantity": "3 packs",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 122
+        },
+        {
+          "id": 22,
+          "name": "Non-chunky tomato sauce",
+          "quantity": "1 jar",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 123
+        },
+        {
+          "id": 23,
+          "name": "Pre-cooked pulled pork",
+          "quantity": "1 container",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 124
+        },
+        {
+          "id": 24,
+          "name": "BBQ sauce",
+          "quantity": "1 bottle",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 125
+        },
+        {
+          "id": 25,
+          "name": "Instant mashed potatoes",
+          "quantity": "1 box",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 126
+        },
+        {
+          "id": 26,
+          "name": "Pre-cooked shrimp",
+          "quantity": "1 lb",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 127
+        },
+        {
+          "id": 27,
+          "name": "Onions",
+          "quantity": "2",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 128
+        },
+        {
+          "id": 28,
+          "name": "Taco seasoning",
+          "quantity": "1 packet",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 129
+        },
+        {
+          "id": 29,
+          "name": "Taco shells",
+          "quantity": "1 box",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 130
+        },
+        {
+          "id": 30,
+          "name": "Frozen mixed vegetables",
+          "quantity": "1 bag",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 131
+        },
+        {
+          "id": 31,
+          "name": "Microwaveable rice",
+          "quantity": "1 pouch",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 132
+        },
+        {
+          "id": 32,
+          "name": "Rotisserie chicken",
+          "quantity": "1 whole",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 133
+        },
+        {
+          "id": 33,
+          "name": "Salmon",
+          "quantity": "1 fillet",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 134
+        },
+        {
+          "id": 34,
+          "name": "Tortilla chips",
+          "quantity": "1 bag",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 135
+        },
+        {
+          "id": 35,
+          "name": "Whole milk",
+          "quantity": "1 gallon",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 102
+        },
+        {
+          "id": 36,
+          "name": "Frozen waffles",
+          "quantity": "1 box",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 138
+        },
+        {
+          "id": 37,
+          "name": "Microwave burrito",
+          "quantity": "2",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 139
+        },
+        {
+          "id": 38,
+          "name": "Carrots",
+          "quantity": "1 bag",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 140
+        },
+        {
+          "id": 39,
+          "name": "Sliced turkey",
+          "quantity": "2 lb",
+          "expiration": "2025-08-07",
+          "ingredient_food_id": 147
+        }
+      ],
+      "query_prompt": "Show me the complete current inventory including quantities and expiration dates",
+      "query_result": "Here is the complete current inventory, including quantities and expiration dates:\n\n- **Ground beef**: 1 lb (Expires: 2025-08-07)\n- **Bacon**: 12 oz (Expires: 2025-08-07)\n- **Sesame seeds**: 1 tbsp (Expires: 2025-08-07)\n- **Soy sauce**: 1/4 cup (Expires: 2025-08-07)\n- **Garlic**: 3 cloves (Expires: 2025-08-07)\n- **Ginger**: 1 inch piece (Expires: 2025-08-07)\n- **Spaghetti**: 1 box (Expires: 2025-08-07)\n- **Parmesan cheese**: 1 wedge (Expires: 2025-08-07)\n- **Butter**: 1 stick (Expires: 2025-08-07)\n- **Olive oil**: 500ml bottle (Expires: 2025-08-07)\n- **Thin-sliced steak**: 1 lb (Expires: 2025-08-07)\n- **White rice**: 2 cups (Expires: 2025-08-07)\n- **Black beans**: 1 can (Expires: 2025-08-07)\n- **Tortilla**: 1 pack (10 ct) (Expires: 2025-08-07)\n- **Mayo**: 1 jar (Expires: 2025-08-07)\n- **Eggs**: 1 dozen (Expires: 2025-08-07)\n- **Sourdough bread**: 1 loaf (Expires: 2025-08-07)\n- **Pre-cooked chicken**: 1 lb (Expires: 2025-08-07)\n- **Shredded cheese**: 1 bag (Expires: 2025-08-07)\n- **Caesar dressing**: 1 bottle (Expires: 2025-08-07)\n- **Instant ramen**: 3 packs (Expires: 2025-08-07)\n- **Non-chunky tomato sauce**: 1 jar (Expires: 2025-08-07)\n- **Pre-cooked pulled pork**: 1 container (Expires: 2025-08-07)\n- **BBQ sauce**: 1 bottle (Expires: 2025-08-07)\n- **Instant mashed potatoes**: 1 box (Expires: 2025-08-07)\n- **Pre-cooked shrimp**: 1 lb (Expires: 2025-08-07)\n- **Onions**: 2 (Expires: 2025-08-07)\n- **Taco seasoning**: 1 packet (Expires: 2025-08-07)\n- **Taco shells**: 1 box (Expires: 2025-08-07)\n- **Frozen mixed vegetables**: 1 bag (Expires: 2025-08-07)\n- **Microwaveable rice**: 1 pouch (Expires: 2025-08-07)\n- **Rotisserie chicken**: 1 whole (Expires: 2025-08-07)\n- **Salmon**: 1 fillet (Expires: 2025-08-07)\n- **Tortilla chips**: 1 bag (Expires: 2025-08-07)\n- **Whole milk**: 1 gallon (Expires: 2025-08-07)\n- **Frozen waffles**: 1 box (Expires: 2025-08-07)\n- **Microwave burrito**: 2 (Expires: 2025-08-07)\n- **Carrots**: 1 bag (Expires: 2025-08-07)\n- **Sliced turkey**: 2 lb (Expires: 2025-08-07)\n\nIf you need any further details or assistance, let me know!",
+      "state_changed": true
+    },
+    "taste_profile": {
+      "table": "taste_profile",
+      "before_state": "\nProteins:\n- Hard-boiled eggs\n- Rotisserie chicken\n- Pre-cooked sausage\n- Bacon\n- Deli meats\n- Salmon\n- Tilapia\n\nCarbs & Grains:\n- Pasta varieties (plain, mac and cheese)\n- Bread (sourdough, tortillas, bagels)\n- Instant rice\n- Instant mashed potatoes\n- Tortilla chips\n\nDairy:\n- Extra sharp cheddar\n- Cream cheese\n- Shredded cheese\n- Whole milk\n- Fairlife chocolate milk\n\nFrozen/Pre-Made Convenience Items:\n- Frozen waffles, pancakes, French toast sticks\n- Microwave burrito\n- Hamburger Helper (boxed meal)\n- Pre-packaged frozen meals:\n  * Devour Frozen White Cheddar with Bacon Mac n Cheese\n  * Stouffer's fettuccine Alfredo\n  * Jimmy Dean frozen sausage biscuits\n  * Freschetta plain cheese pizza\n  * Frozen fish sticks\n\nVegetables (Preferred):\n- Carrots\n- Peas\n- Corn\n- Sweet potatoes\n- Regular potatoes\n- Green beans\n- Non-chunky tomato sauce\n- Broccoli\n- Most beans\n\nDislikes:\n- Fruits\n- Greek yogurt\n- Cottage cheese\n- Yogurt\n- Lettuce\n- Peppers\n- Avocado\n- Spinach\n- Hummus\n- Tuna\n- Oatmeal\n",
+      "update_prompt": "Update my taste profile to include that I love Mediterranean food and am trying to eat more vegetables",
+      "update_result": "Agent error: Error invoking MCP tool push_update_taste_profile: Timed out while waiting for response to ClientRequest. Waited 5.0 seconds.",
+      "after_state": "\nProteins:\n- Hard-boiled eggs\n- Rotisserie chicken\n- Pre-cooked sausage\n- Bacon\n- Deli meats\n- Salmon\n- Tilapia\n\nCarbs & Grains:\n- Pasta varieties (plain, mac and cheese)\n- Bread (sourdough, tortillas, bagels)\n- Instant rice\n- Instant mashed potatoes\n- Tortilla chips\n\nDairy:\n- Extra sharp cheddar\n- Cream cheese\n- Shredded cheese\n- Whole milk\n- Fairlife chocolate milk\n\nFrozen/Pre-Made Convenience Items:\n- Frozen waffles, pancakes, French toast sticks\n- Microwave burrito\n- Hamburger Helper (boxed meal)\n- Pre-packaged frozen meals:\n  * Devour Frozen White Cheddar with Bacon Mac n Cheese\n  * Stouffer's fettuccine Alfredo\n  * Jimmy Dean frozen sausage biscuits\n  * Freschetta plain cheese pizza\n  * Frozen fish sticks\n\nVegetables (Preferred):\n- Carrots\n- Peas\n- Corn\n- Sweet potatoes\n- Regular potatoes\n- Green beans\n- Non-chunky tomato sauce\n- Broccoli\n- Most beans\n\nDislikes:\n- Fruits\n- Greek yogurt\n- Cottage cheese\n- Yogurt\n- Lettuce\n- Peppers\n- Avocado\n- Spinach\n- Hummus\n- Tuna\n- Oatmeal\n",
+      "query_prompt": "What does my current taste profile say about my food preferences?",
+      "query_result": "Agent error: Request timed out after 15 seconds",
+      "state_changed": false
+    },
+    "saved_meals": {
+      "table": "saved_meals",
+      "before_state": [
+        {
+          "id": 10382,
+          "name": "Mac and Cheese with Bacon",
+          "prep_time_minutes": 15,
+          "ingredients": "[[150, \"Boxed mac and cheese\", \"1 box (prepared)\"], [105, \"bacon bits\", \"2 tbsp, cooked & crumbled\"]]",
+          "recipe": "Prepare mac and cheese per box directions; stir in cooked bacon bits."
+        },
+        {
+          "id": 10751,
+          "name": "Sloppy Joes",
+          "prep_time_minutes": 20,
+          "ingredients": "[[104, \"Ground beef\", \"4 oz\"], [159, \"sloppy joe sauce\", \"1/4 cup\"], [null, \"hamburger buns\", \"1\"]]",
+          "recipe": "Brown ground beef; mix with sloppy joe sauce; spoon onto hamburger buns."
+        },
+        {
+          "id": 10838,
+          "name": "Steak Burrito",
+          "prep_time_minutes": 25,
+          "ingredients": "[[112, \"Thin-sliced steak\", \"4-6 oz\"], [113, \"white rice\", \"1/2 cup, cooked\"], [114, \"black beans\", \"1/4 cup\"], [115, \"tortilla\", \"1 large\"], [120, \"extra cheese\", \"1/4 cup\"], [116, \"mayo\", \"1 tbsp\"]]",
+          "recipe": "Saut\u00e9 steak strips; warm rice and beans; layer steak, rice, beans, cheese, and mayo on tortilla; roll up."
+        },
+        {
+          "id": 12026,
+          "name": "Bacon Cheeseburger",
+          "prep_time_minutes": 20,
+          "ingredients": "[[104, \"Ground beef\", \"1 patty (4-6 oz)\"], [105, \"bacon\", \"2 strips\"], [141, \"burger bun\", \"1\"], [142, \"extra sharp cheddar\", \"1 slice\"], [null, \"condiments\", \"1 tbsp each\"]]",
+          "recipe": "Form beef patties, cook to desired doneness; fry bacon; assemble patty with bacon and cheese on bun."
+        },
+        {
+          "id": 12560,
+          "name": "Bagel with Cream Cheese and Bacon",
+          "prep_time_minutes": 10,
+          "ingredients": "[[151, \"Bagel\", \"1\"], [103, \"cream cheese\", \"2 tbsp\"], [105, \"bacon\", \"2 strips, cooked\"]]",
+          "recipe": "Toast bagel; spread cream cheese; add cooked bacon."
+        },
+        {
+          "id": 12695,
+          "name": "Magic Spaghetti",
+          "prep_time_minutes": 15,
+          "ingredients": "[[108, \"Spaghetti\", \"1 serving (2 oz dry)\"], [109, \"parmesan cheese\", \"2 tbsp, grated\"], [110, \"butter\", \"1 tbsp\"], [111, \"olive oil\", \"1 tbsp\"], [144, \"pepper\", \"1/4 tsp\"]]",
+          "recipe": "Cook spaghetti; toss with butter, olive oil, parmesan, and pepper."
+        },
+        {
+          "id": 12806,
+          "name": "Grilled Cheese Sandwich",
+          "prep_time_minutes": 10,
+          "ingredients": "[[148, \"Bread\", \"2 slices\"], [110, \"butter\", \"1 tbsp\"], [149, \"sliced cheese\", \"2 slices\"]]",
+          "recipe": "Butter bread on outside, add cheese in between; grill until golden."
+        },
+        {
+          "id": 13181,
+          "name": "Chicken Alfredo",
+          "prep_time_minutes": 20,
+          "ingredients": "[[152, \"Pasta\", \"1 serving (2 oz dry)\"], [153, \"store-bought Alfredo sauce\", \"1/2 cup\"], [119, \"pre-cooked chicken\", \"4 oz\"]]",
+          "recipe": "Cook pasta; heat Alfredo sauce and chicken together; combine with pasta."
+        },
+        {
+          "id": 14037,
+          "name": "Stir-Fry with Pre-Cooked Chicken",
+          "prep_time_minutes": 20,
+          "ingredients": "[[119, \"Pre-cooked chicken strips\", \"4 oz\"], [131, \"frozen mixed vegetables\", \"1 cup\"], [137, \"soy sauce\", \"2 tbsp\"], [132, \"microwaveable rice\", \"1 serving\"]]",
+          "recipe": "Stir-fry chicken and vegetables with soy sauce; serve over heated rice."
+        },
+        {
+          "id": 14098,
+          "name": "Turkey and Cheese Sandwich",
+          "prep_time_minutes": 10,
+          "ingredients": "[[147, \"Sliced turkey\", \"3-4 slices\"], [120, \"cheese\", \"1-2 slices or 1/4 cup\"], [118, \"toasted sourdough or bagel\", \"2 slices / 1 bagel\"], [116, \"mayo\", \"1 tbsp\"]]",
+          "recipe": "Layer turkey and cheese on toasted bread/bagel with mayo."
+        },
+        {
+          "id": 14493,
+          "name": "Shrimp Scampi",
+          "prep_time_minutes": 15,
+          "ingredients": "[[127, \"Pre-cooked shrimp\", \"4 oz\"], [152, \"pasta\", \"1 serving (2 oz dry)\"], [106, \"garlic\", \"1 clove, minced\"], [110, \"butter\", \"1 tbsp\"], [111, \"olive oil\", \"1 tbsp\"], [154, \"parsley\", \"1 tsp, chopped\"]]",
+          "recipe": "Cook pasta; saut\u00e9 garlic in butter and olive oil; add shrimp; toss with pasta and parsley."
+        },
+        {
+          "id": 14768,
+          "name": "Instant Ramen with Egg",
+          "prep_time_minutes": 10,
+          "ingredients": "[[122, \"Instant ramen\", \"1 package\"], [117, \"egg\", \"1\"], [null, \"water\", \"per package\"]]",
+          "recipe": "Cook ramen as directed; add a boiled or poached egg before serving."
+        },
+        {
+          "id": 14947,
+          "name": "Quesadilla",
+          "prep_time_minutes": 15,
+          "ingredients": "[[115, \"Tortilla\", \"1 large\"], [120, \"cheese\", \"1/2 cup\"], [119, \"pre-cooked chicken or turkey\", \"3 oz\"]]",
+          "recipe": "Fill tortilla with cheese and meat; cook in pan until tortilla is crispy and cheese melts."
+        },
+        {
+          "id": 14975,
+          "name": "Homemade McChicken",
+          "prep_time_minutes": 20,
+          "ingredients": "[[146, \"Chicken patties\", \"1\"], [141, \"burger buns\", \"1\"], [116, \"mayo\", \"1 tbsp\"]]",
+          "recipe": "Cook chicken patties; toast buns with a bit of mayo; place patty between buns."
+        },
+        {
+          "id": 15096,
+          "name": "Chicken Tenders and Fries",
+          "prep_time_minutes": 25,
+          "ingredients": "[[156, \"Pre-breaded chicken tenders\", \"3-4\"], [157, \"frozen fries\", \"1 serving\"]]",
+          "recipe": "Bake chicken tenders and fries as per package instructions; serve together."
+        },
+        {
+          "id": 15909,
+          "name": "Pulled Pork with BBQ",
+          "prep_time_minutes": 25,
+          "ingredients": "[[124, \"Pre-cooked pulled pork\", \"6 oz\"], [125, \"BBQ sauce\", \"1/4 cup\"], [126, \"instant mashed potatoes or rice\", \"1 serving\"]]",
+          "recipe": "Heat pulled pork with BBQ sauce; serve with instant mashed potatoes or rice."
+        },
+        {
+          "id": 16018,
+          "name": "Beef Tacos",
+          "prep_time_minutes": 20,
+          "ingredients": "[[104, \"Ground beef\", \"4 oz\"], [129, \"taco seasoning\", \"1 tbsp\"], [130, \"taco shells\", \"2-3\"], [120, \"cheese\", \"1/4 cup\"]]",
+          "recipe": "Cook beef with taco seasoning; fill taco shells with beef and top with cheese."
+        },
+        {
+          "id": 17282,
+          "name": "Spaghetti with Meat Sauce",
+          "prep_time_minutes": 25,
+          "ingredients": "[[108, \"Spaghetti\", \"1 serving (2 oz dry)\"], [104, \"ground beef\", \"4 oz\"], [123, \"non-chunky tomato sauce\", \"1/2 cup\"], [109, \"parmesan\", \"1 tbsp, grated\"]]",
+          "recipe": "Cook spaghetti; brown ground beef; mix with tomato sauce; serve over pasta with parmesan."
+        },
+        {
+          "id": 18977,
+          "name": "Philly Cheesesteak Sliders",
+          "prep_time_minutes": 25,
+          "ingredients": "[[112, \"Thinly sliced steak\", \"6 oz\"], [155, \"slider buns\", \"3\"], [120, \"cheese\", \"1/2 cup\"], [128, \"onions\", \"1/4 cup, sliced\"]]",
+          "recipe": "Saut\u00e9 steak and onions; place mixture and cheese on slider buns; heat until cheese melts."
+        },
+        {
+          "id": 19191,
+          "name": "Sesame Chicken",
+          "prep_time_minutes": 25,
+          "ingredients": "[[119, \"Chicken pieces\", \"6 oz\"], [136, \"sesame seeds\", \"1 tsp\"], [137, \"soy sauce\", \"2 tbsp\"], [106, \"garlic\", \"1 clove, minced\"], [107, \"ginger\", \"1/2 tsp, minced\"], [143, \"cornstarch\", \"1 tsp\"]]",
+          "recipe": "Marinate chicken in soy sauce, garlic, and ginger; coat lightly with cornstarch; stir-fry until cooked; sprinkle sesame seeds."
+        },
+        {
+          "id": 19501,
+          "name": "Pasta with Pesto",
+          "prep_time_minutes": 15,
+          "ingredients": "[[152, \"Pasta\", \"1 serving (2 oz dry)\"], [158, \"store-bought pesto\", \"1/4 cup\"], [109, \"parmesan cheese\", \"1 tbsp, grated\"]]",
+          "recipe": "Cook pasta; toss with pesto and sprinkle parmesan on top."
+        },
+        {
+          "id": 19667,
+          "name": "Breakfast Egg Sandwich",
+          "prep_time_minutes": 15,
+          "ingredients": "[[117, \"Eggs\", \"1-2\"], [120, \"cheese\", \"1 slice or 2 tbsp\"], [145, \"turkey sausage patties\", \"1-2\"], [118, \"sourdough bread\", \"2 slices\"], [116, \"mayo\", \"1 tsp\"]]",
+          "recipe": "Scramble eggs with cheese; heat sausage patties; toast sourdough with mayo; assemble sandwich."
+        },
+        {
+          "id": 19929,
+          "name": "Chicken Caesar Wrap",
+          "prep_time_minutes": 15,
+          "ingredients": "[[119, \"Pre-cooked chicken\", \"3-4 oz, sliced\"], [115, \"tortilla\", \"1 large\"], [120, \"shredded cheese\", \"1/4 cup\"], [121, \"Caesar dressing\", \"2 tbsp\"]]",
+          "recipe": "Layer sliced chicken, cheese, and Caesar dressing in tortilla; roll tightly."
+        }
+      ],
+      "update_prompt": "Save a new meal called 'Turkey Meatball Pasta' with ground turkey, pasta, marinara sauce, and parmesan cheese. It takes 25 minutes to prepare.",
+      "update_result": "Agent error: Request timed out after 15 seconds",
+      "after_state": [
+        {
+          "id": 10382,
+          "name": "Mac and Cheese with Bacon",
+          "prep_time_minutes": 15,
+          "ingredients": "[[150, \"Boxed mac and cheese\", \"1 box (prepared)\"], [105, \"bacon bits\", \"2 tbsp, cooked & crumbled\"]]",
+          "recipe": "Prepare mac and cheese per box directions; stir in cooked bacon bits."
+        },
+        {
+          "id": 10751,
+          "name": "Sloppy Joes",
+          "prep_time_minutes": 20,
+          "ingredients": "[[104, \"Ground beef\", \"4 oz\"], [159, \"sloppy joe sauce\", \"1/4 cup\"], [null, \"hamburger buns\", \"1\"]]",
+          "recipe": "Brown ground beef; mix with sloppy joe sauce; spoon onto hamburger buns."
+        },
+        {
+          "id": 10838,
+          "name": "Steak Burrito",
+          "prep_time_minutes": 25,
+          "ingredients": "[[112, \"Thin-sliced steak\", \"4-6 oz\"], [113, \"white rice\", \"1/2 cup, cooked\"], [114, \"black beans\", \"1/4 cup\"], [115, \"tortilla\", \"1 large\"], [120, \"extra cheese\", \"1/4 cup\"], [116, \"mayo\", \"1 tbsp\"]]",
+          "recipe": "Saut\u00e9 steak strips; warm rice and beans; layer steak, rice, beans, cheese, and mayo on tortilla; roll up."
+        },
+        {
+          "id": 12026,
+          "name": "Bacon Cheeseburger",
+          "prep_time_minutes": 20,
+          "ingredients": "[[104, \"Ground beef\", \"1 patty (4-6 oz)\"], [105, \"bacon\", \"2 strips\"], [141, \"burger bun\", \"1\"], [142, \"extra sharp cheddar\", \"1 slice\"], [null, \"condiments\", \"1 tbsp each\"]]",
+          "recipe": "Form beef patties, cook to desired doneness; fry bacon; assemble patty with bacon and cheese on bun."
+        },
+        {
+          "id": 12560,
+          "name": "Bagel with Cream Cheese and Bacon",
+          "prep_time_minutes": 10,
+          "ingredients": "[[151, \"Bagel\", \"1\"], [103, \"cream cheese\", \"2 tbsp\"], [105, \"bacon\", \"2 strips, cooked\"]]",
+          "recipe": "Toast bagel; spread cream cheese; add cooked bacon."
+        },
+        {
+          "id": 12695,
+          "name": "Magic Spaghetti",
+          "prep_time_minutes": 15,
+          "ingredients": "[[108, \"Spaghetti\", \"1 serving (2 oz dry)\"], [109, \"parmesan cheese\", \"2 tbsp, grated\"], [110, \"butter\", \"1 tbsp\"], [111, \"olive oil\", \"1 tbsp\"], [144, \"pepper\", \"1/4 tsp\"]]",
+          "recipe": "Cook spaghetti; toss with butter, olive oil, parmesan, and pepper."
+        },
+        {
+          "id": 12806,
+          "name": "Grilled Cheese Sandwich",
+          "prep_time_minutes": 10,
+          "ingredients": "[[148, \"Bread\", \"2 slices\"], [110, \"butter\", \"1 tbsp\"], [149, \"sliced cheese\", \"2 slices\"]]",
+          "recipe": "Butter bread on outside, add cheese in between; grill until golden."
+        },
+        {
+          "id": 13181,
+          "name": "Chicken Alfredo",
+          "prep_time_minutes": 20,
+          "ingredients": "[[152, \"Pasta\", \"1 serving (2 oz dry)\"], [153, \"store-bought Alfredo sauce\", \"1/2 cup\"], [119, \"pre-cooked chicken\", \"4 oz\"]]",
+          "recipe": "Cook pasta; heat Alfredo sauce and chicken together; combine with pasta."
+        },
+        {
+          "id": 14037,
+          "name": "Stir-Fry with Pre-Cooked Chicken",
+          "prep_time_minutes": 20,
+          "ingredients": "[[119, \"Pre-cooked chicken strips\", \"4 oz\"], [131, \"frozen mixed vegetables\", \"1 cup\"], [137, \"soy sauce\", \"2 tbsp\"], [132, \"microwaveable rice\", \"1 serving\"]]",
+          "recipe": "Stir-fry chicken and vegetables with soy sauce; serve over heated rice."
+        },
+        {
+          "id": 14098,
+          "name": "Turkey and Cheese Sandwich",
+          "prep_time_minutes": 10,
+          "ingredients": "[[147, \"Sliced turkey\", \"3-4 slices\"], [120, \"cheese\", \"1-2 slices or 1/4 cup\"], [118, \"toasted sourdough or bagel\", \"2 slices / 1 bagel\"], [116, \"mayo\", \"1 tbsp\"]]",
+          "recipe": "Layer turkey and cheese on toasted bread/bagel with mayo."
+        },
+        {
+          "id": 14493,
+          "name": "Shrimp Scampi",
+          "prep_time_minutes": 15,
+          "ingredients": "[[127, \"Pre-cooked shrimp\", \"4 oz\"], [152, \"pasta\", \"1 serving (2 oz dry)\"], [106, \"garlic\", \"1 clove, minced\"], [110, \"butter\", \"1 tbsp\"], [111, \"olive oil\", \"1 tbsp\"], [154, \"parsley\", \"1 tsp, chopped\"]]",
+          "recipe": "Cook pasta; saut\u00e9 garlic in butter and olive oil; add shrimp; toss with pasta and parsley."
+        },
+        {
+          "id": 14768,
+          "name": "Instant Ramen with Egg",
+          "prep_time_minutes": 10,
+          "ingredients": "[[122, \"Instant ramen\", \"1 package\"], [117, \"egg\", \"1\"], [null, \"water\", \"per package\"]]",
+          "recipe": "Cook ramen as directed; add a boiled or poached egg before serving."
+        },
+        {
+          "id": 14947,
+          "name": "Quesadilla",
+          "prep_time_minutes": 15,
+          "ingredients": "[[115, \"Tortilla\", \"1 large\"], [120, \"cheese\", \"1/2 cup\"], [119, \"pre-cooked chicken or turkey\", \"3 oz\"]]",
+          "recipe": "Fill tortilla with cheese and meat; cook in pan until tortilla is crispy and cheese melts."
+        },
+        {
+          "id": 14975,
+          "name": "Homemade McChicken",
+          "prep_time_minutes": 20,
+          "ingredients": "[[146, \"Chicken patties\", \"1\"], [141, \"burger buns\", \"1\"], [116, \"mayo\", \"1 tbsp\"]]",
+          "recipe": "Cook chicken patties; toast buns with a bit of mayo; place patty between buns."
+        },
+        {
+          "id": 15096,
+          "name": "Chicken Tenders and Fries",
+          "prep_time_minutes": 25,
+          "ingredients": "[[156, \"Pre-breaded chicken tenders\", \"3-4\"], [157, \"frozen fries\", \"1 serving\"]]",
+          "recipe": "Bake chicken tenders and fries as per package instructions; serve together."
+        },
+        {
+          "id": 15909,
+          "name": "Pulled Pork with BBQ",
+          "prep_time_minutes": 25,
+          "ingredients": "[[124, \"Pre-cooked pulled pork\", \"6 oz\"], [125, \"BBQ sauce\", \"1/4 cup\"], [126, \"instant mashed potatoes or rice\", \"1 serving\"]]",
+          "recipe": "Heat pulled pork with BBQ sauce; serve with instant mashed potatoes or rice."
+        },
+        {
+          "id": 16018,
+          "name": "Beef Tacos",
+          "prep_time_minutes": 20,
+          "ingredients": "[[104, \"Ground beef\", \"4 oz\"], [129, \"taco seasoning\", \"1 tbsp\"], [130, \"taco shells\", \"2-3\"], [120, \"cheese\", \"1/4 cup\"]]",
+          "recipe": "Cook beef with taco seasoning; fill taco shells with beef and top with cheese."
+        },
+        {
+          "id": 17282,
+          "name": "Spaghetti with Meat Sauce",
+          "prep_time_minutes": 25,
+          "ingredients": "[[108, \"Spaghetti\", \"1 serving (2 oz dry)\"], [104, \"ground beef\", \"4 oz\"], [123, \"non-chunky tomato sauce\", \"1/2 cup\"], [109, \"parmesan\", \"1 tbsp, grated\"]]",
+          "recipe": "Cook spaghetti; brown ground beef; mix with tomato sauce; serve over pasta with parmesan."
+        },
+        {
+          "id": 18977,
+          "name": "Philly Cheesesteak Sliders",
+          "prep_time_minutes": 25,
+          "ingredients": "[[112, \"Thinly sliced steak\", \"6 oz\"], [155, \"slider buns\", \"3\"], [120, \"cheese\", \"1/2 cup\"], [128, \"onions\", \"1/4 cup, sliced\"]]",
+          "recipe": "Saut\u00e9 steak and onions; place mixture and cheese on slider buns; heat until cheese melts."
+        },
+        {
+          "id": 19191,
+          "name": "Sesame Chicken",
+          "prep_time_minutes": 25,
+          "ingredients": "[[119, \"Chicken pieces\", \"6 oz\"], [136, \"sesame seeds\", \"1 tsp\"], [137, \"soy sauce\", \"2 tbsp\"], [106, \"garlic\", \"1 clove, minced\"], [107, \"ginger\", \"1/2 tsp, minced\"], [143, \"cornstarch\", \"1 tsp\"]]",
+          "recipe": "Marinate chicken in soy sauce, garlic, and ginger; coat lightly with cornstarch; stir-fry until cooked; sprinkle sesame seeds."
+        },
+        {
+          "id": 19501,
+          "name": "Pasta with Pesto",
+          "prep_time_minutes": 15,
+          "ingredients": "[[152, \"Pasta\", \"1 serving (2 oz dry)\"], [158, \"store-bought pesto\", \"1/4 cup\"], [109, \"parmesan cheese\", \"1 tbsp, grated\"]]",
+          "recipe": "Cook pasta; toss with pesto and sprinkle parmesan on top."
+        },
+        {
+          "id": 19667,
+          "name": "Breakfast Egg Sandwich",
+          "prep_time_minutes": 15,
+          "ingredients": "[[117, \"Eggs\", \"1-2\"], [120, \"cheese\", \"1 slice or 2 tbsp\"], [145, \"turkey sausage patties\", \"1-2\"], [118, \"sourdough bread\", \"2 slices\"], [116, \"mayo\", \"1 tsp\"]]",
+          "recipe": "Scramble eggs with cheese; heat sausage patties; toast sourdough with mayo; assemble sandwich."
+        },
+        {
+          "id": 19929,
+          "name": "Chicken Caesar Wrap",
+          "prep_time_minutes": 15,
+          "ingredients": "[[119, \"Pre-cooked chicken\", \"3-4 oz, sliced\"], [115, \"tortilla\", \"1 large\"], [120, \"shredded cheese\", \"1/4 cup\"], [121, \"Caesar dressing\", \"2 tbsp\"]]",
+          "recipe": "Layer sliced chicken, cheese, and Caesar dressing in tortilla; roll tightly."
+        }
+      ],
+      "query_prompt": "List all my saved meals with their ingredients and prep times",
+      "query_result": "Agent error: Request timed out after 15 seconds",
+      "state_changed": false
+    },
+    "shopping_list": {
+      "table": "shopping_list",
+      "before_state": [
+        {
+          "id": 101,
+          "amount": 1.0
+        },
+        {
+          "id": 102,
+          "amount": 1.0
+        }
+      ],
+      "update_prompt": "Add Greek yogurt, spinach, and olive oil to my shopping list",
+      "update_result": "Agent error: Request timed out after 15 seconds",
+      "after_state": [
+        {
+          "id": 101,
+          "amount": 1.0
+        },
+        {
+          "id": 102,
+          "amount": 1.0
+        }
+      ],
+      "query_prompt": "Show me everything currently on my shopping list",
+      "query_result": "Agent error: Request timed out after 15 seconds",
+      "state_changed": false
+    },
+    "daily_planner": {
+      "table": "daily_planner",
+      "before_state": [],
+      "update_prompt": "Schedule 'Chicken Caesar Salad' for lunch tomorrow and 'Spaghetti Carbonara' for dinner the day after tomorrow",
+      "update_result": "Agent error: Request timed out after 15 seconds",
+      "after_state": [],
+      "query_prompt": "Show me my meal plan for the next 3 days",
+      "query_result": "Agent error: Request timed out after 15 seconds",
+      "state_changed": false
+    }
+  },
+  "action_tools": {
+    "meal_planner": "Agent error: Request timed out after 15 seconds",
+    "meal_suggestions": "Agent error: Request timed out after 15 seconds",
+    "meal_ideation": "Agent error: Request timed out after 15 seconds"
+  },
+  "pull_tools": {
+    "get_inventory": "Agent error: Request timed out after 15 seconds",
+    "get_taste_profile": "Agent error: Request timed out after 15 seconds",
+    "get_saved_meals": "Agent error: Request timed out after 15 seconds",
+    "get_shopping_list": "Agent error: Request timed out after 15 seconds",
+    "get_daily_plan": "Agent error: Request timed out after 15 seconds",
+    "get_in_stock_meals": "Agent error: Request timed out after 15 seconds",
+    "get_meal_ideas": "Agent error: Request timed out after 15 seconds"
+  },
+  "push_tools": {
+    "complex_inventory_update": "Agent error: Request timed out after 15 seconds",
+    "taste_profile_refinement": "Agent error: Request timed out after 15 seconds",
+    "meal_modifications": "Agent error: Request timed out after 15 seconds",
+    "shopping_list_management": "Agent error: Request timed out after 15 seconds",
+    "daily_notes_update": "Agent error: Request timed out after 15 seconds"
+  }
+}

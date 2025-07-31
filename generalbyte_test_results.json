@@ -1,0 +1,37 @@
+{
+  "test_info": {
+    "start_time": "2025-07-31T19:35:00.520946",
+    "model": "gpt-4o",
+    "server_url": "http://localhost:8050/sse",
+    "end_time": "2025-07-31T19:36:10.888229",
+    "duration": "0:01:10.367283"
+  },
+  "notification_tests": {
+    "basic_notification": "The test notification with the message \"GeneralByte test suite is running\" and title \"Test Alert\" has been successfully sent.",
+    "custom_notification": "The notification with the message 'Your workout reminder: Time for chest and arms!' has been sent successfully."
+  },
+  "todo_list_tests": {
+    "view_todo_list": "It looks like you don't have any items on your todo list. If you would like to add something or need further assistance, let me know!",
+    "todo_summary": "Your to-do list currently has:\n\n- **Total Items:** 0\n- **Completed Items:** 0\n- **Pending Items:** 0\n\nIt appears your to-do list is empty at the moment."
+  },
+  "todo_crud_tests": {
+    "initial_state": "Your current to-do list is empty. If you need to add tasks, feel free to let me know!",
+    "create_todo_item": "Agent error: Error invoking MCP tool general_modify_todo_item: Timed out while waiting for response to ClientRequest. Waited 5.0 seconds.",
+    "state_after_creation": "Agent error: Request timed out after 15 seconds",
+    "update_todo_status": "Agent error: Request timed out after 15 seconds",
+    "final_state": "Agent error: Request timed out after 15 seconds"
+  },
+  "integration_tests": {
+    "todo_with_notification": "Agent error: Request timed out after 15 seconds"
+  },
+  "error_handling_tests": {
+    "invalid_todo_operation": "Agent error: Request timed out after 15 seconds"
+  },
+  "connectivity_tests": {
+    "service_status": "Agent error: Request timed out after 15 seconds"
+  },
+  "cleanup": {
+    "clear_test_todos": "Agent error: Request timed out after 15 seconds",
+    "final_cleanup_check": "Agent error: Request timed out after 15 seconds"
+  }
+}

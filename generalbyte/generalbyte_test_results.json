@@ -1,0 +1,37 @@
+{
+  "test_info": {
+    "start_time": "2025-07-31T19:03:26.594522",
+    "model": "gpt-4o",
+    "server_url": "http://localhost:8050/sse",
+    "end_time": "2025-07-31T19:04:03.067771",
+    "duration": "0:00:36.473249"
+  },
+  "notification_tests": {
+    "basic_notification": "Agent error: unhandled errors in a TaskGroup (1 sub-exception)",
+    "custom_notification": "Agent error: unhandled errors in a TaskGroup (1 sub-exception)"
+  },
+  "todo_list_tests": {
+    "view_todo_list": "Agent error: unhandled errors in a TaskGroup (1 sub-exception)",
+    "todo_summary": "Agent error: unhandled errors in a TaskGroup (1 sub-exception)"
+  },
+  "todo_crud_tests": {
+    "initial_state": "Agent error: unhandled errors in a TaskGroup (1 sub-exception)",
+    "create_todo_item": "Agent error: unhandled errors in a TaskGroup (1 sub-exception)",
+    "state_after_creation": "Agent error: unhandled errors in a TaskGroup (1 sub-exception)",
+    "update_todo_status": "Agent error: unhandled errors in a TaskGroup (1 sub-exception)",
+    "final_state": "Agent error: unhandled errors in a TaskGroup (1 sub-exception)"
+  },
+  "integration_tests": {
+    "todo_with_notification": "Agent error: unhandled errors in a TaskGroup (1 sub-exception)"
+  },
+  "error_handling_tests": {
+    "invalid_todo_operation": "Agent error: unhandled errors in a TaskGroup (1 sub-exception)"
+  },
+  "connectivity_tests": {
+    "service_status": "Agent error: unhandled errors in a TaskGroup (1 sub-exception)"
+  },
+  "cleanup": {
+    "clear_test_todos": "Agent error: unhandled errors in a TaskGroup (1 sub-exception)",
+    "final_cleanup_check": "Agent error: unhandled errors in a TaskGroup (1 sub-exception)"
+  }
+}
