@@ -1,3 +1,4 @@
+require('dotenv').config();
 const { Pool } = require('pg');
 const { format } = require('date-fns');
 
@@ -15,7 +16,7 @@ function getTodayInEst() {
 
 // Database configuration
 const dbConfig = {
-  host: process.env.DB_HOST || '192.168.1.93',
+  host: process.env.DB_HOST || '192.168.0.239',
   port: process.env.DB_PORT || 5432,
   database: process.env.DB_NAME || 'workout_tracker',
   user: process.env.DB_USER || 'postgres',

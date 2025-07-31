@@ -6,7 +6,7 @@ This document outlines the migration from SQLite to PostgreSQL for the Luna Lang
 
 ### Database Backend
 - **Before**: SQLite (`workout.db` file)
-- **After**: PostgreSQL server at `192.168.1.93:5432`
+- **After**: PostgreSQL server at `192.168.0.239:5432`
 
 ### Key Files Modified
 - `db.py` - Complete rewrite for PostgreSQL
@@ -21,7 +21,7 @@ This document outlines the migration from SQLite to PostgreSQL for the Luna Lang
 ## 🛠️ Setup Instructions
 
 ### 1. PostgreSQL Server Setup
-Ensure PostgreSQL is running on `192.168.1.93:5432` with:
+Ensure PostgreSQL is running on `192.168.0.239:5432` with:
 - Database: `workout_tracker`
 - User: `postgres` (or custom user)
 - Proper network access configured
@@ -30,7 +30,7 @@ Ensure PostgreSQL is running on `192.168.1.93:5432` with:
 Set environment variables for database connection:
 
 ```bash
-export DB_HOST=192.168.1.93
+export DB_HOST=192.168.0.239
 export DB_PORT=5432
 export DB_NAME=workout_tracker
 export DB_USER=postgres
@@ -39,7 +39,7 @@ export DB_PASSWORD=your_password_here
 
 Or create a `.env` file:
 ```
-DB_HOST=192.168.1.93
+DB_HOST=192.168.0.239
 DB_PORT=5432
 DB_NAME=workout_tracker
 DB_USER=postgres
@@ -142,8 +142,8 @@ python db_config.py
 sudo systemctl status postgresql  # On server
 
 # Check network connectivity
-ping 192.168.1.93
-telnet 192.168.1.93 5432
+ping 192.168.0.239
+telnet 192.168.0.239 5432
 ```
 
 ### Permission Issues
