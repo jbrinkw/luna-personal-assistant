@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+langchain
+langchain-openai
+openai-agents
+psycopg2-binary
+pydantic>=2.0.0
+streamlit
+requests
+fastmcp
