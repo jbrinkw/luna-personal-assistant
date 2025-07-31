@@ -10,30 +10,33 @@ import inspect
 mcp = FastMCP("CoachByte Tools")
 
 def convert_tool(tool_obj: AgentsFunctionTool):
+    """Convert an OpenAI Agents FunctionTool to a FastMCP compatible callable."""
     schema = tool_obj.params_json_schema
     props = schema.get("properties", {})
     required = set(schema.get("required", []))
-    arg_defs = []
-    data_items = []
-    for arg in props:
-        if arg in required:
-            arg_defs.append(arg)
-        else:
-            arg_defs.append(f"{arg}=None")
-        data_items.append(f"        '{arg}': {arg}")
-    args_code = ", ".join(arg_defs)
-    data_code = ",\n".join(data_items)
-    func_src = f"async def wrapper({args_code}):\n" \
-        f"    data = {{\n{data_code}\n    }}\n" \
-        "    data = {k: v for k, v in data.items() if v is not None}\n" \
-        "    ctx = ToolContext(context=None, tool_name=tool_obj.name, tool_call_id='fastmcp')\n" \
-        "    return await tool_obj.on_invoke_tool(ctx, json.dumps(data))"
-    ns = {'ToolContext': ToolContext, 'tool_obj': tool_obj, 'json': json}
-    exec(func_src, ns)
-    wrapped = ns['wrapper']
-    wrapped.__name__ = tool_obj.name
-    wrapped.__doc__ = tool_obj.description
-    return wrapped
+
+    async def wrapper(**kwargs):
+        data = {k: v for k, v in kwargs.items() if v is not None}
+        ctx = ToolContext(context=None, tool_name=tool_obj.name, tool_call_id="fastmcp")
+        result = tool_obj.on_invoke_tool(ctx, json.dumps(data))
+        if inspect.isawaitable(result):
+            result = await result
+        return result
+
+    # Build a signature matching the tool schema
+    parameters = []
+    for name, prop in props.items():
+        default = inspect._empty if name in required else None
+        param = inspect.Parameter(
+            name,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            default=default,
+        )
+        parameters.append(param)
+    wrapper.__signature__ = inspect.Signature(parameters=parameters)
+    wrapper.__name__ = tool_obj.name
+    wrapper.__doc__ = tool_obj.description
+    return wrapper
 
 for name in getattr(tools, "__all__", []):
     tool_obj = getattr(tools, name)
