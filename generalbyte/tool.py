@@ -70,17 +70,24 @@ def get_todo_list(entity_id = "todo.todo", status: Optional[str] = None) -> dict
                 }
             entity_id = todo_entities[0]
         
-        # Now get the specific todo entity
-        url = f"{HA_URL}/api/states/{entity_id}"
-        response = requests.get(url, headers=HEADERS, timeout=10)
-        response.raise_for_status()
-        
-        state_data = response.json()
-        if state_data.get("state") == "unavailable":
-            return {"error": f"Todo entity '{entity_id}' is unavailable"}
-        
-        # Extract items from the attributes
-        items = state_data.get("attributes", {}).get("items", [])
+        # Get todo items using the service API with return_response parameter
+        try:
+            todo_service_url = f"{HA_URL}/api/services/todo/get_items?return_response"
+            response = requests.post(todo_service_url, headers=HEADERS, json={"entity_id": entity_id}, timeout=10)
+            response.raise_for_status()
+            
+            if response.status_code == 200:
+                service_data = response.json()
+                # The response structure is: {'service_response': {entity_id: {'items': [...]}}}
+                if isinstance(service_data, dict) and 'service_response' in service_data:
+                    entity_response = service_data['service_response'].get(entity_id, {})
+                    items = entity_response.get('items', [])
+                else:
+                    items = []
+            else:
+                return {"error": f"Failed to get todo items: HTTP {response.status_code}"}
+        except requests.exceptions.RequestException as e:
+            return {"error": f"Failed to connect to Home Assistant: {str(e)}"}
         
         # Filter by status if specified
         if status:
@@ -101,7 +108,7 @@ def get_todo_list(entity_id = "todo.todo", status: Optional[str] = None) -> dict
 @mcp.tool
 def modify_todo_item(
     action: str,
-    entity_id: str,
+    entity_id: str = "todo.todo",
     item: Optional[str] = None,
     uid: Optional[str] = None,
     rename: Optional[str] = None,
