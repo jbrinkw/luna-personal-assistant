@@ -19,8 +19,7 @@ def main():
             "name": "Get Today Plan Test",
             "description": "Test retrieving today's planned sets using get_today_plan tool",
             "prompts": [
-                "Plan bench press 10 reps at 135 pounds as set 1 for today.",
-                "What is today’s workout plan?"
+                "What is today's workout plan?"
             ]
         },
         {
@@ -34,23 +33,20 @@ def main():
             "name": "Complete Planned Set Test",
             "description": "Test marking the next planned set complete using complete_planned_set tool",
             "prompts": [
-                "Plan bench press 10 reps at 135 pounds as set 1 for today.",
-                "Complete the next set."
+                "Complete the planned set."
             ]
         },
         {
             "name": "Update Summary Test",
             "description": "Test updating today's workout summary using update_summary tool",
             "prompts": [
-                "Update today’s summary to 'Felt strong today.'"
+                "Update today's summary to 'Felt strong today.'"
             ]
         },
         {
             "name": "Recent History Test",
             "description": "Test retrieving recent workout history using get_recent_history tool",
             "prompts": [
-                "Plan bench press 10 reps at 135 pounds as set 1 for today.",
-                "Complete the next set.",
                 "Show my workout history for the last 1 day."
             ]
         },
