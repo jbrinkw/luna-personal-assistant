@@ -64,6 +64,17 @@ def load_comprehensive_sample_data():
                 load_done REAL,
                 completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS split_sets (
+                id SERIAL PRIMARY KEY,
+                day_of_week INTEGER NOT NULL,
+                exercise_id INTEGER REFERENCES exercises(id),
+                order_num INTEGER NOT NULL,
+                reps INTEGER NOT NULL,
+                load REAL NOT NULL,
+                rest INTEGER DEFAULT 60,
+                relative BOOLEAN DEFAULT FALSE
+            );
+            CREATE INDEX IF NOT EXISTS ix_split_order ON split_sets (day_of_week, order_num);
             CREATE TABLE IF NOT EXISTS timer (
                 id SERIAL PRIMARY KEY,
                 timer_end_time TIMESTAMP NOT NULL,
@@ -118,7 +129,34 @@ def load_comprehensive_sample_data():
                 print(f"Added exercise: {exercise} (ID: {result['id']})")
             else:
                 raise Exception(f"Failed to insert exercise: {exercise}")
-        
+
+        # Weekly split - one entry per day
+        day_map = {
+            "sunday": 0,
+            "monday": 1,
+            "tuesday": 2,
+            "wednesday": 3,
+            "thursday": 4,
+            "friday": 5,
+            "saturday": 6,
+        }
+        weekly_split = [
+            ("sunday", "push-ups", 10, 0),
+            ("monday", "bench press", 5, 135),
+            ("tuesday", "squats", 8, 185),
+            ("wednesday", "deadlifts", 5, 225),
+            ("thursday", "overhead press", 8, 95),
+            ("friday", "rows", 10, 115),
+            ("saturday", "dips", 12, 0),
+        ]
+        for day_name, exercise, reps, load in weekly_split:
+            day_num = day_map[day_name]
+            ex_id = exercise_ids[exercise]
+            cur.execute(
+                "INSERT INTO split_sets (day_of_week, exercise_id, order_num, reps, load, rest, relative) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                (day_num, ex_id, 1, reps, load, 60, False),
+            )
+
         # Day 1 (2 days ago) - Upper Body Focus
         day1_planned = [
             ("push-ups", 1, 15, 0),
@@ -285,4 +323,4 @@ if __name__ == "__main__":
     try:
         load_comprehensive_sample_data()
     except Exception as error:
-        print(f"Error loading sample data: {error}") 
+        print(f"Error loading sample data: {error}")
