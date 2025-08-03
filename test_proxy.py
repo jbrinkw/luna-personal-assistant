@@ -55,7 +55,7 @@ class ChatSession:
             payload["session_id"] = self.session_id
 
         try:
-            response = requests.post(url, json=payload, timeout=10)
+            response = requests.post(url, json=payload, timeout=60)
             response.raise_for_status()
             
             # Parse the JSON response
@@ -139,18 +139,16 @@ Test Description: {test_description}
 Chat Log:
 {chat_log}
 
-Analyze whether the AI:
-1. Correctly stored the information when first provided
-2. Successfully recalled the information when asked
 
 Return your judgment as a JSON object with this exact structure:
 {{
     "success": true/false,
-    "reason": "Brief explanation of why it passed or failed",
+    "reason": "Concise but technical and detailed explanation of why it passed or failed. If there is an error echo it",
     "confidence": "high/medium/low"
 }}
 
 Be strict in your evaluation - the AI must demonstrate clear memory of the specific information provided.
+IF THE TEST IS A FAIL ECHO THE CHAT LOG YOU RECIVED
 """
 
         try:
@@ -224,7 +222,7 @@ Be strict in your evaluation - the AI must demonstrate clear memory of the speci
         print(f"Result: {status}")
         print(f"Reason: {judgment['reason']}")
         print(f"Confidence: {judgment['confidence']}")
-        print(f"⏱️  Test duration: {test_duration:.2f} seconds")
+        print(f"⏱️  Individual test time: {test_duration:.2f} seconds")
         print("=" * 50 + "\n")
         
         return result
@@ -257,13 +255,13 @@ Be strict in your evaluation - the AI must demonstrate clear memory of the speci
         test_results.sort(key=lambda x: x['set_index'])
         
         # Print summary of all results
-        print(f"\n⏱️  All tests completed in {total_duration:.2f} seconds")
-        print(f"📊 Total execution time: {total_duration:.2f} seconds")
-        self.print_test_summary(test_results)
+        print(f"\n🏁 All tests completed!")
+        print(f"⏱️  Total parallel execution time: {total_duration:.2f} seconds")
+        self.print_test_summary(test_results, total_duration)
         
         return test_results
     
-    def print_test_summary(self, test_results):
+    def print_test_summary(self, test_results, total_parallel_time):
         """Print a structured summary of all test results"""
         
         print("🏁 TEST SUMMARY")
@@ -291,9 +289,10 @@ Be strict in your evaluation - the AI must demonstrate clear memory of the speci
                 status_icon = "❌"
                 status_text = "FAILED"
             
-            print(f"{status_icon} {name}: {status_text} ({duration:.2f}s)")
-            print(f"   Reason: {reason}")
-            print(f"   Confidence: {confidence}")
+            print(f"{status_icon} {name}: {status_text}")
+            print(f"   ⏱️  Test time: {duration:.2f}s")
+            print(f"   📝 Reason: {reason}")
+            print(f"   🎯 Confidence: {confidence}")
             print()
         
         total_tests = len(test_results)
@@ -305,5 +304,8 @@ Be strict in your evaluation - the AI must demonstrate clear memory of the speci
         print(f"   Passed: {passed_count}")
         print(f"   Failed: {failed_count}")
         print(f"   Pass Rate: {pass_rate:.1f}%")
-        print(f"   Total Test Time: {total_test_time:.2f}s")
+        print()
+        print(f"⏱️  TIMING SUMMARY:")
+        print(f"   Total Test Time (sequential): {total_test_time:.2f}s")
+        print(f"   Actual Runtime (parallel): {total_parallel_time:.2f}s")
         print("=" * 60) 

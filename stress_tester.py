@@ -7,7 +7,7 @@ url = "http://192.168.0.38:7860/api/v1/run/4b64410c-ffa2-4782-803c-d3cc810a32d9"
 # The complete API endpoint URL for this flow
 
 # Configuration - Change this to control number of concurrent requests
-NUM_CONCURRENT_REQUESTS = 25
+NUM_CONCURRENT_REQUESTS = 75
 
 def make_request(request_id):
     """Make a single API request and return the response with timing"""
@@ -26,7 +26,7 @@ def make_request(request_id):
     }
 
     try:
-        response = requests.post(url, json=payload, timeout=10)
+        response = requests.post(url, json=payload, timeout=60)
         response.raise_for_status()
         
         # Parse the JSON response

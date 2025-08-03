@@ -1,7 +1,7 @@
 import sys
 import os
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import traceback
 from typing import Optional
 import shutil # Import the shutil module for file operations
@@ -744,13 +744,58 @@ Dislikes:
                 print(f"[FAIL] Failed to add meal idea: {name}")
     
     def load_daily_planner(self):
-        """Initializes the daily_planner table without pre-populating days."""
+        """Initializes the daily_planner table and adds sample meals for today and tomorrow."""
         print("\nLoading daily planner...")
 
         # Simply ensure the table exists. Days will be created on demand.
         self.tables["daily_planner"].create_table()
 
-        print("[OK] Daily planner initialized (no pre-created days)")
+        # Calculate dates
+        today = date.today()
+        tomorrow = today + timedelta(days=1)
+        
+        # Define meal plans
+        meal_plans = [
+            {
+                "day": today,
+                "meal_ids": [3, 1],  # Magic Spaghetti (lunch), Bacon Cheeseburger (dinner)
+                "notes": "Lunch: Magic Spaghetti, Dinner: Bacon Cheeseburger"
+            },
+            {
+                "day": tomorrow,
+                "meal_ids": [5, 2],  # Breakfast Egg Sandwich (breakfast), Sesame Chicken (dinner)
+                "notes": "Breakfast: Egg Sandwich, Dinner: Sesame Chicken"
+            }
+        ]
+        
+        # Add the meal plans
+        for plan in meal_plans:
+            try:
+                success = self.tables["daily_planner"].create(
+                    day=plan["day"],
+                    notes=plan["notes"],
+                    meal_ids=plan["meal_ids"]
+                )
+                
+                if success:
+                    meal_names = []
+                    for meal_id in plan["meal_ids"]:
+                        if meal_id == 1:
+                            meal_names.append("Bacon Cheeseburger")
+                        elif meal_id == 2:
+                            meal_names.append("Sesame Chicken")
+                        elif meal_id == 3:
+                            meal_names.append("Magic Spaghetti")
+                        elif meal_id == 5:
+                            meal_names.append("Breakfast Egg Sandwich")
+                    
+                    print(f"[OK] Added meals for {plan['day']}: {', '.join(meal_names)} (IDs: {plan['meal_ids']})")
+                else:
+                    print(f"[WARN] Failed to add meals for {plan['day']}")
+            except Exception as e:
+                print(f"[ERROR] Error adding meals for {plan['day']}: {e}")
+
+        print("[OK] Daily planner initialized with sample meal plans")
     
     def load_shopping_list(self):
         """Loads sample items into the shopping_list table."""
