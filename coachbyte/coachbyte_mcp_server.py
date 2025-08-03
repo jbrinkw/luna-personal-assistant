@@ -1,7 +1,7 @@
 """Run the CoachByte MCP server exposing all workout tools."""
 
 from fastmcp import FastMCP
-import tools
+import agent_tools as tools
 from agents.tool import FunctionTool as AgentsFunctionTool
 from agents.tool_context import ToolContext
 import json

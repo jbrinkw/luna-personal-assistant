@@ -44,22 +44,32 @@ def new_daily_plan(items: List[Dict[str, Any]]):
         - exercise (str): Exercise name (e.g., "bench press", "squat", "pull-ups")
         - reps (int): Number of repetitions (1-100)
         - load (float): Weight in pounds (0-2000). Use 0 for bodyweight exercises
-        - order (int): Set order/sequence number (1, 2, 3, etc.)
+        - order (int): Set order/sequence number. Special values:
+          - Normal: 1, 2, 3, etc. for specific positions
+          - 0: Add to back of queue (after all existing sets)
+          - -1: Add to front of queue (before all existing sets)
         - rest (int, optional): Rest time in seconds (0-600). Defaults to 60 seconds
     
     Example:
     items = [
         {"exercise": "bench press", "reps": 10, "load": 135, "order": 1, "rest": 90},
-        {"exercise": "squat", "reps": 8, "load": 185, "order": 2, "rest": 120},
-        {"exercise": "pull-ups", "reps": 6, "load": 0, "order": 3, "rest": 60}
+        {"exercise": "squat", "reps": 8, "load": 185, "order": 0, "rest": 120},  # Goes to back
+        {"exercise": "pull-ups", "reps": 6, "load": 0, "order": -1, "rest": 60}  # Goes to front
     ]
     
     Returns: Success message with number of sets planned
     """
     conn = get_connection()
     try:
-        cur = conn.cursor()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         log_id = get_today_log_id(conn)
+        
+        # Get current min and max order numbers for queue positioning
+        cur.execute("SELECT MIN(order_num) as min_order, MAX(order_num) as max_order FROM planned_sets WHERE log_id = %s", (log_id,))
+        result = cur.fetchone()
+        min_order = result['min_order'] if result['min_order'] is not None else 0
+        max_order = result['max_order'] if result['max_order'] is not None else 0
+        
         for item in items:
             reps = int(item["reps"])
             load = float(item["load"])
@@ -71,7 +81,21 @@ def new_daily_plan(items: List[Dict[str, Any]]):
             if not (0 <= rest <= 600):  # Max 10 minutes rest
                 raise ValueError("rest time out of range")
             exercise_id = _get_exercise_id(conn, item["exercise"])
-            order_num = int(item["order"])
+            
+            # Handle special order values
+            order_raw = int(item["order"])
+            if order_raw == 0:
+                # Add to back of queue
+                order_num = max_order + 1
+                max_order = order_num  # Update for next iteration
+            elif order_raw == -1:
+                # Add to front of queue
+                order_num = min_order - 1
+                min_order = order_num  # Update for next iteration
+            else:
+                # Normal order number
+                order_num = order_raw
+            
             cur.execute(
                 "INSERT INTO planned_sets (log_id, exercise_id, order_num, reps, load, rest) VALUES (%s, %s, %s, %s, %s, %s)",
                 (log_id, exercise_id, order_num, reps, load, rest),
@@ -221,13 +245,15 @@ def complete_planned_set(exercise: Optional[str] = None, reps: Optional[int] = N
         if not (0 <= actual_load <= MAX_LOAD):
             raise ValueError("load out of range")
         
-        # Record the completion
+        # Record the completion (without planned_set_id to avoid foreign key constraint)
+        # Since we're deleting the planned_set, we don't need to maintain the reference
         cur.execute(
-            "INSERT INTO completed_sets (log_id, exercise_id, planned_set_id, reps_done, load_done, completed_at) VALUES (%s, %s, %s, %s, %s, %s)",
-            (log_id, planned_set['exercise_id'], planned_set['id'], actual_reps, actual_load, datetime.now(timezone.utc)),
+            "INSERT INTO completed_sets (log_id, exercise_id, reps_done, load_done, completed_at) VALUES (%s, %s, %s, %s, %s)",
+            (log_id, planned_set['exercise_id'], actual_reps, actual_load, datetime.now(timezone.utc)),
         )
         
         # Delete the completed planned set (same as UI behavior)
+        # No foreign key constraint issue since we didn't store the planned_set_id reference
         cur.execute(
             "DELETE FROM planned_sets WHERE id = %s",
             (planned_set['id'],)
@@ -451,57 +477,57 @@ def _execute_sql(query: str, params: Optional[Dict[str, Any]] = None, confirm: b
     return rows
 
 
-def run_sql(query: str, params: Optional[Dict[str, Any]] = None, confirm: bool = False):
-    """Execute SQL queries against the workout database.
+# def run_sql(query: str, params: Optional[Dict[str, Any]] = None, confirm: bool = False):
+#     """Execute SQL queries against the workout database.
     
-    SELECT queries run automatically. UPDATE/INSERT/DELETE require confirm=True for safety.
+#     SELECT queries run automatically. UPDATE/INSERT/DELETE require confirm=True for safety.
     
-    Parameters:
-    - query (str): SQL query to execute. Use %(param_name)s for parameter placeholders
-    - params (dict, optional): Dictionary of named parameters for the query
-    - confirm (bool): Must be True for UPDATE/INSERT/DELETE queries. Defaults to False
+#     Parameters:
+#     - query (str): SQL query to execute. Use %(param_name)s for parameter placeholders
+#     - params (dict, optional): Dictionary of named parameters for the query
+#     - confirm (bool): Must be True for UPDATE/INSERT/DELETE queries. Defaults to False
     
-    Examples:
-    - run_sql("SELECT * FROM exercises")  # Simple select
-    - run_sql("SELECT * FROM exercises WHERE name = %(exercise)s", {"exercise": "squat"})
-    - run_sql("UPDATE exercises SET name = %(new_name)s WHERE id = %(id)s", 
-              {"new_name": "back squat", "id": 1}, confirm=True)  # Requires confirm=True
+#     Examples:
+#     - run_sql("SELECT * FROM exercises")  # Simple select
+#     - run_sql("SELECT * FROM exercises WHERE name = %(exercise)s", {"exercise": "squat"})
+#     - run_sql("UPDATE exercises SET name = %(new_name)s WHERE id = %(id)s", 
+#               {"new_name": "back squat", "id": 1}, confirm=True)  # Requires confirm=True
     
-    Returns: 
-    - For SELECT: List of dictionaries with query results
-    - For UPDATE/INSERT/DELETE: Dictionary with "rows_affected" count
+#     Returns: 
+#     - For SELECT: List of dictionaries with query results
+#     - For UPDATE/INSERT/DELETE: Dictionary with "rows_affected" count
     
-    Safety: Only SELECT queries are allowed without confirm=True to prevent accidental data changes.
-    """
-    return _execute_sql(query, params, confirm)
+#     Safety: Only SELECT queries are allowed without confirm=True to prevent accidental data changes.
+#     """
+#     return _execute_sql(query, params, confirm)
 
 
-def arbitrary_update(query: str, params: Optional[Dict[str, Any]] = None):
-    """Execute UPDATE, INSERT, or DELETE SQL statements with automatic confirmation.
+# def arbitrary_update(query: str, params: Optional[Dict[str, Any]] = None):
+#     """Execute UPDATE, INSERT, or DELETE SQL statements with automatic confirmation.
     
-    This is a convenience function that automatically sets confirm=True for database modifications.
-    Use when you need to modify data without explicitly passing confirm=True to run_sql.
+#     This is a convenience function that automatically sets confirm=True for database modifications.
+#     Use when you need to modify data without explicitly passing confirm=True to run_sql.
     
-    Parameters:
-    - query (str): SQL UPDATE, INSERT, or DELETE statement. Use %(param_name)s for parameters
-    - params (dict, optional): Dictionary of named parameters for the query
+#     Parameters:
+#     - query (str): SQL UPDATE, INSERT, or DELETE statement. Use %(param_name)s for parameters
+#     - params (dict, optional): Dictionary of named parameters for the query
     
-    Examples:
-    - arbitrary_update("UPDATE planned_sets SET load = %(new_load)s WHERE id = %(set_id)s", 
-                       {"new_load": 185, "set_id": 1})
-    - arbitrary_update("INSERT INTO exercises (name) VALUES (%(exercise_name)s)", 
-                       {"exercise_name": "overhead press"})
-    - arbitrary_update("DELETE FROM planned_sets WHERE order_num > %(max_order)s", 
-                       {"max_order": 10})
+#     Examples:
+#     - arbitrary_update("UPDATE planned_sets SET load = %(new_load)s WHERE id = %(set_id)s", 
+#                        {"new_load": 185, "set_id": 1})
+#     - arbitrary_update("INSERT INTO exercises (name) VALUES (%(exercise_name)s)", 
+#                        {"exercise_name": "overhead press"})
+#     - arbitrary_update("DELETE FROM planned_sets WHERE order_num > %(max_order)s", 
+#                        {"max_order": 10})
     
-    Returns: Dictionary with "rows_affected" count showing how many rows were modified
+#     Returns: Dictionary with "rows_affected" count showing how many rows were modified
     
-    Note: This function is for advanced use cases. Most operations should use the specific 
-    functions like new_daily_plan, complete_planned_set, etc.
-    """
-    if params is None:
-        params = {}
-    return _execute_sql(query, params=params, confirm=True)
+#     Note: This function is for advanced use cases. Most operations should use the specific 
+#     functions like new_daily_plan, complete_planned_set, etc.
+#     """
+#     if params is None:
+#         params = {}
+#     return _execute_sql(query, params=params, confirm=True)
 
 
 def set_timer(minutes: int):
@@ -512,12 +538,6 @@ def set_timer(minutes: int):
     
     Parameters:
     - minutes (int): Timer duration in minutes (1-180). Max 3 hours
-    
-    Common timer durations:
-    - 1-2 minutes: Rest between light sets
-    - 2-3 minutes: Rest between moderate sets  
-    - 3-5 minutes: Rest between heavy compound movements
-    - 45-90 minutes: Total workout duration
     
     Examples:
     - set_timer(3)   # 3-minute rest timer
@@ -604,8 +624,8 @@ __all__ = [
     "get_recent_history",
     "set_weekly_split_day",
     "get_weekly_split",
-    "run_sql",
-    "arbitrary_update",
+    # "run_sql",
+    # "arbitrary_update",
     "set_timer",
     "get_timer",
 ]
