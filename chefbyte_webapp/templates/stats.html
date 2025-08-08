@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<h3>📊 Database Statistics</h3>
+<div class="grid">
+  {% for table, count in counts.items() %}
+  <article>
+    <header>{{ table.replace('_',' ').title() }}</header>
+    <h2>{{ count }}</h2>
+  </article>
+  {% endfor %}
+  </div>
+{% endblock %}
+
+

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block content %}
+<h3>✅ In-Stock Meals</h3>
+
+{% if saved_instock %}
+<h4>🍽️ Saved Meals In Stock</h4>
+{% for row in saved_instock %}
+  {% set meal = saved_meals.get(row.id) %}
+  {% if meal %}
+  <details>
+    <summary>✅ {{ meal.name }} ({{ meal.prep_time_minutes }} min)</summary>
+    <div class="grid">
+      <div>
+        <p><strong>Recipe:</strong></p>
+        <pre style="white-space:pre-wrap">{{ meal.recipe }}</pre>
+        {% if meal.ingredients_parsed %}
+        <p><strong>Ingredients:</strong></p>
+        <ul>
+          {% for ing in meal.ingredients_parsed %}
+            {% if ing is iterable and ing|length >= 3 %}
+              <li>{{ ing[2] }} {{ ing[1] }}</li>
+            {% endif %}
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+      <div></div>
+    </div>
+  </details>
+  {% else %}
+  <p>• Saved Meal ID {{ row.id }} (details not found)</p>
+  {% endif %}
+{% endfor %}
+{% else %}
+<p class="muted">No saved meals currently in stock</p>
+{% endif %}
+
+{% if ideas_instock %}
+<h4>💡 New Meal Ideas In Stock</h4>
+{% for row in ideas_instock %}
+  {% set idea = ideas.get(row.id) %}
+  {% if idea %}
+  <details>
+    <summary>💡 {{ idea.name }} ({{ idea.prep_time }} min)</summary>
+    <div class="grid">
+      <div>
+        <p><strong>Recipe:</strong></p>
+        <pre style="white-space:pre-wrap">{{ idea.recipe }}</pre>
+        {% if idea.ingredients_parsed %}
+        <p><strong>Ingredients:</strong></p>
+        <ul>
+          {% for ing in idea.ingredients_parsed %}
+            {% if ing is iterable and ing|length >= 3 %}
+              <li>{{ ing[2] }} {{ ing[1] }}</li>
+            {% endif %}
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+      <div>
+        <form method="post" action="/ideas/save/{{ row.id }}" style="margin-bottom:.5rem">
+          <button type="submit">💾 Save to Saved Meals</button>
+        </form>
+      </div>
+    </div>
+  </details>
+  {% else %}
+  <p>• New Meal Idea ID {{ row.id }} (details not found)</p>
+  {% endif %}
+{% endfor %}
+{% else %}
+<p class="muted">No new meal ideas currently in stock</p>
+{% endif %}
+
+{% if saved_instock or ideas_instock %}
+<h4>📊 In-Stock Summary</h4>
+<div class="grid">
+  <article><header>Saved Meals In Stock</header><h2>{{ saved_instock|length }}</h2></article>
+  <article><header>New Ideas In Stock</header><h2>{{ ideas_instock|length }}</h2></article>
+  </div>
+{% endif %}
+
+{% endblock %}
+
+

@@ -5,6 +5,7 @@ langchain
 langchain-openai
 psycopg2-binary
 pydantic>=2.0.0
-streamlit
 requests
 fastmcp
+Jinja2
+python-multipart
