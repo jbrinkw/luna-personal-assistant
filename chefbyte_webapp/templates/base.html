@@ -17,11 +17,11 @@
   </style>
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
 </head>
-<body class="compact">
-  <main class="container">
-    <header>
-      <h1>🍳 ChefByte Dashboard</h1>
-      <p class="muted">Real-time database viewer and manager</p>
+  <body class="compact">
+  <main style="padding-left:0;padding-right:0;">
+    <header style="padding-left:0;padding-right:0;">
+      <h1 style="margin-bottom:.25rem;">🍳 ChefByte Dashboard</h1>
+      <p class="muted" style="margin-top:0;">Real-time database viewer and manager</p>
       <nav class="nav">
         <a href="/stats" role="button" class="{% if page=='stats' %}secondary{% endif %}">📊 Stats</a>
         <a href="/inventory" role="button" class="{% if page=='inventory' %}secondary{% endif %}">🏠 Inventory</a>
@@ -33,11 +33,10 @@
         <a href="/ideas" role="button" class="{% if page=='ideas' %}secondary{% endif %}">💡 Ideas</a>
         <a href="/instock" role="button" class="{% if page=='instock' %}secondary{% endif %}">✅ In-Stock</a>
       </nav>
-      <div>
+      <div style="margin-top:.25rem;">
         <span class="badge {{ 'ok' if status.db else 'bad' }}">DB: {{ '🟢 Connected' if status.db else '🔴 Disconnected' }}</span>
       </div>
     </header>
-    <hr />
     {% block content %}{% endblock %}
   </main>
   <script>
