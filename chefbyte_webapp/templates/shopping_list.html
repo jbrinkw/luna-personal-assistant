@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block content %}
+<h3>🛒 Shopping List</h3>
+
+<details>
+  <summary>➕ Add to Shopping List</summary>
+  <form method="post" action="/shopping-list/add">
+    <div class="grid">
+      <label>
+        Ingredient
+        <select name="ingredient_id" required>
+          {% for ing in ingredients %}
+          <option value="{{ ing.id }}">{{ ing.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Amount
+        <input type="number" step="0.1" name="amount" value="1.0" required />
+      </label>
+    </div>
+    <button type="submit">Add to List</button>
+  </form>
+  <hr />
+</details>
+
+{% if items %}
+<table role="grid">
+  <thead>
+    <tr><th>ID</th><th>Name</th><th>Amount</th><th>Min Amount</th><th>Link</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for row in items %}
+    <tr class="editable-row" id="shop-{{ row.id }}">
+      <td class="view">{{ row.id }}</td>
+      <td class="view">{{ row.name }}</td>
+      <td class="view">{{ row.amount }}</td>
+      <td class="view">{{ row.min_amount }}</td>
+      <td class="view">{% if row.walmart_link %}<a href="{{ row.walmart_link }}" target="_blank">Walmart</a>{% endif %}</td>
+      <td class="actions view"><button type="button" data-edit-toggle="shop-{{ row.id }}">✏️ Edit</button></td>
+
+      <form class="edit" method="post" action="/shopping-list/update/{{ row.id }}" data-end-edit="shop-{{ row.id }}">
+        <td class="edit">{{ row.id }}</td>
+        <td class="edit">{{ row.name }}</td>
+        <td class="edit"><input type="number" step="0.1" name="amount" value="{{ row.amount }}" required /></td>
+        <td class="edit">{{ row.min_amount }}</td>
+        <td class="edit">{% if row.walmart_link %}<a href="{{ row.walmart_link }}" target="_blank">Walmart</a>{% endif %}</td>
+        <td class="actions edit">
+          <button type="submit">Save</button>
+          <button type="button" class="secondary" data-edit-toggle="shop-{{ row.id }}">Cancel</button>
+          <form method="post" action="/shopping-list/delete/{{ row.id }}" style="display:inline">
+            <button type="submit" class="contrast">🗑️ Remove</button>
+          </form>
+        </td>
+      </form>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">Shopping list is empty</p>
+{% endif %}
+
+{% endblock %}
+
+
+

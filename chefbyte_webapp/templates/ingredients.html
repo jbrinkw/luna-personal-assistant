@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block content %}
+<h3>🥕 Ingredients Foods</h3>
+
+<details>
+  <summary>➕ Add New Ingredient</summary>
+  <form method="post" action="/ingredients/add">
+    <div class="grid">
+      <label>
+        Ingredient Name
+        <input name="name" required />
+      </label>
+      <label>
+        Min Amount to Buy
+        <input type="number" step="0.1" name="min_amount_to_buy" value="1.0" required />
+      </label>
+    </div>
+    <label>
+      Walmart Link (optional)
+      <input name="walmart_link" />
+    </label>
+    <button type="submit">Add Ingredient</button>
+  </form>
+  <hr />
+</details>
+
+<table role="grid">
+  <thead>
+    <tr><th>ID</th><th>Name</th><th>Min Amount</th><th>Walmart</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for it in items %}
+  <tr class="editable-row" id="ing-{{ it.id }}">
+    <td class="view">{{ it.id }}</td>
+    <td class="view">{{ it.name }}</td>
+    <td class="view">{{ it.min_amount_to_buy }}</td>
+    <td class="view">{% if it.walmart_link %}<a href="{{ it.walmart_link }}" target="_blank">Link</a>{% endif %}</td>
+    <td class="actions view">
+      <button type="button" data-edit-toggle="ing-{{ it.id }}">✏️ Edit</button>
+    </td>
+
+    <form class="edit" method="post" action="/ingredients/update/{{ it.id }}" data-end-edit="ing-{{ it.id }}">
+      <td class="edit">{{ it.id }}</td>
+      <td class="edit"><input name="name" value="{{ it.name }}" required /></td>
+      <td class="edit"><input type="number" step="0.1" name="min_amount_to_buy" value="{{ it.min_amount_to_buy }}" required /></td>
+      <td class="edit"><input name="walmart_link" value="{{ it.walmart_link or '' }}" /></td>
+      <td class="actions edit">
+        <button type="submit">Save</button>
+        <button type="button" class="secondary" data-edit-toggle="ing-{{ it.id }}">Cancel</button>
+        <form method="post" action="/ingredients/delete/{{ it.id }}" style="display:inline">
+          <button type="submit" class="contrast">🗑️ Delete</button>
+        </form>
+      </td>
+    </form>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h4>📋 Ingredients Overview</h4>
+<table role="grid">
+  <thead>
+    <tr><th>ID</th><th>Name</th><th>Min Amount</th><th>Walmart</th></tr>
+  </thead>
+  <tbody>
+  {% for it in items %}
+  <tr>
+    <td>{{ it.id }}</td>
+    <td>{{ it.name }}</td>
+    <td>{{ it.min_amount_to_buy }}</td>
+    <td>{% if it.walmart_link %}<a href="{{ it.walmart_link }}" target="_blank">Link</a>{% endif %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+
+
+
+

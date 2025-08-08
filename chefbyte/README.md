@@ -53,4 +53,4 @@ The assistant is powered by open-source LLMs like DeepSeek R1 and LLaMA 3, orche
 
 The backend is built with FastAPI, containerized with Docker, and hosted on AWS EC2. The SQL database runs on Azure.
 
-The frontend is a Streamlit-based interface deployed on Hugging Face Spaces.
+The UI is provided by a FastAPI + Jinja2 web app in `chefbyte_webapp/`.

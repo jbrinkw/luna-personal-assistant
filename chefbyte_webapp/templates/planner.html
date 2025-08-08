@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+<h3>📅 Daily Planner</h3>
+
+<details>
+  <summary>➕ Add Planner Entry</summary>
+  <form method="post" action="/planner/add">
+    <div class="grid">
+      <label>
+        Date (YYYY-MM-DD)
+        <input name="day" placeholder="2025-01-01" required />
+      </label>
+      <label>
+        Meal IDs (comma separated)
+        <input name="meal_ids" placeholder="10001, 10003" />
+      </label>
+    </div>
+    <label>
+      Notes
+      <textarea name="notes" rows="3"></textarea>
+    </label>
+    <button type="submit">Add Entry</button>
+  </form>
+  <hr />
+</details>
+
+{% for entry in items %}
+<details>
+  <summary>📅 {{ entry.day }}</summary>
+  <div class="grid">
+    <div>
+      {% if entry.notes %}
+      <p><strong>Notes:</strong></p>
+      <p>{{ entry.notes }}</p>
+      {% endif %}
+      {% if entry.meal_ids %}
+      <p><strong>Meal IDs:</strong> {{ entry.meal_ids }}</p>
+      {% endif %}
+    </div>
+    <div>
+      <form method="post" action="/planner/update/{{ entry.day }}">
+        <label>Notes <textarea name="notes" rows="3">{{ entry.notes or '' }}</textarea></label>
+        <label>Meal IDs <input name="meal_ids" value="{{ entry.meal_ids or '' }}" /></label>
+        <button type="submit">Save</button>
+      </form>
+      <form method="post" action="/planner/delete/{{ entry.day }}">
+        <button type="submit" class="contrast">🗑️ Delete Entry</button>
+      </form>
+    </div>
+  </div>
+</details>
+{% endfor %}
+
+{% endblock %}
+
+
