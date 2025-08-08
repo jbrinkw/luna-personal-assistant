@@ -2,6 +2,7 @@
 
 /* Typography */
 html, body { font-size: 15px; }
+body { margin: 0; }
 h1 { font-size: 1.35rem; margin-bottom: 0.6rem; }
 h2 { font-size: 1.2rem; margin-bottom: 0.5rem; }
 h3 { font-size: 1.1rem; margin-bottom: 0.5rem; }
@@ -47,4 +48,16 @@ article { padding: 0.6rem; }
 .editable-block.is-editing .edit { display: block; }
 .editable-block.is-editing .view { display: none; }
 
+
+/* Full-bleed layout: remove any container/gutter side spacing */
+body > main,
+main,
+header,
+footer {
+  max-width: none !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
 

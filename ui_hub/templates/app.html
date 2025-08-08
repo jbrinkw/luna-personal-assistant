@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="iframe-wrap">
+  <iframe src="{{ agent.url }}" title="{{ agent.name }}" frameborder="0"></iframe>
+  <div class="iframe-footer">
+    <a href="{{ agent.url }}" target="_blank">Open in new tab</a>
+  </div>
+</div>
+{% endblock %}
+
+
+
