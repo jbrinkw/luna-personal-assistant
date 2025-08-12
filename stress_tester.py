@@ -3,11 +3,11 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-url = "http://192.168.0.38:7860/api/v1/run/4b64410c-ffa2-4782-803c-d3cc810a32d9"
+url = "http://192.168.0.226:7860/api/v1/run/a7ae67bf-abce-4fac-bb3e-b64dd18c5264"
 # The complete API endpoint URL for this flow
 
 # Configuration - Change this to control number of concurrent requests
-NUM_CONCURRENT_REQUESTS = 75
+NUM_CONCURRENT_REQUESTS = 5
 
 def make_request(request_id):
     """Make a single API request and return the response with timing"""

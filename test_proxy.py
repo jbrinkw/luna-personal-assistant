@@ -10,7 +10,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Load environment variables
 load_dotenv()
 
-url = "http://192.168.0.38:7860/api/v1/run/4b64410c-ffa2-4782-803c-d3cc810a32d9"
+url = "http://192.168.0.226:7860/api/v1/run/e5d633c6-75a1-46c1-bcf0-3629c912e4f4"
+
 # The complete API endpoint URL for this flow
 
 # Initialize OpenAI client (set your API key as environment variable OPENAI_API_KEY)
