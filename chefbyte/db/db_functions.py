@@ -1,97 +1,119 @@
-# db_functions.py
+"""
+PostgreSQL database helpers and table accessors for ChefByte.
 
+All ChefByte data now lives in the same PostgreSQL server used by CoachByte.
+Connection settings are centralized in the repo root `db_config.py` and can be
+switched between prod/test via DB_ENV=prod|test.
 """
-This module contains and object for each database table that includes
-a CRUD functions for each table as well as a format function that
-returns a string explaining the format used to interact with the table.
-"""
+
+from __future__ import annotations
 
 import os
-import sqlite3
-from dotenv import load_dotenv
-from datetime import date, datetime, timedelta
 import json
 import random
+from datetime import date, datetime, timedelta
+
+from dotenv import load_dotenv
+import psycopg2
+import psycopg2.extras
+
+# Import unified DB config, ensuring repo root is on sys.path when run as a submodule
+try:
+    from db_config import get_connection, get_db_schema
+except ModuleNotFoundError:
+    import sys as _sys
+    import os as _os
+    _sys.path.insert(0, _os.path.abspath(_os.path.join(_os.path.dirname(__file__), '..', '..')))
+    from db_config import get_connection, get_db_schema
 
 # Load environment variables
 load_dotenv()
 
-# Define the path for the SQLite database file
-DB_DIR = "data"
-DB_PATH = os.path.join(DB_DIR, "chefbyte.db")
 
 class Database:
-    def __init__(self, db_path=DB_PATH):
-        self.db_path = db_path
+    def __init__(self):
         self.conn = None
-        # Ensure the directory exists
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-        # self.connect() # Connect explicitly or ensure connection in execute_query
 
-    def connect(self, verbose=True):
-        """Establish connection to the SQLite database."""
-        if self.conn is None:
-            try:
-                self.conn = sqlite3.connect(self.db_path)
-                # Use Row factory for dictionary-like access (optional but convenient)
-                self.conn.row_factory = sqlite3.Row 
-                if verbose: print(f"Connected to SQLite database at: {self.db_path}")
-                return True
-            except sqlite3.Error as e:
-                # Only print error if verbose or connection fails critically
-                if verbose: print(f"SQLite connection error: {e}")
-                self.conn = None # Ensure conn is None if connection failed
-                return False
-        return True # Already connected
+    def connect(self, verbose: bool = True) -> bool:
+        """Establish a PostgreSQL connection (if not already connected).
 
-    def disconnect(self, verbose=True):
-        """Close the database connection."""
-        if self.conn:
-            self.conn.close()
-            self.conn = None
-            if verbose: print("Disconnected from SQLite database.")
-
-    def execute_query(self, query, params=None, fetch=False):
-        """Execute a SQL query."""
-        # Connect silently if not already connected
-        if not self.connect(verbose=False): # Ensure connection exists, don't print here
-             print("Cannot execute query, no database connection.")
-             return None
-             
+        Ensures the configured schema exists and sets search_path accordingly.
+        """
+        if self.conn is not None:
+            return True
         try:
-            cursor = self.conn.cursor()
-            if params:
-                 # Use '?' placeholder for SQLite
-                cursor.execute(query, params)
-            else:
-                cursor.execute(query)
+            self.conn = get_connection(autocommit=False)
+            # Ensure schema exists if configured
+            schema = get_db_schema()
+            if schema:
+                with self.conn.cursor() as cur:
+                    cur.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
+            if verbose:
+                print("Connected to PostgreSQL database.")
+            return True
+        except Exception as e:
+            if verbose:
+                print(f"PostgreSQL connection error: {e}")
+            self.conn = None
+            return False
 
-            result = None
-            last_id = None
+    def disconnect(self, verbose: bool = True) -> None:
+        if self.conn:
+            try:
+                self.conn.close()
+            finally:
+                self.conn = None
+            if verbose:
+                print("Disconnected from PostgreSQL database.")
+
+    def execute_query(self, query: str, params=None, fetch: bool = False):
+        """Execute a SQL query against PostgreSQL.
+
+        - Uses RealDictCursor so fetched rows are dicts
+        - If `fetch=True`, returns a list of dicts
+        - If the query contains `RETURNING`, returns the first row (dict) or
+          single scalar value when appropriate
+        - Otherwise returns True on success, None on failure
+        """
+        if not self.connect(verbose=False):
+            print("Cannot execute query, no database connection.")
+            return None
+
+        try:
+            cursor = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(query, params or ())
 
             if fetch:
                 rows = cursor.fetchall()
-                # Convert sqlite3.Row objects to standard dictionaries
-                result = [dict(row) for row in rows] if rows else []
-            # For INSERT statements that generate an ID
-            elif query.strip().upper().startswith("INSERT"):
-                 last_id = cursor.lastrowid
+                self.conn.commit()
+                cursor.close()
+                return [dict(r) for r in rows]
+
+            # Handle RETURNING automatically
+            if "returning" in query.lower():
+                one = cursor.fetchone()
+                self.conn.commit()
+                cursor.close()
+                if one is None:
+                    return None
+                # If single column, return its value, else the dict row
+                if len(one.keys()) == 1:
+                    return list(one.values())[0]
+                return dict(one)
 
             self.conn.commit()
             cursor.close()
-
-            # Return last inserted ID if applicable, otherwise fetch result
-            return last_id if last_id is not None else result
-        
-        except sqlite3.Error as e:
-            # No need to rollback explicitly for basic errors, commit handles transactions.
-            # For complex transactions, manual rollback might be needed.
-            print(f"SQLite query execution error: {e}")
-            # Attempt to close cursor even if error occurred
+            return True
+        except Exception as e:
+            print(f"PostgreSQL query execution error: {e}")
+            try:
+                self.conn.rollback()
+            except Exception:
+                pass
             try:
                 cursor.close()
-            except: # cursor might not be defined if connection failed earlier
-                pass 
+            except Exception:
+                pass
             return None
 
 
@@ -106,12 +128,11 @@ class Inventory:
     def create_table(self):
         query = """
         CREATE TABLE IF NOT EXISTS inventory (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
             quantity TEXT NOT NULL,
             expiration TEXT,
-            ingredient_food_id INTEGER, 
-            FOREIGN KEY (ingredient_food_id) REFERENCES ingredients_foods(id)
+            ingredient_food_id INTEGER REFERENCES ingredients_foods(id)
         )
         """
         # Ensure ingredients_foods table exists first (or handle potential error)
@@ -122,13 +143,14 @@ class Inventory:
         expiration_str = expiration.strftime('%Y-%m-%d') if isinstance(expiration, date) else expiration
         query = """
         INSERT INTO inventory (name, quantity, expiration, ingredient_food_id)
-        VALUES (?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s)
+        RETURNING id
         """
         return self.db.execute_query(query, (name, quantity, expiration_str, ingredient_food_id))
     
     def read(self, item_id=None):
         if item_id:
-            query = "SELECT * FROM inventory WHERE id = ?"
+            query = "SELECT * FROM inventory WHERE id = %s"
             return self.db.execute_query(query, (item_id,), fetch=True)
         else:
             query = "SELECT * FROM inventory"
@@ -139,32 +161,32 @@ class Inventory:
         params = []
         
         if name is not None:
-            updates.append("name = ?")
+            updates.append("name = %s")
             params.append(name)
         
         if quantity is not None:
-            updates.append("quantity = ?")
+            updates.append("quantity = %s")
             params.append(quantity)
         
         if expiration is not None:
-            updates.append("expiration = ?")
+            updates.append("expiration = %s")
             expiration_str = expiration.strftime('%Y-%m-%d') if isinstance(expiration, date) else expiration
             params.append(expiration_str)
         
         if ingredient_food_id is not None:
-            updates.append("ingredient_food_id = ?")
+            updates.append("ingredient_food_id = %s")
             params.append(ingredient_food_id)
         
         if not updates:
             return False
         
-        query = f"UPDATE inventory SET {', '.join(updates)} WHERE id = ?"
+        query = f"UPDATE inventory SET {', '.join(updates)} WHERE id = %s"
         params.append(item_id)
         
         return self.db.execute_query(query, params)
     
     def delete(self, item_id):
-        query = "DELETE FROM inventory WHERE id = ?"
+        query = "DELETE FROM inventory WHERE id = %s"
         return self.db.execute_query(query, (item_id,))
 
 
@@ -186,8 +208,9 @@ class TasteProfile:
     
     def create(self, profile):
         query = """
-        INSERT OR IGNORE INTO taste_profile (profile)
-        VALUES (?)
+        INSERT INTO taste_profile (profile)
+        VALUES (%s)
+        ON CONFLICT (profile) DO NOTHING
         """
         return self.db.execute_query(query, (profile,))
     
@@ -198,8 +221,9 @@ class TasteProfile:
     
     def update(self, profile):
         query = """
-        INSERT OR REPLACE INTO taste_profile (profile)
-        VALUES (?)
+        INSERT INTO taste_profile (profile)
+        VALUES (%s)
+        ON CONFLICT (profile) DO UPDATE SET profile = EXCLUDED.profile
         """
         return self.db.execute_query(query, (profile,))
     
@@ -213,7 +237,7 @@ def generate_unique_id(db, table_name, min_range, max_range):
     while True:
         new_id = random.randint(min_range, max_range)
         # Check if ID exists in the table
-        query = f"SELECT 1 FROM {table_name} WHERE id = ?"
+        query = f"SELECT 1 FROM {table_name} WHERE id = %s"
         result = db.execute_query(query, (new_id,), fetch=True)
         if not result:
             return new_id
@@ -252,7 +276,7 @@ class SavedMeals:
         # Use '?' placeholder, remove RETURNING id
         query = """
         INSERT INTO saved_meals (id, name, prep_time_minutes, ingredients, recipe)
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s)
         """
         # Return the generated meal_id on success (execute_query returns None for successful non-fetch)
         success = self.db.execute_query(query, (meal_id, name, prep_time_minutes, ingredients_json, recipe))
@@ -265,7 +289,7 @@ class SavedMeals:
     
     def read(self, meal_id=None):
         if meal_id:
-            query = "SELECT * FROM saved_meals WHERE id = ?"
+            query = "SELECT * FROM saved_meals WHERE id = %s"
             return self.db.execute_query(query, (meal_id,), fetch=True)
         else:
             query = "SELECT * FROM saved_meals"
@@ -276,33 +300,33 @@ class SavedMeals:
         params = []
         
         if name is not None:
-            updates.append("name = ?")
+            updates.append("name = %s")
             params.append(name)
         
         if prep_time_minutes is not None:
-            updates.append("prep_time_minutes = ?")
+            updates.append("prep_time_minutes = %s")
             params.append(prep_time_minutes)
         
         if ingredients is not None:
             if isinstance(ingredients, list):
                 ingredients = json.dumps(ingredients)
-            updates.append("ingredients = ?")
+            updates.append("ingredients = %s")
             params.append(ingredients)
         
         if recipe is not None:
-            updates.append("recipe = ?")
+            updates.append("recipe = %s")
             params.append(recipe)
         
         if not updates:
             return False
         
-        query = f"UPDATE saved_meals SET {', '.join(updates)} WHERE id = ?"
+        query = f"UPDATE saved_meals SET {', '.join(updates)} WHERE id = %s"
         params.append(meal_id)
         
         return self.db.execute_query(query, params)
     
     def delete(self, meal_id):
-        query = "DELETE FROM saved_meals WHERE id = ?"
+        query = "DELETE FROM saved_meals WHERE id = %s"
         return self.db.execute_query(query, (meal_id,))
 
 
@@ -339,7 +363,7 @@ class NewMealIdeas:
         # Use '?' placeholder
         query = """
         INSERT INTO new_meal_ideas (id, name, prep_time, ingredients, recipe)
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s)
         """
         # Return the generated ID assuming success
         self.db.execute_query(query, (meal_id, name, prep_time, ingredients_json, recipe))
@@ -347,7 +371,7 @@ class NewMealIdeas:
     
     def read(self, meal_id=None):
         if meal_id:
-            query = "SELECT * FROM new_meal_ideas WHERE id = ?"
+            query = "SELECT * FROM new_meal_ideas WHERE id = %s"
             return self.db.execute_query(query, (meal_id,), fetch=True)
         else:
             query = "SELECT * FROM new_meal_ideas"
@@ -358,33 +382,33 @@ class NewMealIdeas:
         params = []
         
         if name is not None:
-            updates.append("name = ?")
+            updates.append("name = %s")
             params.append(name)
         
         if prep_time is not None:
-            updates.append("prep_time = ?")
+            updates.append("prep_time = %s")
             params.append(prep_time)
         
         if ingredients is not None:
             if isinstance(ingredients, list):
                 ingredients = json.dumps(ingredients)
-            updates.append("ingredients = ?")
+            updates.append("ingredients = %s")
             params.append(ingredients)
         
         if recipe is not None:
-            updates.append("recipe = ?")
+            updates.append("recipe = %s")
             params.append(recipe)
         
         if not updates:
             return False
         
-        query = f"UPDATE new_meal_ideas SET {', '.join(updates)} WHERE id = ?"
+        query = f"UPDATE new_meal_ideas SET {', '.join(updates)} WHERE id = %s"
         params.append(meal_id)
         
         return self.db.execute_query(query, params)
     
     def delete(self, meal_id):
-        query = "DELETE FROM new_meal_ideas WHERE id = ?"
+        query = "DELETE FROM new_meal_ideas WHERE id = %s"
         return self.db.execute_query(query, (meal_id,))
 
 
@@ -406,21 +430,22 @@ class SavedMealsInStockIds:
     
     def create(self, meal_id):
         query = """
-        INSERT OR IGNORE INTO saved_meals_instock_ids (id)
-        VALUES (?)
+        INSERT INTO saved_meals_instock_ids (id)
+        VALUES (%s)
+        ON CONFLICT (id) DO NOTHING
         """
         return self.db.execute_query(query, (meal_id,))
     
     def read(self, meal_id=None):
         if meal_id:
-            query = "SELECT * FROM saved_meals_instock_ids WHERE id = ?"
+            query = "SELECT * FROM saved_meals_instock_ids WHERE id = %s"
             return self.db.execute_query(query, (meal_id,), fetch=True)
         else:
             query = "SELECT * FROM saved_meals_instock_ids"
             return self.db.execute_query(query, fetch=True)
     
     def delete(self, meal_id):
-        query = "DELETE FROM saved_meals_instock_ids WHERE id = ?"
+        query = "DELETE FROM saved_meals_instock_ids WHERE id = %s"
         return self.db.execute_query(query, (meal_id,))
 
 
@@ -442,21 +467,22 @@ class NewMealIdeasInStockIds:
     
     def create(self, meal_id):
         query = """
-        INSERT OR IGNORE INTO new_meal_ideas_instock_ids (id)
-        VALUES (?)
+        INSERT INTO new_meal_ideas_instock_ids (id)
+        VALUES (%s)
+        ON CONFLICT (id) DO NOTHING
         """
         return self.db.execute_query(query, (meal_id,))
     
     def read(self, meal_id=None):
         if meal_id:
-            query = "SELECT * FROM new_meal_ideas_instock_ids WHERE id = ?"
+            query = "SELECT * FROM new_meal_ideas_instock_ids WHERE id = %s"
             return self.db.execute_query(query, (meal_id,), fetch=True)
         else:
             query = "SELECT * FROM new_meal_ideas_instock_ids"
             return self.db.execute_query(query, fetch=True)
     
     def delete(self, meal_id):
-        query = "DELETE FROM new_meal_ideas_instock_ids WHERE id = ?"
+        query = "DELETE FROM new_meal_ideas_instock_ids WHERE id = %s"
         return self.db.execute_query(query, (meal_id,))
 
 
@@ -486,8 +512,8 @@ class DailyPlanner:
 
         query = """
         INSERT INTO daily_planner (day, notes, meal_ids)
-        VALUES (?, ?, ?) ON CONFLICT (day) DO UPDATE
-        SET notes = excluded.notes, meal_ids = excluded.meal_ids
+        VALUES (%s, %s, %s)
+        ON CONFLICT (day) DO UPDATE SET notes = EXCLUDED.notes, meal_ids = EXCLUDED.meal_ids
         """
         return self.db.execute_query(query, (day_str, notes, meal_ids_json))
     
@@ -506,7 +532,7 @@ class DailyPlanner:
         """
         if day is not None:
             day_str = day.strftime('%Y-%m-%d') if isinstance(day, date) else day
-            query = "SELECT * FROM daily_planner WHERE day = ?"
+            query = "SELECT * FROM daily_planner WHERE day = %s"
             return self.db.execute_query(query, (day_str,), fetch=True)
 
         today = date.today()
@@ -537,7 +563,7 @@ class DailyPlanner:
 
         start_str = start_date.strftime('%Y-%m-%d')
         end_str = end_date.strftime('%Y-%m-%d')
-        query = "SELECT * FROM daily_planner WHERE day BETWEEN ? AND ? ORDER BY day"
+        query = "SELECT * FROM daily_planner WHERE day BETWEEN %s AND %s ORDER BY day"
         return self.db.execute_query(query, (start_str, end_str), fetch=True)
     
     def update(self, day, notes=None, meal_ids=None):
@@ -548,18 +574,18 @@ class DailyPlanner:
         day_str = day.strftime('%Y-%m-%d') if isinstance(day, date) else day
 
         if notes is not None:
-            updates.append("notes = ?")
+            updates.append("notes = %s")
             params.append(notes)
         
         if meal_ids is not None:
             meal_ids_json = json.dumps(meal_ids) if isinstance(meal_ids, (list, tuple)) else meal_ids
-            updates.append("meal_ids = ?")
+            updates.append("meal_ids = %s")
             params.append(meal_ids_json)
         
         if not updates:
             return False
         
-        query = f"UPDATE daily_planner SET {', '.join(updates)} WHERE day = ?"
+        query = f"UPDATE daily_planner SET {', '.join(updates)} WHERE day = %s"
         params.append(day_str)
         
         return self.db.execute_query(query, params)
@@ -567,7 +593,7 @@ class DailyPlanner:
     def delete(self, day):
         # Format date as string
         day_str = day.strftime('%Y-%m-%d') if isinstance(day, date) else day
-        query = "DELETE FROM daily_planner WHERE day = ?"
+        query = "DELETE FROM daily_planner WHERE day = %s"
         return self.db.execute_query(query, (day_str,))
 
 
@@ -591,25 +617,25 @@ class ShoppingList:
     def create(self, item_id, amount):
         query = """
         INSERT INTO shopping_list (id, amount)
-        VALUES (?, ?) ON CONFLICT (id) DO UPDATE
-        SET amount = excluded.amount
+        VALUES (%s, %s)
+        ON CONFLICT (id) DO UPDATE SET amount = EXCLUDED.amount
         """
         return self.db.execute_query(query, (item_id, amount))
     
     def read(self, item_id=None):
         if item_id:
-            query = "SELECT * FROM shopping_list WHERE id = ?"
+            query = "SELECT * FROM shopping_list WHERE id = %s"
             return self.db.execute_query(query, (item_id,), fetch=True)
         else:
             query = "SELECT * FROM shopping_list"
             return self.db.execute_query(query, fetch=True)
     
     def update(self, item_id, amount):
-        query = "UPDATE shopping_list SET amount = ? WHERE id = ?"
+        query = "UPDATE shopping_list SET amount = %s WHERE id = %s"
         return self.db.execute_query(query, (amount, item_id))
     
     def delete(self, item_id):
-        query = "DELETE FROM shopping_list WHERE id = ?"
+        query = "DELETE FROM shopping_list WHERE id = %s"
         return self.db.execute_query(query, (item_id,))
 
 
@@ -624,7 +650,7 @@ class IngredientsFood:
     def create_table(self):
         query = """
         CREATE TABLE IF NOT EXISTS ingredients_foods (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
             min_amount_to_buy INTEGER NOT NULL,
             walmart_link TEXT
@@ -635,13 +661,14 @@ class IngredientsFood:
     def create(self, name, min_amount_to_buy, walmart_link=None):
         query = """
         INSERT INTO ingredients_foods (name, min_amount_to_buy, walmart_link)
-        VALUES (?, ?, ?)
+        VALUES (%s, %s, %s)
+        RETURNING id
         """
         return self.db.execute_query(query, (name, min_amount_to_buy, walmart_link))
     
     def read(self, food_id=None):
         if food_id:
-            query = "SELECT * FROM ingredients_foods WHERE id = ?"
+            query = "SELECT * FROM ingredients_foods WHERE id = %s"
             return self.db.execute_query(query, (food_id,), fetch=True)
         else:
             query = "SELECT * FROM ingredients_foods"
@@ -652,27 +679,27 @@ class IngredientsFood:
         params = []
         
         if name is not None:
-            updates.append("name = ?")
+            updates.append("name = %s")
             params.append(name)
         
         if min_amount_to_buy is not None:
-            updates.append("min_amount_to_buy = ?")
+            updates.append("min_amount_to_buy = %s")
             params.append(min_amount_to_buy)
         
         if walmart_link is not None:
-            updates.append("walmart_link = ?")
+            updates.append("walmart_link = %s")
             params.append(walmart_link)
         
         if not updates:
             return False
         
-        query = f"UPDATE ingredients_foods SET {', '.join(updates)} WHERE id = ?"
+        query = f"UPDATE ingredients_foods SET {', '.join(updates)} WHERE id = %s"
         params.append(food_id)
         
         return self.db.execute_query(query, params)
     
     def delete(self, food_id):
-        query = "DELETE FROM ingredients_foods WHERE id = ?"
+        query = "DELETE FROM ingredients_foods WHERE id = %s"
         return self.db.execute_query(query, (food_id,))
 
 

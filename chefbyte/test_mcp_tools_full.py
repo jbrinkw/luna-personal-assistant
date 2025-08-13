@@ -2,7 +2,6 @@ import asyncio
 import subprocess
 import sys
 import time
-import sqlite3
 import os
 import json
 import re

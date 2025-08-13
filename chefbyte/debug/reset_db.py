@@ -13,14 +13,15 @@ sys.path.insert(0, project_root)
 # Import the database functions
 from db.db_functions import Database, Inventory, TasteProfile, SavedMeals
 from db.db_functions import NewMealIdeas, SavedMealsInStockIds, NewMealIdeasInStockIds
-from db.db_functions import DailyPlanner, ShoppingList, IngredientsFood, init_tables, DB_PATH
+from db.db_functions import DailyPlanner, ShoppingList, IngredientsFood, init_tables
 from db.meal_availability import MealAvailabilityUpdater, update_all_meal_availability
 
 class ResetDB:
     def __init__(self, add_to_shopping_list=False):
         # Initialize database connection ONLY. Table objects will be created on demand.
-        self.db_path = DB_PATH # Store the path
-        self.db = Database(self.db_path) # Initialize DB connection
+        # For Postgres, we don't manage a file path; keep attribute for backwards prints
+        self.db_path = "(postgres)"
+        self.db = Database() # Initialize DB connection
         if not self.db.connect():
             raise ConnectionError("Failed to connect to database in ResetDB init.")
             
@@ -571,12 +572,12 @@ Dislikes:
         
         # Get the correct sequence name before resetting
         sequence_result = self.db.execute_query(
-            "SELECT pg_get_serial_sequence('new_meal_ideas', 'id')",
+            "SELECT pg_get_serial_sequence('new_meal_ideas', 'id') AS seq",
             fetch=True
         )
         
-        if sequence_result and sequence_result[0][0]:
-            sequence_name = sequence_result[0][0]
+        if sequence_result and sequence_result[0].get('seq'):
+            sequence_name = sequence_result[0]['seq']
             self.db.execute_query(f"ALTER SEQUENCE {sequence_name} RESTART WITH 1")
             print(f"Reset ID sequence: {sequence_name}")
         else:
@@ -847,8 +848,8 @@ Dislikes:
         # Use direct INSERT to specify IDs
         insert_query = """
         INSERT INTO ingredients_foods (id, name, min_amount_to_buy, walmart_link)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(id) DO NOTHING; -- Or UPDATE if preferred
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT(id) DO NOTHING
         """
         
         success_count = 0
@@ -874,10 +875,7 @@ Dislikes:
                 )
                 
                 try:
-                    query = """
-                    INSERT OR REPLACE INTO ingredients_foods (id, name, min_amount_to_buy, walmart_link)
-                    VALUES (?, ?, ?, ?)
-                    """
+                    query = insert_query
                     self.db.execute_query(query, params)
                     success_count += 1
                     print(f"[OK] Added/Checked ingredient: {item_name} (ID: {item['id']})")
@@ -1061,77 +1059,11 @@ Dislikes:
         """Legacy method: Runs the complete reset process."""
         self.reload_all()
 
-    def snapshot_db(self, snapshot_filename="chefbyte_snapshot.db"):
-        """Creates a snapshot copy of the current database file."""
-        print(f"\nAttempting to create database snapshot... ")
-        # Ensure the connection is closed before copying to avoid file locks
-        if self.db and self.db.conn:
-            print("  Closing current DB connection before snapshot...")
-            self.db.disconnect()
-            
-        source_path = self.db_path
-        snapshot_path = os.path.join(os.path.dirname(source_path), snapshot_filename)
-        
-        if not os.path.exists(source_path):
-            print(f"[ERROR] Source database file not found at: {source_path}. Cannot create snapshot.")
-            # Optionally try to reconnect if disconnected
-            # self.db.connect()
-            return False
-            
-        try:
-            shutil.copy2(source_path, snapshot_path) # copy2 preserves metadata
-            print(f"[OK] Database snapshot created successfully at: {snapshot_path}")
-            # Re-open connection after snapshot
-            # print("  Re-opening DB connection after snapshot...")
-            # self.db.connect() # Reconnect if needed for subsequent operations
-            return True
-        except Exception as e:
-            print(f"[ERROR] Failed to create database snapshot: {e}")
-            # Optionally try to reconnect if disconnected
-            # self.db.connect()
-            return False
-            
-    def reload_from_snapshot(self, snapshot_filename="chefbyte_snapshot.db"):
-        """Restores the database from a snapshot file."""
-        print(f"\nAttempting to reload database from snapshot: {snapshot_filename}...")
-        # Ensure the connection is closed before replacing the file
-        if self.db and self.db.conn:
-            print("  Closing current DB connection before reloading...")
-            self.db.disconnect()
-            
-        target_path = self.db_path
-        snapshot_path = os.path.join(os.path.dirname(target_path), snapshot_filename)
-        
-        if not os.path.exists(snapshot_path):
-            print(f"[ERROR] Snapshot file not found at: {snapshot_path}. Cannot reload.")
-            # Optionally try to connect to existing db if reload fails
-            # self.db.connect() 
-            return False
-            
-        try:
-            # Remove the current database file if it exists
-            if os.path.exists(target_path):
-                os.remove(target_path)
-                print(f"  Removed existing database file: {target_path}")
-                
-            # Copy the snapshot to the target path
-            shutil.copy2(snapshot_path, target_path)
-            print(f"[OK] Database reloaded successfully from snapshot: {snapshot_filename}")
-            
-            # Important: Reconnect after reloading to use the restored database
-            print("  Re-opening DB connection after reloading...")
-            if not self.db.connect():
-                 print("[WARN] Failed to automatically reconnect after reloading from snapshot.")
-            return True
-        except Exception as e:
-            print(f"[ERROR] Failed to reload database from snapshot: {e}")
-            # Optionally try to connect to original db if snapshot copy failed
-            # self.db.connect()
-            return False
+    # Snapshot functionality removed per project decision; use reset reload instead
 
 def reset_database():
-    """Resets the SQLite database by clearing data and reloading sample data."""
-    print(f"Attempting to reset data in database: {DB_PATH}")
+    """Resets the database by clearing data and reloading sample data (PostgreSQL)."""
+    print(f"Attempting to reset data in database: (postgres)")
     db_conn_for_loader = None # Use a different name to avoid confusion
     reset_db_loader = None
     try:
@@ -1161,20 +1093,3 @@ def reset_database():
 if __name__ == "__main__":
     # Reset and load directly without confirmation
     reset_database()
-    
-    # After resetting and loading, create a baseline snapshot
-    try:
-        # Need an instance to call snapshot_db
-        # Ensure connection is established within the instance first
-        print("\nCreating baseline database snapshot...")
-        snapshot_creator = ResetDB() 
-        if snapshot_creator.db: # Check if db connection was successful in init
-            snapshot_creator.snapshot_db("chefbyte_baseline.db")
-            # Important: Close the connection used by snapshot_creator if not needed further
-            if snapshot_creator.db.conn:
-                snapshot_creator.db.disconnect()
-        else:
-             print("[ERROR] Cannot create snapshot, failed to initialize DB connection.")
-    except Exception as e:
-        print(f"[ERROR] An error occurred during baseline snapshot creation: {e}")
-        print(traceback.format_exc())

@@ -16,7 +16,7 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
 def parse_agents_from_env() -> list[dict]:
-    # Format: AGENT_LINKS="ChefByte:http://localhost:8050,CoachByte:http://localhost:3001"
+    # Format: AGENT_LINKS="ChefByte:http://localhost:8050,CoachByte:http://localhost:5173"
     raw = os.environ.get("AGENT_LINKS")
     agents: list[dict] = []
     if raw:
@@ -30,7 +30,8 @@ def parse_agents_from_env() -> list[dict]:
         # defaults
         agents = [
             {"name": "ChefByte", "slug": "chefbyte", "url": "http://localhost:8050"},
-            {"name": "CoachByte", "slug": "coachbyte", "url": "http://localhost:3001"},
+            {"name": "CoachByte", "slug": "coachbyte", "url": "http://localhost:5173"},
+            {"name": "ProfessorByte", "slug": "professorbyte", "url": "http://localhost:8001"},
         ]
     return agents
 
