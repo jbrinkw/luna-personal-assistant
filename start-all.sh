@@ -18,9 +18,9 @@ PORT="${COACH_API_PORT}" node coachbyte/server.js &
 echo "Starting CoachByte UI (Vite) on :${COACH_UI_PORT}"
 # Use local vite binary if present to avoid npx prompt
 if [ -f "coachbyte/node_modules/vite/bin/vite.js" ]; then
-  node coachbyte/node_modules/vite/bin/vite.js --port "${COACH_UI_PORT}" --host 0.0.0.0 &
+  node coachbyte/node_modules/vite/bin/vite.js coachbyte --port "${COACH_UI_PORT}" --host 0.0.0.0 &
 else
-  npx --yes vite --port "${COACH_UI_PORT}" --host 0.0.0.0 &
+  npx --yes vite coachbyte --port "${COACH_UI_PORT}" --host 0.0.0.0 &
 fi
 
 echo "Starting Hub on :${HUB_PORT}"
