@@ -11,7 +11,8 @@ WORKDIR /app
 # Copy Python requirements first for better layer caching
 COPY requirements.txt ./
 COPY coachbyte/requirements.txt ./coachbyte/requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt -r coachbyte/requirements.txt
+# Allow pip installs in Debian's externally-managed environment (PEP 668)
+RUN pip install --no-cache-dir --break-system-packages -r requirements.txt -r coachbyte/requirements.txt
 
 # Install Node dependencies for CoachByte (includes dev deps for Vite)
 COPY coachbyte/package*.json coachbyte/
