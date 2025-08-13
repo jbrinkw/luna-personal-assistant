@@ -4,12 +4,19 @@ Lightweight hub to switch between agent dashboards.
 
 Defaults:
 - ChefByte → http://localhost:8050
-- CoachByte → http://localhost:3001
+- CoachByte → http://localhost:5173
+- ProfessorByte → http://localhost:8001
 
 Override via env:
 
+Unix/macOS (bash/zsh):
 ```
-export AGENT_LINKS="ChefByte:http://localhost:8050,CoachByte:http://localhost:3001"
+export AGENT_LINKS="ChefByte:http://localhost:8050,CoachByte:http://localhost:5173,ProfessorByte:http://localhost:8001"
+```
+
+Windows PowerShell:
+```
+$env:AGENT_LINKS = "ChefByte:http://localhost:8050,CoachByte:http://localhost:5173,ProfessorByte:http://localhost:8001"
 ```
 
 Run from repo root:

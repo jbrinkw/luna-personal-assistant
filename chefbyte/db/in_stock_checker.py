@@ -93,7 +93,7 @@ class InStockChecker:
         Checks if ingredients are in stock based on inventory using name matching.
         Args:
             ingredients: List of ingredient lists [food_id, name, quantity]
-            inventory: List of inventory items (sqlite3.Row objects) from the database
+            inventory: List of inventory items (row dicts) from the database
             add_to_shopping_list: If True, adds missing ingredients to shopping list
             db: Database connection (required if add_to_shopping_list is True)
         
@@ -119,7 +119,7 @@ class InStockChecker:
         Check if ingredients are in stock based on inventory using food_id matching.
         Args:
             ingredients: List of required ingredient lists [food_id, name, quantity].
-            inventory_rows: List of inventory items (sqlite3.Row objects) from the database.
+            inventory_rows: List of inventory items (row dicts) from the database.
             add_to_shopping_list: If True, adds missing ingredients to the shopping list.
             db: Database connection (required if add_to_shopping_list is True).
         

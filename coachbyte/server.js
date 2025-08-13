@@ -1,17 +1,31 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+// Load env from repo root first, then local coachbyte/.env
+try {
+  require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
+} catch (_) {}
+require('dotenv').config();
 const db = require('./db');
 
 const app = express();
+console.log('[CoachByte] DB_ENV=%s DB_NAME=%s TEST_DB_NAME=%s', process.env.DB_ENV || 'prod', process.env.DB_NAME, process.env.TEST_DB_NAME);
 app.use(cors());
 app.use(express.json());
 
 // Serve static files from the current directory
 app.use(express.static('.'));
 
-// Database is initialized via Python scripts
-// db.initDb(false);
+// Initialize database tables on startup (idempotent)
+(async () => {
+  try {
+    await db.initDb(false);
+    await db.ensureTodayPlan();
+    console.log('[CoachByte] Database initialized and today ensured');
+  } catch (e) {
+    console.error('[CoachByte] Startup DB init failed:', e);
+  }
+})();
 
 app.get('/api/days', async (req, res) => {
   try {

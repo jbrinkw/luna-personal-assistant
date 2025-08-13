@@ -3,16 +3,19 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import os
-import sqlite3
 import json
 from datetime import datetime
 import random
 import requests
+import psycopg2
+import psycopg2.extras
+from db_config import get_connection
+from chefbyte.db.db_functions import init_tables
 
 # Paths and config
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(BASE_DIR)
-DB_PATH = os.path.join(PROJECT_ROOT, "data", "chefbyte.db")
+# Using unified Postgres DB via root db_config.py
 PUSH_SERVER_URL = os.environ.get("CHEFBYTE_PUSH_URL", "http://localhost:8010")
 
 app = FastAPI(title="ChefByte Web")
@@ -27,17 +30,21 @@ templates = Jinja2Templates(directory=templates_dir)
 
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    # RealDictCursor for dict-like rows
+    conn = get_connection(autocommit=False)
     return conn
 
 
 def fetch_table(table_name: str):
-    with get_db_connection() as conn:
-        cur = conn.cursor()
-        cur.execute(f"SELECT * FROM {table_name}")
-        rows = cur.fetchall()
-        return [dict(r) for r in rows]
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute(f"SELECT * FROM {table_name}")
+            rows = cur.fetchall()
+            return [dict(r) for r in rows]
+    except Exception:
+        # Table might not exist yet; return empty list for UI rendering
+        return []
 
 
 def _json_or_none(text: str | None):
@@ -57,6 +64,19 @@ def compute_days_until(date_str: str | None) -> int | None:
     except ValueError:
         return None
     return (dt - datetime.now()).days
+@app.on_event("startup")
+def ensure_schema():
+    # Create tables if they don't exist
+    try:
+        db, _ = init_tables(verbose=False)
+        if db and db.conn:
+            db.disconnect(verbose=False)
+    except Exception:
+        # If init fails, routes will still show DB disconnected
+        pass
+
+    # ChefByte does not manage workout days; no additional day seeding here
+
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -67,8 +87,10 @@ def home(request: Request):
 def get_status():
     # DB status
     try:
-        with get_db_connection() as _:
-            db_status = True
+        with get_db_connection() as conn:
+            with conn.cursor() as _:
+                pass
+        db_status = True
     except Exception:
         db_status = False
     # Push status removed to avoid reliance on push tools
@@ -95,7 +117,7 @@ def stats(request: Request):
             try:
                 cur.execute(f"SELECT COUNT(*) FROM {t}")
                 counts[t] = cur.fetchone()[0]
-            except sqlite3.Error:
+            except Exception:
                 counts[t] = 0
     return templates.TemplateResponse(
         "stats.html",
@@ -119,7 +141,7 @@ def inventory_add(name: str = Form(...), quantity: str = Form(...), expiration: 
     with get_db_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO inventory (name, quantity, expiration, ingredient_food_id) VALUES (?, ?, ?, ?)",
+            "INSERT INTO inventory (name, quantity, expiration, ingredient_food_id) VALUES (%s, %s, %s, %s)",
             (name, quantity, expiration or None, ingredient_food_id if ingredient_food_id else None),
         )
         conn.commit()
@@ -130,7 +152,7 @@ def inventory_add(name: str = Form(...), quantity: str = Form(...), expiration: 
 def inventory_delete(item_id: int):
     with get_db_connection() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM inventory WHERE id = ?", (item_id,))
+        cur.execute("DELETE FROM inventory WHERE id = %s", (item_id,))
         conn.commit()
     return RedirectResponse(url="/inventory", status_code=303)
 
@@ -146,7 +168,7 @@ def inventory_update(
     with get_db_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            "UPDATE inventory SET name = ?, quantity = ?, expiration = ?, ingredient_food_id = ? WHERE id = ?",
+            "UPDATE inventory SET name = %s, quantity = %s, expiration = %s, ingredient_food_id = %s WHERE id = %s",
             (name, quantity, expiration or None, ingredient_food_id if ingredient_food_id else None, item_id),
         )
         conn.commit()
@@ -167,7 +189,7 @@ def ingredients_add(name: str = Form(...), min_amount_to_buy: float = Form(...),
     with get_db_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO ingredients_foods (name, min_amount_to_buy, walmart_link) VALUES (?, ?, ?)",
+            "INSERT INTO ingredients_foods (name, min_amount_to_buy, walmart_link) VALUES (%s, %s, %s)",
             (name, min_amount_to_buy, walmart_link or None),
         )
         conn.commit()
@@ -178,7 +200,7 @@ def ingredients_add(name: str = Form(...), min_amount_to_buy: float = Form(...),
 def ingredients_delete(food_id: int):
     with get_db_connection() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM ingredients_foods WHERE id = ?", (food_id,))
+        cur.execute("DELETE FROM ingredients_foods WHERE id = %s", (food_id,))
         conn.commit()
     return RedirectResponse(url="/ingredients", status_code=303)
 
@@ -193,7 +215,7 @@ def ingredients_update(
     with get_db_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            "UPDATE ingredients_foods SET name = ?, min_amount_to_buy = ?, walmart_link = ? WHERE id = ?",
+            "UPDATE ingredients_foods SET name = %s, min_amount_to_buy = %s, walmart_link = %s WHERE id = %s",
             (name, min_amount_to_buy, walmart_link or None, food_id),
         )
         conn.commit()
@@ -229,12 +251,12 @@ def saved_meal_add(name: str = Form(...), prep_time_minutes: int = Form(...), in
         meal_id = None
         while True:
             candidate = random.randint(10000, 19999)
-            cur.execute("SELECT 1 FROM saved_meals WHERE id = ?", (candidate,))
+            cur.execute("SELECT 1 FROM saved_meals WHERE id = %s", (candidate,))
             if cur.fetchone() is None:
                 meal_id = candidate
                 break
         cur.execute(
-            "INSERT INTO saved_meals (id, name, prep_time_minutes, ingredients, recipe) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO saved_meals (id, name, prep_time_minutes, ingredients, recipe) VALUES (%s, %s, %s, %s, %s)",
             (meal_id, name, prep_time_minutes, ingredients or json.dumps([]), recipe),
         )
         conn.commit()
@@ -245,7 +267,7 @@ def saved_meal_add(name: str = Form(...), prep_time_minutes: int = Form(...), in
 def saved_meal_delete(meal_id: int):
     with get_db_connection() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM saved_meals WHERE id = ?", (meal_id,))
+        cur.execute("DELETE FROM saved_meals WHERE id = %s", (meal_id,))
         conn.commit()
     return RedirectResponse(url="/saved-meals", status_code=303)
 
@@ -267,7 +289,7 @@ def saved_meal_update(
     with get_db_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            "UPDATE saved_meals SET name = ?, prep_time_minutes = ?, ingredients = ?, recipe = ? WHERE id = ?",
+            "UPDATE saved_meals SET name = %s, prep_time_minutes = %s, ingredients = %s, recipe = %s WHERE id = %s",
             (name, prep_time_minutes, ingredients or json.dumps([]), recipe, meal_id),
         )
         conn.commit()
@@ -302,7 +324,7 @@ def shopping_list_add(ingredient_id: int = Form(...), amount: float = Form(...))
     with get_db_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT OR REPLACE INTO shopping_list (id, amount) VALUES (?, ?)",
+            "INSERT INTO shopping_list (id, amount) VALUES (%s, %s) ON CONFLICT (id) DO UPDATE SET amount = EXCLUDED.amount",
             (ingredient_id, amount),
         )
         conn.commit()
@@ -313,7 +335,7 @@ def shopping_list_add(ingredient_id: int = Form(...), amount: float = Form(...))
 def shopping_list_delete(ingredient_id: int):
     with get_db_connection() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM shopping_list WHERE id = ?", (ingredient_id,))
+        cur.execute("DELETE FROM shopping_list WHERE id = %s", (ingredient_id,))
         conn.commit()
     return RedirectResponse(url="/shopping-list", status_code=303)
 
@@ -322,7 +344,7 @@ def shopping_list_delete(ingredient_id: int):
 def shopping_list_update(ingredient_id: int, amount: float = Form(...)):
     with get_db_connection() as conn:
         cur = conn.cursor()
-        cur.execute("UPDATE shopping_list SET amount = ? WHERE id = ?", (amount, ingredient_id))
+        cur.execute("UPDATE shopping_list SET amount = %s WHERE id = %s", (amount, ingredient_id))
         conn.commit()
     return RedirectResponse(url="/shopping-list", status_code=303)
 
@@ -350,7 +372,7 @@ def planner_add(day: str = Form(...), notes: str = Form(""), meal_ids: str = For
     with get_db_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT OR REPLACE INTO daily_planner (day, notes, meal_ids) VALUES (?, ?, ?)",
+            "INSERT INTO daily_planner (day, notes, meal_ids) VALUES (%s, %s, %s) ON CONFLICT (day) DO UPDATE SET notes = EXCLUDED.notes, meal_ids = EXCLUDED.meal_ids",
             (day, notes, json.dumps(meal_ids_list)),
         )
         conn.commit()
@@ -361,7 +383,7 @@ def planner_add(day: str = Form(...), notes: str = Form(""), meal_ids: str = For
 def planner_delete(day: str):
     with get_db_connection() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM daily_planner WHERE day = ?", (day,))
+        cur.execute("DELETE FROM daily_planner WHERE day = %s", (day,))
         conn.commit()
     return RedirectResponse(url="/planner", status_code=303)
 
@@ -375,7 +397,7 @@ def planner_update(day: str, notes: str = Form(""), meal_ids: str = Form("")):
     with get_db_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            "UPDATE daily_planner SET notes = ?, meal_ids = ? WHERE day = ?",
+            "UPDATE daily_planner SET notes = %s, meal_ids = %s WHERE day = %s",
             (notes, json.dumps(meal_ids_list), day),
         )
         conn.commit()
@@ -397,7 +419,10 @@ def taste_update(profile: str = Form(...)):
     # Direct DB update to avoid push tools dependency
     with get_db_connection() as conn:
         cur = conn.cursor()
-        cur.execute("INSERT OR REPLACE INTO taste_profile (profile) VALUES (?)", (profile,))
+        cur.execute(
+            "INSERT INTO taste_profile (profile) VALUES (%s) ON CONFLICT (profile) DO UPDATE SET profile = EXCLUDED.profile",
+            (profile,)
+        )
         conn.commit()
     return RedirectResponse(url="/taste", status_code=303)
 
@@ -420,18 +445,21 @@ def ideas_page(request: Request):
 def idea_save(idea_id: int):
     # Copy a new idea into saved_meals directly
     with get_db_connection() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id, name, prep_time, ingredients, recipe FROM new_meal_ideas WHERE id = ?", (idea_id,))
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT id, name, prep_time, ingredients, recipe FROM new_meal_ideas WHERE id = %s", (idea_id,))
         row = cur.fetchone()
         if row:
             # generate a unique saved_meal id in [10000,19999]
             while True:
                 candidate = random.randint(10000, 19999)
-                cur.execute("SELECT 1 FROM saved_meals WHERE id = ?", (candidate,))
-                if cur.fetchone() is None:
+                cur2 = conn.cursor()
+                cur2.execute("SELECT 1 FROM saved_meals WHERE id = %s", (candidate,))
+                exists = cur2.fetchone()
+                cur2.close()
+                if not exists:
                     break
             cur.execute(
-                "INSERT INTO saved_meals (id, name, prep_time_minutes, ingredients, recipe) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO saved_meals (id, name, prep_time_minutes, ingredients, recipe) VALUES (%s, %s, %s, %s, %s)",
                 (candidate, row["name"], row["prep_time"], row["ingredients"], row["recipe"]),
             )
             conn.commit()
@@ -474,7 +502,7 @@ def instock_page(request: Request):
 def instock_saved_remove(meal_id: int):
     with get_db_connection() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM saved_meals_instock_ids WHERE id = ?", (meal_id,))
+        cur.execute("DELETE FROM saved_meals_instock_ids WHERE id = %s", (meal_id,))
         conn.commit()
     return RedirectResponse(url="/instock", status_code=303)
 
@@ -483,7 +511,7 @@ def instock_saved_remove(meal_id: int):
 def instock_ideas_remove(idea_id: int):
     with get_db_connection() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM new_meal_ideas_instock_ids WHERE id = ?", (idea_id,))
+        cur.execute("DELETE FROM new_meal_ideas_instock_ids WHERE id = %s", (idea_id,))
         conn.commit()
     return RedirectResponse(url="/instock", status_code=303)
 

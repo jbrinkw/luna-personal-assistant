@@ -1,45 +1,28 @@
 """
-Database Configuration Helper
+DEPRECATED: Use root-level `db_config.py` instead.
 
-This module automatically loads environment variables from a .env file if present.
-You can either:
-1. Create a .env file in the project root (recommended)
-2. Set environment variables manually
-
-Example .env file:
-DB_HOST=192.168.0.239
-DB_PORT=5432
-DB_NAME=workout_tracker
-DB_USER=postgres
-DB_PASSWORD=your_password_here
+This module proxies to the unified config to avoid breaking imports.
 """
 
-import os
 from typing import Dict
-from dotenv import load_dotenv
+from db_config import (
+    get_db_config as _root_get_db_config,
+    print_config as _root_print_config,
+    get_connection as _root_get_connection,
+)
 
-# Load environment variables from .env file if it exists
-load_dotenv()
 
 def get_db_config() -> Dict[str, str]:
-    """Get database configuration from environment variables"""
-    return {
-        "host": os.environ.get("DB_HOST", "192.168.0.239"),
-        "port": os.environ.get("DB_PORT", "5432"),
-        "database": os.environ.get("DB_NAME", "workout_tracker"),
-        "user": os.environ.get("DB_USER", "postgres"),
-        "password": os.environ.get("DB_PASSWORD", ""),
-    }
+    return _root_get_db_config()
+
 
 def print_config():
-    """Print current database configuration (without password)"""
-    config = get_db_config()
-    print("PostgreSQL Configuration:")
-    print(f"  Host: {config['host']}")
-    print(f"  Port: {config['port']}")
-    print(f"  Database: {config['database']}")
-    print(f"  User: {config['user']}")
-    print(f"  Password: {'*' * len(config['password']) if config['password'] else '(not set)'}")
+    _root_print_config()
+
+
+def get_connection(autocommit: bool = False):
+    return _root_get_connection(autocommit=autocommit)
+
 
 if __name__ == "__main__":
-    print_config() 
+    print_config()

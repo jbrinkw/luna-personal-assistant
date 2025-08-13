@@ -1,20 +1,13 @@
 """Database helper functions for PostgreSQL backend."""
 
 import os
-import psycopg2
-import psycopg2.extras
 import uuid
 from datetime import datetime, date, timedelta, timezone
 
-# Database configuration
-from db_config import get_db_config
-
-# Connection helper
-def get_connection():
-    config = get_db_config()
-    conn = psycopg2.connect(**config)
-    conn.autocommit = False
-    return conn
+# Database configuration (unified at repo root)
+from db_config import get_connection
+import psycopg2
+import psycopg2.extras
 
 # Initialize database with schema
 SCHEMA = """

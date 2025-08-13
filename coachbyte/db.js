@@ -14,16 +14,39 @@ function getTodayInEst() {
   return `${partValue('year')}-${partValue('month')}-${partValue('day')}`;
 }
 
-// Database configuration
-const dbConfig = {
-  host: process.env.DB_HOST || '192.168.0.239',
-  port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || 'workout_tracker',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || '',
-};
+// Database configuration (supports DB_ENV=prod|test to mirror Python config)
+const DB_ENV = (process.env.DB_ENV || 'prod').toLowerCase();
+const envGet = (key, fallback) => (process.env[key] !== undefined ? process.env[key] : fallback);
+
+const dbConfig = DB_ENV === 'test'
+  ? {
+      host: envGet('TEST_DB_HOST', envGet('DB_HOST', '192.168.0.239')),
+      port: Number(envGet('TEST_DB_PORT', envGet('DB_PORT', 5432))),
+      database: envGet('TEST_DB_NAME', 'workout_tracker_test'),
+      user: envGet('TEST_DB_USER', envGet('DB_USER', 'postgres')),
+      password: envGet('TEST_DB_PASSWORD', envGet('DB_PASSWORD', '')),
+    }
+  : {
+      host: envGet('DB_HOST', '192.168.0.239'),
+      port: Number(envGet('DB_PORT', 5432)),
+      database: envGet('DB_NAME', 'workout_tracker'),
+      user: envGet('DB_USER', 'postgres'),
+      password: envGet('DB_PASSWORD', ''),
+    };
 
 const pool = new Pool(dbConfig);
+
+// Optional schema support to match Python config behavior
+const schema = DB_ENV === 'test'
+  ? envGet('TEST_DB_SCHEMA', envGet('DB_SCHEMA'))
+  : envGet('DB_SCHEMA');
+
+if (schema) {
+  pool.on('connect', (client) => {
+    // Set search_path for this connection
+    client.query(`SET search_path TO ${schema}`).catch(() => {});
+  });
+}
 
 async function initDb(sample = false) {
   const client = await pool.connect();
