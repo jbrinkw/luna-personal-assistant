@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block content %}
+<h3>🏠 Inventory Management</h3>
+
+<details>
+  <summary>➕ Add New Item</summary>
+  <form method="post" action="/inventory/add">
+    <div class="grid">
+      <label>
+        Item Name
+        <input name="name" required />
+      </label>
+      <label>
+        Quantity
+        <input name="quantity" required />
+      </label>
+    </div>
+    <div class="grid">
+      <label>
+        Expiration (YYYY-MM-DD)
+        <input name="expiration" placeholder="2025-12-31" />
+      </label>
+      <label>
+        Ingredient Food ID (optional)
+        <input type="number" name="ingredient_food_id" min="0" />
+      </label>
+    </div>
+    <button type="submit">Add Item</button>
+  </form>
+  <hr />
+</details>
+
+<table role="grid">
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Name</th>
+      <th>Quantity</th>
+      <th>Expiration</th>
+      <th>Days Until Expiry</th>
+      <th>Ingredient Food ID</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in items %}
+    {% set cls = '' %}
+    {% if item.days_until_expiry is not none %}
+      {% if item.days_until_expiry <= 3 %}
+        {% set cls = 'expiry-red' %}
+      {% elif item.days_until_expiry <= 7 %}
+        {% set cls = 'expiry-yellow' %}
+      {% endif %}
+    {% endif %}
+    <tr class="editable-row {{ cls }}" id="row-{{ item.id }}">
+      <td class="view">{{ item.id }}</td>
+      <td class="view">{{ item.name }}</td>
+      <td class="view">{{ item.quantity }}</td>
+      <td class="view">{{ item.expiration or '' }}</td>
+      <td class="view">{{ item.days_until_expiry if item.days_until_expiry is not none else '' }}</td>
+      <td class="view">{{ item.ingredient_food_id or '' }}</td>
+      <td class="actions view">
+        <button type="button" data-edit-toggle="row-{{ item.id }}">✏️ Edit</button>
+      </td>
+
+      <form class="edit" method="post" action="/inventory/update/{{ item.id }}" data-end-edit="row-{{ item.id }}">
+        <td class="edit">{{ item.id }}</td>
+        <td class="edit"><input name="name" value="{{ item.name }}" required /></td>
+        <td class="edit"><input name="quantity" value="{{ item.quantity }}" required /></td>
+        <td class="edit"><input name="expiration" value="{{ item.expiration or '' }}" /></td>
+        <td class="edit">{{ item.days_until_expiry if item.days_until_expiry is not none else '' }}</td>
+        <td class="edit"><input type="number" name="ingredient_food_id" value="{{ item.ingredient_food_id or '' }}" /></td>
+        <td class="actions edit">
+          <button type="submit">Save</button>
+          <button type="button" class="secondary" data-edit-toggle="row-{{ item.id }}">Cancel</button>
+          <form method="post" action="/inventory/delete/{{ item.id }}" style="display:inline">
+            <button type="submit" class="contrast">🗑️ Delete</button>
+          </form>
+        </td>
+      </form>
+    </tr>
+    {% endfor %}
+  </tbody>
+  </table>
+{% endblock %}
+
+
+
+

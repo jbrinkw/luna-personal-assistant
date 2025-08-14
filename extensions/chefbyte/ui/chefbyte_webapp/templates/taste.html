@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<h3>👅 Taste Profile</h3>
+
+<div class="editable-block" id="taste-block">
+  <div class="view">
+    {% if profile %}
+      <p><strong>Current Taste Profile:</strong></p>
+      <pre style="white-space:pre-wrap">{{ profile }}</pre>
+    {% else %}
+      <p class="muted">No taste profile set</p>
+    {% endif %}
+    <button type="button" data-edit-toggle="taste-block">✏️ Edit</button>
+  </div>
+  <form class="edit" method="post" action="/taste/update" data-end-edit="taste-block">
+    <label>
+      Taste Profile (likes, dislikes, dietary restrictions)
+      <textarea name="profile" rows="8" required>{{ profile }}</textarea>
+    </label>
+    <div>
+      <button type="submit">Save</button>
+      <button type="button" class="secondary" data-edit-toggle="taste-block">Cancel</button>
+    </div>
+  </form>
+</div>
+
+{% endblock %}
+
+

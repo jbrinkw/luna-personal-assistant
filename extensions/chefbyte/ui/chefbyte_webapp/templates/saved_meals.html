@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block content %}
+<h3>🍽️ Saved Meals</h3>
+
+<details>
+  <summary>➕ Add New Meal</summary>
+  <form method="post" action="/saved-meals/add">
+    <div class="grid">
+      <label>
+        Meal Name
+        <input name="name" required />
+      </label>
+      <label>
+        Prep Time (minutes)
+        <input type="number" name="prep_time_minutes" value="30" min="1" required />
+      </label>
+    </div>
+    <label>
+      Ingredients (JSON format: [food_id, name, qty])
+      <textarea name="ingredients" rows="4"></textarea>
+    </label>
+    <label>
+      Recipe Instructions
+      <textarea name="recipe" rows="6" required></textarea>
+    </label>
+    <button type="submit">Save Meal</button>
+  </form>
+  <hr />
+</details>
+
+{% for meal in items %}
+<details>
+  <summary>🍽️ {{ meal.name }} ({{ meal.prep_time_minutes }} min)</summary>
+  <div class="grid">
+    <div>
+      <p><strong>Recipe:</strong></p>
+      <pre style="white-space:pre-wrap">{{ meal.recipe }}</pre>
+    </div>
+    <div>
+      <p><strong>Ingredients:</strong></p>
+      {% if meal.ingredients_parsed %}
+        <ul>
+          {% for ing in meal.ingredients_parsed %}
+            {% if ing is iterable and ing|length >= 3 %}
+              <li>{{ ing[2] }} {{ ing[1] }}</li>
+            {% endif %}
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p>No ingredients listed</p>
+      {% endif %}
+      <form method="post" action="/saved-meals/update/{{ meal.id }}">
+        <label>Name <input name="name" value="{{ meal.name }}" required /></label>
+        <label>Prep Time (minutes) <input type="number" name="prep_time_minutes" value="{{ meal.prep_time_minutes }}" min="1" required /></label>
+        <label>Ingredients (JSON) <textarea name="ingredients" rows="4">{{ meal.ingredients }}</textarea></label>
+        <label>Recipe <textarea name="recipe" rows="6">{{ meal.recipe }}</textarea></label>
+        <button type="submit">Save</button>
+      </form>
+      <form method="post" action="/saved-meals/delete/{{ meal.id }}" style="margin-top:.5rem">
+        <button type="submit" class="contrast">🗑️ Delete {{ meal.name }}</button>
+      </form>
+    </div>
+  </div>
+</details>
+{% endfor %}
+
+{% endblock %}
+
+

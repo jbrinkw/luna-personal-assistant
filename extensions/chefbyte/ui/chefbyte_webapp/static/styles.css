@@ -1,0 +1,63 @@
+/* Compact, denser UI overrides on top of Pico.css */
+
+/* Typography */
+html, body { font-size: 15px; }
+body { margin: 0; }
+h1 { font-size: 1.35rem; margin-bottom: 0.6rem; }
+h2 { font-size: 1.2rem; margin-bottom: 0.5rem; }
+h3 { font-size: 1.1rem; margin-bottom: 0.5rem; }
+h4 { font-size: 1rem; margin-bottom: 0.4rem; }
+p { margin: 0.25rem 0; }
+
+/* General spacing */
+.compact .grid { gap: 0.5rem; }
+.compact details { margin: 0.4rem 0; }
+.compact hr { margin: 0.6rem 0; }
+.badge { padding: 0.12rem 0.3rem; border-radius: 0.35rem; font-size: 0.8rem; }
+
+/* Tables */
+table[role="grid"] th, table[role="grid"] td { padding: 0.35rem 0.5rem; font-size: 0.92rem; }
+table[role="grid"] thead th { font-weight: 600; }
+
+/* Form controls */
+input, select, textarea { font-size: 0.9rem; padding: 0.35rem 0.5rem; }
+textarea { line-height: 1.25; }
+button { font-size: 0.9rem; padding: 0.4rem 0.6rem; }
+
+/* Details/Summary */
+details > summary { font-size: 0.95rem; }
+
+/* Pre/code blocks (recipes) */
+pre { font-size: 0.9rem; padding: 0.5rem; }
+
+/* Density helpers for cards/metrics */
+article { padding: 0.6rem; }
+
+/* Expiry highlights remain obvious but subtler */
+.expiry-red { background: rgba(183, 28, 28, 0.12); }
+.expiry-yellow { background: rgba(251, 192, 45, 0.12); }
+
+/* Inline edit toggles */
+.editable-row .edit { display: none; }
+.editable-row.is-editing .edit { display: table-cell; }
+.editable-row.is-editing .view { display: none; }
+.editable-row .actions button { margin-right: .25rem; }
+
+/* Inline editable block (non-table) */
+.editable-block .edit { display: none; }
+.editable-block.is-editing .edit { display: block; }
+.editable-block.is-editing .view { display: none; }
+
+
+/* Full-bleed layout: remove any container/gutter side spacing */
+body > main,
+main,
+header,
+footer {
+  max-width: none !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
