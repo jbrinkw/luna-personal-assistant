@@ -1,9 +1,12 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-// Load env from repo root first, then local coachbyte/.env
+// Load env from repo root first, then local .envs
 try {
-  require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
+  require('dotenv').config({ path: path.resolve(__dirname, '..', '..', '..', '..', '.env') });
+} catch (_) {}
+try {
+  require('dotenv').config({ path: path.resolve(__dirname, '..', '..', '.env') });
 } catch (_) {}
 require('dotenv').config();
 const db = require('./db');
@@ -163,18 +166,8 @@ app.post('/api/days/:id/completed', async (req, res) => {
     if (nextSet && nextSet.rest) {
       try {
         const { spawn } = require('child_process');
-        const path = require('path');
         const restSeconds = nextSet.rest; // Use exact seconds
-        const timerScript = path.join(__dirname, 'timer_temp.py');
-        const pythonProcess = spawn('python', [timerScript, 'set', restSeconds.toString(), 'seconds']);
-
-        pythonProcess.stdout.on('data', (data) => {
-          console.log('Timer set:', data.toString().trim());
-        });
-
-        pythonProcess.stderr.on('data', (data) => {
-          console.error('Timer error:', data.toString().trim());
-        });
+        await db.setTimerSeconds(restSeconds);
       } catch (timerError) {
         console.error('Error setting timer:', timerError);
         // Don't fail the main request if timer setting fails
@@ -335,7 +328,7 @@ app.post('/api/chat', async (req, res) => {
 
     // Call Python agent with the temp file
     const { spawn } = require('child_process');
-    const pythonProcess = spawn('python', ['chat_agent.py', tempFile]);
+    const pythonProcess = spawn('python', [path.join('..', 'python', 'chat_agent.py'), tempFile]);
 
     let responseData = '';
     let errorData = '';
@@ -376,14 +369,7 @@ app.post('/api/chat', async (req, res) => {
 app.delete('/api/chat/memory', async (req, res) => {
   try {
     const { spawn } = require('child_process');
-    const pythonProcess = spawn('python', ['-c', `
-import sys
-sys.path.append('.')
-from db import clear_chat_memory
-
-clear_chat_memory()
-print("Chat memory cleared")
-`]);
+    const pythonProcess = spawn('python', ['-c', `from db import clear_chat_memory; clear_chat_memory(); print("Chat memory cleared")`], { cwd: path.join(__dirname, '..', 'python') });
 
     let responseData = '';
     let errorData = '';
@@ -414,36 +400,16 @@ print("Chat memory cleared")
 // Get timer status endpoint
 app.get('/api/timer', async (req, res) => {
   try {
-    const { spawn } = require('child_process');
-    const path = require('path');
-    const timerScript = path.join(__dirname, 'timer_temp.py');
-    const pythonProcess = spawn('python', [timerScript, 'get']);
-
-    let responseData = '';
-    let errorData = '';
-
-    pythonProcess.stdout.on('data', (data) => {
-      responseData += data.toString();
+    const t = await db.getTimerStatus();
+    let status = 'no_timer';
+    if (t && typeof t.remainingSeconds === 'number') {
+      status = t.remainingSeconds > 0 ? 'running' : 'expired';
+    }
+    res.json({
+      status,
+      remaining_seconds: Math.max(0, (t && t.remainingSeconds) || 0),
+      ends_at: t && t.endsAt ? t.endsAt : null,
     });
-
-    pythonProcess.stderr.on('data', (data) => {
-      errorData += data.toString();
-    });
-
-    pythonProcess.on('close', (code) => {
-      if (code === 0) {
-        try {
-          const timerStatus = JSON.parse(responseData.trim());
-          res.json(timerStatus);
-        } catch (parseError) {
-          res.status(500).json({ error: 'Failed to parse timer status' });
-        }
-      } else {
-        console.error('Python process error:', errorData);
-        res.status(500).json({ error: 'Failed to get timer status' });
-      }
-    });
-
   } catch (error) {
     console.error('Error getting timer status:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -455,8 +421,8 @@ app.post('/api/complete-today-set', async (req, res) => {
   try {
     const { spawn } = require('child_process');
     const path = require('path');
-    const script = path.join(__dirname, 'complete_next_set.py');
-    const pythonProcess = spawn('python', [script]);
+    const script = path.join('..', 'python', 'complete_next_set.py');
+    const pythonProcess = spawn('python', [script], { cwd: path.join(__dirname, '..', 'python') });
 
     let responseData = '';
     let errorData = '';

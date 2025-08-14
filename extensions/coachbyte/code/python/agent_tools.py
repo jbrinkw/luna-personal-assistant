@@ -1,7 +1,13 @@
 """OpenAI Agent FunctionTool wrappers for CoachByte tools."""
 
 from agents import function_tool
-from tools import *
+try:
+    from tools import *  # noqa: F401,F403
+except ModuleNotFoundError:
+    import sys as _sys
+    import os as _os
+    _sys.path.insert(0, _os.path.abspath(_os.path.dirname(__file__)))
+    from tools import *  # type: ignore  # noqa: F401,F403
 
 # Wrap each plain function
 new_daily_plan = function_tool(strict_mode=False)(new_daily_plan)

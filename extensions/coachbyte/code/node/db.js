@@ -17,23 +17,36 @@ function getTodayInEst() {
 // Database configuration (supports DB_ENV=prod|test to mirror Python config)
 const DB_ENV = (process.env.DB_ENV || 'prod').toLowerCase();
 const envGet = (key, fallback) => (process.env[key] !== undefined ? process.env[key] : fallback);
+const pick = (...keys) => {
+  for (const k of keys) {
+    if (process.env[k] !== undefined) return process.env[k];
+  }
+  return undefined;
+};
 
 const dbConfig = DB_ENV === 'test'
   ? {
-      host: envGet('TEST_DB_HOST', envGet('DB_HOST', '192.168.0.239')),
-      port: Number(envGet('TEST_DB_PORT', envGet('DB_PORT', 5432))),
-      database: envGet('TEST_DB_NAME', 'workout_tracker_test'),
-      user: envGet('TEST_DB_USER', envGet('DB_USER', 'postgres')),
-      password: envGet('TEST_DB_PASSWORD', envGet('DB_PASSWORD', '')),
+      host: String(pick('TEST_DB_HOST', 'DB_HOST', 'PGHOST', 'POSTGRES_HOST') || '127.0.0.1'),
+      port: Number(pick('TEST_DB_PORT', 'DB_PORT', 'PGPORT', 'POSTGRES_PORT') || 5432),
+      database: String(pick('TEST_DB_NAME', 'DB_NAME', 'PGDATABASE', 'POSTGRES_DB') || 'workout_tracker_test'),
+      user: String(pick('TEST_DB_USER', 'DB_USER', 'PGUSER', 'POSTGRES_USER') || 'postgres'),
+      password: String(pick('TEST_DB_PASSWORD', 'DB_PASSWORD', 'PGPASSWORD', 'POSTGRES_PASSWORD') || ''),
     }
   : {
-      host: envGet('DB_HOST', '192.168.0.239'),
-      port: Number(envGet('DB_PORT', 5432)),
-      database: envGet('DB_NAME', 'workout_tracker'),
-      user: envGet('DB_USER', 'postgres'),
-      password: envGet('DB_PASSWORD', ''),
+      host: String(pick('DB_HOST', 'PGHOST', 'POSTGRES_HOST') || '127.0.0.1'),
+      port: Number(pick('DB_PORT', 'PGPORT', 'POSTGRES_PORT') || 5432),
+      database: String(pick('DB_NAME', 'PGDATABASE', 'POSTGRES_DB') || 'workout_tracker'),
+      user: String(pick('DB_USER', 'PGUSER', 'POSTGRES_USER') || 'postgres'),
+      password: String(pick('DB_PASSWORD', 'PGPASSWORD', 'POSTGRES_PASSWORD') || ''),
     };
 
+console.log('[CoachByte DB] Using config:', {
+  host: dbConfig.host,
+  port: dbConfig.port,
+  database: dbConfig.database,
+  user: dbConfig.user,
+  passwordType: typeof dbConfig.password,
+});
 const pool = new Pool(dbConfig);
 
 // Optional schema support to match Python config behavior
@@ -88,6 +101,11 @@ async function initDb(sample = false) {
       );
       CREATE TABLE IF NOT EXISTS tracked_exercises (
         exercise VARCHAR(255) PRIMARY KEY
+      );
+      CREATE TABLE IF NOT EXISTS timer (
+        id SERIAL PRIMARY KEY,
+        timer_end_time TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
       );
       CREATE TABLE IF NOT EXISTS split_sets (
         id SERIAL PRIMARY KEY,
@@ -146,6 +164,35 @@ async function initDb(sample = false) {
         await populateSample(client);
       }
     }
+  } finally {
+    client.release();
+  }
+}
+
+async function setTimerSeconds(seconds) {
+  const client = await pool.connect();
+  try {
+    // Replace any existing timer with a new one that ends in N seconds from now
+    await client.query('DELETE FROM timer');
+    await client.query(
+      `INSERT INTO timer (timer_end_time) VALUES (CURRENT_TIMESTAMP + ($1 || ' seconds')::interval)`,
+      [String(Math.max(0, Number(seconds) || 0))]
+    );
+  } finally {
+    client.release();
+  }
+}
+
+async function getTimerStatus() {
+  const client = await pool.connect();
+  try {
+    const res = await client.query('SELECT timer_end_time FROM timer ORDER BY id DESC LIMIT 1');
+    if (res.rows.length === 0) {
+      return { running: false, remainingSeconds: 0, endsAt: null };
+    }
+    const endsAtIso = res.rows[0].timer_end_time.toISOString();
+    const remaining = Math.max(0, Math.floor((new Date(endsAtIso).getTime() - Date.now()) / 1000));
+    return { running: remaining > 0, remainingSeconds: remaining, endsAt: endsAtIso };
   } finally {
     client.release();
   }
@@ -722,4 +769,6 @@ module.exports = {
   getTrackedExercises,
   addTrackedExercise,
   removeTrackedExercise,
+  setTimerSeconds,
+  getTimerStatus,
 };
