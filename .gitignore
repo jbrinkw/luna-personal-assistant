@@ -11,4 +11,5 @@ node_modules/
 dist/
 .venv/
 logs/
-extensions/*
+# Moving to polyrepo: ignore all changes under extensions, even for already tracked files
+extensions/**
