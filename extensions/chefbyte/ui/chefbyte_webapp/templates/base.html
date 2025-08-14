@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ChefByte Dashboard</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+  <link rel="stylesheet" href="/static/styles.css" />
+  <style>
+    .nav { display:flex; gap:.5rem; flex-wrap:wrap; }
+    .badge { padding: .2rem .4rem; border-radius: .4rem; font-size:.8rem; }
+    .ok { background: #e8f5e9; color: #1b5e20; }
+    .bad { background: #ffebee; color: #b71c1c; }
+    .muted { color: #666; }
+    .expiry-red { background: #ffebee; }
+    .expiry-yellow { background: #fffde7; }
+  </style>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+  <body class="compact">
+  <main style="padding-left:0;padding-right:0;">
+    <header style="padding-left:0;padding-right:0;">
+      <h1 style="margin-bottom:.25rem;">🍳 ChefByte Dashboard</h1>
+      <p class="muted" style="margin-top:0;">Real-time database viewer and manager</p>
+      <nav class="nav">
+        <a href="/stats" role="button" class="{% if page=='stats' %}secondary{% endif %}">📊 Stats</a>
+        <a href="/inventory" role="button" class="{% if page=='inventory' %}secondary{% endif %}">🏠 Inventory</a>
+        <a href="/ingredients" role="button" class="{% if page=='ingredients' %}secondary{% endif %}">🥕 Ingredients</a>
+        <a href="/saved-meals" role="button" class="{% if page=='saved-meals' %}secondary{% endif %}">🍽️ Saved Meals</a>
+        <a href="/shopping-list" role="button" class="{% if page=='shopping' %}secondary{% endif %}">🛒 Shopping</a>
+        <a href="/planner" role="button" class="{% if page=='planner' %}secondary{% endif %}">📅 Planner</a>
+        <a href="/taste" role="button" class="{% if page=='taste' %}secondary{% endif %}">👅 Taste</a>
+        <a href="/ideas" role="button" class="{% if page=='ideas' %}secondary{% endif %}">💡 Ideas</a>
+        <a href="/instock" role="button" class="{% if page=='instock' %}secondary{% endif %}">✅ In-Stock</a>
+      </nav>
+      <div style="margin-top:.25rem;">
+        <span class="badge {{ 'ok' if status.db else 'bad' }}">DB: {{ '🟢 Connected' if status.db else '🔴 Disconnected' }}</span>
+      </div>
+    </header>
+    {% block content %}{% endblock %}
+  </main>
+  <script>
+    // Global delegated handlers for inline edit toggles and end-edit
+    document.addEventListener('click', function (ev) {
+      const btn = ev.target.closest('[data-edit-toggle]');
+      if (btn) {
+        const targetId = btn.getAttribute('data-edit-toggle');
+        const row = document.getElementById(targetId);
+        if (row) row.classList.toggle('is-editing');
+      }
+    });
+    document.addEventListener('submit', function (ev) {
+      const form = ev.target.closest('[data-end-edit]');
+      if (form) {
+        const targetId = form.getAttribute('data-end-edit');
+        const row = document.getElementById(targetId);
+        if (row) row.classList.remove('is-editing');
+      }
+    });
+  </script>
+</body>
+</html>
+
+

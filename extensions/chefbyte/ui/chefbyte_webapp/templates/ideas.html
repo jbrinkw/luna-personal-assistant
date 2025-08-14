@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<h3>💡 New Meal Ideas</h3>
+
+{% for idea in items %}
+<details>
+  <summary>💡 {{ idea.name }} ({{ idea.prep_time }} min)</summary>
+  <div class="grid">
+    <div>
+      <p><strong>Recipe:</strong></p>
+      <pre style="white-space:pre-wrap">{{ idea.recipe }}</pre>
+    </div>
+    <div>
+      <p><strong>Ingredients:</strong></p>
+      {% if idea.ingredients_parsed %}
+        <ul>
+          {% for ing in idea.ingredients_parsed %}
+            {% if ing is iterable and ing|length >= 3 %}
+              <li>{{ ing[2] }} {{ ing[1] }}</li>
+            {% endif %}
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p>No ingredients listed</p>
+      {% endif %}
+      <form method="post" action="/ideas/save/{{ idea.id }}">
+        <button type="submit">💾 Save to Saved Meals</button>
+      </form>
+    </div>
+  </div>
+</details>
+{% endfor %}
+
+{% endblock %}
+
+

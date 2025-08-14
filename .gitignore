@@ -11,7 +11,7 @@ node_modules/
 dist/
 .venv/
 logs/
-# Moving to polyrepo: ignore all changes under extensions, even for already tracked files
-extensions/**
-# Keep the folder itself tracked
-!extensions/.gitkeep
+# # Moving to polyrepo: ignore all changes under extensions, even for already tracked files
+# extensions/**
+# # Keep the folder itself tracked
+# !extensions/.gitkeep
