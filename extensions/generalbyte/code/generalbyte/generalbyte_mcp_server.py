@@ -1,7 +1,13 @@
 """Run the GeneralByte MCP server with Home Assistant tools."""
 
 from fastmcp import FastMCP
-import tool
+try:
+    import tool
+except ModuleNotFoundError:
+    import sys as _sys
+    import os as _os
+    _sys.path.insert(0, _os.path.abspath(_os.path.dirname(__file__)))
+    import tool
 mcp = FastMCP("GeneralByte Aggregated Tools")
 
 mcp.mount(tool.mcp, prefix="general")

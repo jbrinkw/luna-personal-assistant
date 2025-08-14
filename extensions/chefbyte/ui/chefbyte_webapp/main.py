@@ -9,8 +9,29 @@ import random
 import requests
 import psycopg2
 import psycopg2.extras
-from db_config import get_connection
-from chefbyte.db.db_functions import init_tables
+try:
+    from core.shared.db_config import get_connection
+except ModuleNotFoundError:
+    try:
+        from db_config import get_connection  # root-level shim
+    except ModuleNotFoundError:
+        import sys as _sys
+        import os as _os
+        # Add repo root to sys.path
+        _sys.path.insert(0, _os.path.abspath(_os.path.join(_os.path.dirname(__file__), '..', '..', '..', '..')))
+        try:
+            from core.shared.db_config import get_connection
+        except ModuleNotFoundError:
+            from db_config import get_connection  # type: ignore
+
+try:
+    from extensions.chefbyte.code.chefbyte.db.db_functions import init_tables
+except ModuleNotFoundError:
+    import sys as _sys2
+    import os as _os2
+    # Add repo root to sys.path
+    _sys2.path.insert(0, _os2.path.abspath(_os2.path.join(_os2.path.dirname(__file__), '..', '..', '..', '..')))
+    from extensions.chefbyte.code.chefbyte.db.db_functions import init_tables
 
 # Paths and config
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

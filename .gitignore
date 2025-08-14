@@ -10,3 +10,5 @@ pig4.py
 node_modules/
 dist/
 .venv/
+logs/
+#extensions/*

@@ -17,14 +17,14 @@ from dotenv import load_dotenv
 import psycopg2
 import psycopg2.extras
 
-# Import unified DB config, ensuring repo root is on sys.path when run as a submodule
+# Import unified DB config from core.shared, ensuring repo root is on sys.path
 try:
-    from db_config import get_connection, get_db_schema
+    from core.shared.db_config import get_connection, get_db_schema
 except ModuleNotFoundError:
     import sys as _sys
     import os as _os
-    _sys.path.insert(0, _os.path.abspath(_os.path.join(_os.path.dirname(__file__), '..', '..')))
-    from db_config import get_connection, get_db_schema
+    _sys.path.insert(0, _os.path.abspath(_os.path.join(_os.path.dirname(__file__), '..', '..', '..', '..')))
+    from core.shared.db_config import get_connection, get_db_schema
 
 # Load environment variables
 load_dotenv()

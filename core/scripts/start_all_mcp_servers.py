@@ -248,16 +248,20 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     args = parser.parse_args(list(argv) if argv is not None else None)
 
-    repo_root = Path(__file__).resolve().parent
+    # Project root
+    repo_root = Path(__file__).resolve().parents[2]
     exclude_dirs = set(DEFAULT_EXCLUDED_DIRS)
     exclude_dirs.update(args.exclude)
 
-    servers = discover_servers(repo_root, args.pattern, exclude_dirs)
+    servers = discover_servers(Path.cwd(), args.pattern, exclude_dirs)
 
     if args.dry_run:
         print(f"Discovered {len(servers)} server(s):")
         for p in servers:
-            print(f" - {p.relative_to(repo_root)}")
+            try:
+                print(f" - {p.relative_to(repo_root)}")
+            except Exception:
+                print(f" - {p}")
         return 0
 
     if not servers:

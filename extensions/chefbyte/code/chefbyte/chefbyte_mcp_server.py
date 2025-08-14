@@ -2,9 +2,17 @@
 
 import asyncio
 from fastmcp import FastMCP
-import push_tools
-import pull_tools
-import action_tools
+try:
+    import push_tools
+    import pull_tools
+    import action_tools
+except ModuleNotFoundError:
+    import sys as _sys
+    import os as _os
+    _sys.path.insert(0, _os.path.abspath(_os.path.join(_os.path.dirname(__file__))))
+    import push_tools
+    import pull_tools
+    import action_tools
 
 # Create an aggregator FastMCP server
 mcp = FastMCP("ChefByte Aggregated Tools")
