@@ -1,11 +1,15 @@
 from test_proxy import TestRunner
 import subprocess
 
+
 def main():
     """Run CoachByte tests for MCP tool coverage"""
 
-    # Reset database with sample data
-    subprocess.run(["python", "coachbyte/load_sample_data.py"], check=True)
+    # Reset database with sample data (new location under extensions)
+    subprocess.run([
+        "python",
+        "extensions/coachbyte/code/python/load_sample_data.py",
+    ], check=True)
 
     prompt_sets = [
         {
