@@ -10,19 +10,19 @@ WORKDIR /app
 
 # Copy Python requirements first for better layer caching
 COPY requirements.txt ./
-COPY coachbyte/requirements.txt ./coachbyte/requirements.txt
+COPY requirements.txt ./requirements.txt
 # Allow pip installs in Debian's externally-managed environment (PEP 668)
-RUN pip install --no-cache-dir --break-system-packages -r requirements.txt -r coachbyte/requirements.txt
+RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
 
 # Install Node dependencies for CoachByte (includes dev deps for Vite)
-COPY coachbyte/package*.json coachbyte/
-RUN npm --prefix coachbyte ci
+# Install CoachByte API dependencies (new location)
+COPY extensions/coachbyte/code/node/package*.json extensions/coachbyte/code/node/
+RUN npm --prefix extensions/coachbyte/code/node ci
 
 # Copy the rest of the repo
 COPY . .
 
-# Ensure start script is executable
-RUN chmod +x ./start-all.sh
+# Use Python orchestrator instead of shell script
 
 # Expose ports (hub + apps linked from hub)
 EXPOSE 8090 8050 5173 3001

@@ -292,6 +292,12 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         pass
 
     for path in servers:
+        # Skip legacy top-level coachbyte MCP if present; new code lives in extensions
+        try:
+            if path.match(str(Path.cwd() / "coachbyte" / "coachbyte_mcp_server.py")):
+                continue
+        except Exception:
+            pass
         mp = launch_server(path, repo_root, stream_to_console=args.stream)
         managed_processes.append(mp)
         status = "running" if mp.is_running() else "stopped"
