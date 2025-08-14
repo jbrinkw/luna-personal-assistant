@@ -13,3 +13,5 @@ dist/
 logs/
 # Moving to polyrepo: ignore all changes under extensions, even for already tracked files
 extensions/**
+# Keep the folder itself tracked
+!extensions/.gitkeep
