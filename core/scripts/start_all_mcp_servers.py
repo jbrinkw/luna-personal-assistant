@@ -253,7 +253,9 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     exclude_dirs = set(DEFAULT_EXCLUDED_DIRS)
     exclude_dirs.update(args.exclude)
 
-    servers = discover_servers(Path.cwd(), args.pattern, exclude_dirs)
+    # Discover from the repo root rather than current working directory,
+    # so running this script from any subdirectory still finds all servers.
+    servers = discover_servers(repo_root, args.pattern, exclude_dirs)
 
     if args.dry_run:
         print(f"Discovered {len(servers)} server(s):")

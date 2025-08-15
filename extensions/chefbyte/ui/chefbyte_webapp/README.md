@@ -7,10 +7,10 @@ Run locally:
 3. Start the web server from repo root:
 
 ```
-uvicorn chefbyte_webapp.main:app --host 0.0.0.0 --port 8050 --reload
+uvicorn chefbyte_webapp.main:app --host 0.0.0.0 --port 8030 --reload
 ```
 
-Open `http://localhost:8050`.
+Open `http://localhost:8030`.
 
 Set `CHEFBYTE_PUSH_URL` to override push server URL (default `http://localhost:8010`).
 

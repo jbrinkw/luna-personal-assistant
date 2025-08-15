@@ -108,11 +108,12 @@ def terminate(p: subprocess.Popen) -> None:
 def main() -> int:
     root = repo_root()
 
-    # Ports and environment
-    chef_port = os.getenv("CHEF_PORT", "8050")
-    coach_api_port = os.getenv("COACH_API_PORT", "3001")
-    coach_ui_port = os.getenv("COACH_UI_PORT", "5173")
-    hub_port = os.getenv("HUB_PORT", "8090")
+    # Ports and environment (hardcoded UI ports)
+    # UI ports start at 8030 and increment per app
+    chef_port = "8030"
+    coach_api_port = os.getenv("COACH_API_PORT", "3001")  # API is not a UI; keep existing port
+    coach_ui_port = "8031"
+    hub_port = "8032"
 
     # Expose links for hub
     os.environ["AGENT_LINKS"] = f"ChefByte:http://localhost:{chef_port},CoachByte:http://localhost:{coach_ui_port}"
