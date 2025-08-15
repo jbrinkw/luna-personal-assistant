@@ -1,4 +1,6 @@
-from test_proxy import TestRunner
+import os, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
+from core.tools.test_proxy import TestRunner
 
 def main():
     """Run GeneralByte tests for notifications and todo functionality"""

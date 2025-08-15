@@ -5,6 +5,10 @@ This module proxies to the unified config to avoid breaking imports.
 """
 
 from typing import Dict
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..')))
+
 from db_config import (
     get_db_config as _root_get_db_config,
     print_config as _root_print_config,

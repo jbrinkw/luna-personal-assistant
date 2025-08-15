@@ -17,9 +17,10 @@ except ModuleNotFoundError:
 # Create an aggregator FastMCP server
 mcp = FastMCP("ChefByte Aggregated Tools")
 
-mcp.mount(push_tools.mcp, prefix="push")
-mcp.mount(pull_tools.mcp, prefix="pull")
-mcp.mount(action_tools.mcp, prefix="action")
+# Expose tools with unified GET/UPDATE/TOOL prefixes only (no module namespace prefixes)
+mcp.mount(push_tools.mcp)
+mcp.mount(pull_tools.mcp)
+mcp.mount(action_tools.mcp)
 
 if __name__ == "__main__":
     import argparse

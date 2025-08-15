@@ -20,15 +20,15 @@ async def run_client():
         tools = await client.list_tools()
         print("Tools on server:", [t.name for t in tools])
 
-        # Example: call the inventory context tool (namespaced under pull)
-        if any(t.name == "pull_get_inventory_context" for t in tools):
-            result = await client.call_tool("pull_get_inventory_context")
+        # Example: call the inventory context tool (now unified GET prefix)
+        if any(t.name == "CHEF_GET_inventory_context" for t in tools):
+            result = await client.call_tool("CHEF_GET_inventory_context")
             if result:
                 first_part = result[0]
                 text = getattr(first_part, "text", str(first_part))
                 print("Inventory context:\n", text)
         else:
-            print("Tool 'pull_get_inventory_context' not found on remote server.")
+            print("Tool 'CHEF_GET_inventory_context' not found on remote server.")
 
 
 if __name__ == "__main__":

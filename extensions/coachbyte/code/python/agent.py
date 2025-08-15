@@ -163,8 +163,6 @@ def create_agent() -> Agent:
             tools.get_recent_history,
             tools.set_weekly_split_day,
             tools.get_weekly_split,
-            tools.run_sql,
-            tools.arbitrary_update,
             tools.set_timer,
             tools.get_timer,
         ],

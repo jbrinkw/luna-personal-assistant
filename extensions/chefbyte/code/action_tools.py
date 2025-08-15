@@ -20,7 +20,7 @@ import traceback
 
 @mcp.tool
 @with_db
-def run_meal_planner(db, tables, user_request: str) -> str:
+def CHEF_ACTION_run_meal_planner(db, tables, user_request: str) -> str:
     """Execute the multi-step meal planning workflow.
 
     Args:
@@ -40,7 +40,7 @@ def run_meal_planner(db, tables, user_request: str) -> str:
 
 
 @mcp.tool
-def run_meal_suggestion_generator(user_request: str) -> str:
+def CHEF_ACTION_run_meal_suggestion_generator(user_request: str) -> str:
     """Generate meal suggestions from user criteria.
 
     Args:
@@ -62,7 +62,7 @@ def run_meal_suggestion_generator(user_request: str) -> str:
 
 @mcp.tool
 @with_db
-def run_new_meal_ideator(db, tables, user_request: str) -> str:
+def CHEF_ACTION_run_new_meal_ideator(db, tables, user_request: str) -> str:
     """Generate creative new meal ideas or recipes.
 
     Args:

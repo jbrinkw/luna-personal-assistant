@@ -1,11 +1,13 @@
-from test_proxy import TestRunner
+import os, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
+from core.tools.test_proxy import TestRunner
 import subprocess
 
 def main():
     """Run ChefByte tests for MCP tool coverage"""
 
     # Reset database with sample data
-    subprocess.run(["python", "chefbyte/debug/reset_db.py"], check=True)
+    subprocess.run(["python", "extensions/chefbyte/code/debug/reset_db.py"], check=True)
 
     prompt_sets = [
         {

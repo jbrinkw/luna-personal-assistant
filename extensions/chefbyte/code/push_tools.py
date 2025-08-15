@@ -22,7 +22,7 @@ mcp = FastMCP("ChefByte Push Tools")
 
 @mcp.tool
 @with_db
-def update_inventory(db, tables, user_input: str) -> str:
+def CHEF_UPDATE_inventory(db, tables, user_input: str) -> str:
     """Update the kitchen inventory.
 
     Args:
@@ -45,7 +45,7 @@ def update_inventory(db, tables, user_input: str) -> str:
 
 @mcp.tool
 @with_db
-def update_taste_profile(db, tables, user_request: str) -> str:
+def CHEF_UPDATE_taste_profile(db, tables, user_request: str) -> str:
     """Adjust the saved taste profile.
 
     Args:
@@ -68,7 +68,7 @@ def update_taste_profile(db, tables, user_request: str) -> str:
 
 @mcp.tool
 @with_db
-def update_saved_meals(db, tables, user_input: str) -> str:
+def CHEF_UPDATE_saved_meals(db, tables, user_input: str) -> str:
     """Manage saved meals.
 
     Args:
@@ -91,7 +91,7 @@ def update_saved_meals(db, tables, user_input: str) -> str:
 
 @mcp.tool
 @with_db
-def update_shopping_list(db, tables, user_input: str) -> str:
+def CHEF_UPDATE_shopping_list(db, tables, user_input: str) -> str:
     """Modify the shopping list.
 
     Args:
@@ -113,7 +113,7 @@ def update_shopping_list(db, tables, user_input: str) -> str:
 
 @mcp.tool
 @with_db
-def update_daily_plan(db, tables, user_input: str) -> str:
+def CHEF_UPDATE_daily_plan(db, tables, user_input: str) -> str:
     """Modify entries in the daily meal plan.
 
     Args:

@@ -34,22 +34,22 @@ class SimpleAgent:
     def __init__(self, client: Client):
         self.client = client
         self.tool_map = {
-            "inventory context": "pull_get_inventory_context",
-            "taste profile": "pull_get_taste_profile_context",
-            "saved meals": "pull_get_saved_meals_context",
-            "shopping list": "pull_get_shopping_list_context",
-            "daily plan": "pull_get_daily_notes_context",
-            "meal ideas": "pull_get_new_meal_ideas_context",
-            "meals i can make": "pull_get_instock_meals_context",
-            "ingredient info": "pull_get_ingredients_info_context",
-            "add to inventory": "push_update_inventory",
-            "change taste": "push_update_taste_profile",
-            "save meal": "push_update_saved_meals",
-            "shopping add": "push_update_shopping_list",
-            "plan update": "push_update_daily_plan",
-            "plan meals": "action_run_meal_planner",
-            "suggest meal": "action_run_meal_suggestion_generator",
-            "new recipe": "action_run_new_meal_ideator",
+            "inventory context": "CHEF_GET_inventory_context",
+            "taste profile": "CHEF_GET_taste_profile_context",
+            "saved meals": "CHEF_GET_saved_meals_context",
+            "shopping list": "CHEF_GET_shopping_list_context",
+            "daily plan": "CHEF_GET_daily_notes_context",
+            "meal ideas": "CHEF_GET_new_meal_ideas_context",
+            "meals i can make": "CHEF_GET_instock_meals_context",
+            "ingredient info": "CHEF_GET_ingredients_info_context",
+            "add to inventory": "CHEF_UPDATE_inventory",
+            "change taste": "CHEF_UPDATE_taste_profile",
+            "save meal": "CHEF_UPDATE_saved_meals",
+            "shopping add": "CHEF_UPDATE_shopping_list",
+            "plan update": "CHEF_UPDATE_daily_plan",
+            "plan meals": "CHEF_ACTION_run_meal_planner",
+            "suggest meal": "CHEF_ACTION_run_meal_suggestion_generator",
+            "new recipe": "CHEF_ACTION_run_new_meal_ideator",
         }
 
     async def run(self, prompt: str) -> str:
@@ -63,9 +63,9 @@ class SimpleAgent:
             return "(no tool matched)"
 
         args = {}
-        if tool in {"push_update_inventory", "push_update_saved_meals", "push_update_shopping_list", "push_update_daily_plan"}:
+        if tool in {"CHEF_UPDATE_inventory", "CHEF_UPDATE_saved_meals", "CHEF_UPDATE_shopping_list", "CHEF_UPDATE_daily_plan"}:
             args["user_input"] = prompt
-        elif tool in {"push_update_taste_profile", "action_run_meal_planner", "action_run_meal_suggestion_generator", "action_run_new_meal_ideator"}:
+        elif tool in {"CHEF_UPDATE_taste_profile", "CHEF_ACTION_run_meal_planner", "CHEF_ACTION_run_meal_suggestion_generator", "CHEF_ACTION_run_new_meal_ideator"}:
             args["user_request"] = prompt
         
         result = await self.client.call_tool(tool, args)
