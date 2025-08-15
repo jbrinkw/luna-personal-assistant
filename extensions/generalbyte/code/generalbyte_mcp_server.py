@@ -10,7 +10,8 @@ except ModuleNotFoundError:
     import tool
 mcp = FastMCP("GeneralByte Aggregated Tools")
 
-mcp.mount(tool.mcp, prefix="general")
+# Expose tools with unified GET/UPDATE/TOOL prefixes only (no extra namespace prefix)
+mcp.mount(tool.mcp)
 
 if __name__ == "__main__":
     import argparse

@@ -12,7 +12,7 @@ load_dotenv()
 
 mcp = FastMCP("GeneralByte Tools")
 
-HA_URL = os.getenv("HA_URL", "http://homeassistant.local:8123")
+HA_URL = os.getenv("HA_URL", "http://192.168.0.216:8123")
 HA_TOKEN = os.getenv("HA_TOKEN")
 DEFAULT_NOTIFY_SERVICE = "mobile_app_jeremys_iphone"
 
@@ -34,7 +34,7 @@ def call_service(domain: str, service: str, data: dict) -> dict:
 
 
 @mcp.tool
-def send_phone_notification(message: str, title: str = "Notification", service: str | None = None) -> str:
+def GENERAL_ACTION_send_phone_notification(message: str, title: str = "Notification", service: str | None = None) -> str:
     """Send a notification message to the configured phone via Home Assistant."""
     if not HA_TOKEN:
         return "Home Assistant token not configured"
@@ -44,7 +44,7 @@ def send_phone_notification(message: str, title: str = "Notification", service: 
 
 
 @mcp.tool
-def get_todo_list(entity_id = "todo.todo", status: Optional[str] = None) -> dict:
+def GENERAL_GET_todo_list(entity_id = "todo.todo", status: Optional[str] = None) -> dict:
     """Return items from a Home Assistant to-do list."""
     if not HA_TOKEN:
         return {"error": "Home Assistant token not configured"}
@@ -106,7 +106,7 @@ def get_todo_list(entity_id = "todo.todo", status: Optional[str] = None) -> dict
 
 
 @mcp.tool
-def modify_todo_item(
+def GENERAL_ACTION_modify_todo_item(
     action: str,
     entity_id: str = "todo.todo",
     item: Optional[str] = None,

@@ -16,7 +16,7 @@ mcp = FastMCP("ChefByte Pull Tools")
 
 @mcp.tool
 @with_db
-def get_inventory_context(db, tables) -> str:
+def CHEF_GET_inventory_context(db, tables) -> str:
     """Retrieve a summary of the current kitchen inventory.
 
     Returns:
@@ -33,7 +33,7 @@ def get_inventory_context(db, tables) -> str:
 
 @mcp.tool
 @with_db
-def get_taste_profile_context(db, tables) -> str:
+def CHEF_GET_taste_profile_context(db, tables) -> str:
     """Get the saved taste profile.
 
     Returns:
@@ -50,7 +50,7 @@ def get_taste_profile_context(db, tables) -> str:
 
 @mcp.tool
 @with_db
-def get_saved_meals_context(db, tables) -> str:
+def CHEF_GET_saved_meals_context(db, tables) -> str:
     """List stored meals and recipes.
 
     Returns:
@@ -67,7 +67,7 @@ def get_saved_meals_context(db, tables) -> str:
 
 @mcp.tool
 @with_db
-def get_shopping_list_context(db, tables) -> str:
+def CHEF_GET_shopping_list_context(db, tables) -> str:
     """Retrieve the current shopping list.
 
     Returns:
@@ -84,7 +84,7 @@ def get_shopping_list_context(db, tables) -> str:
 
 @mcp.tool
 @with_db
-def get_daily_notes_context(db, tables) -> str:
+def CHEF_GET_daily_notes_context(db, tables) -> str:
     """Get the meal plan for the upcoming week.
 
     Returns:
@@ -102,7 +102,7 @@ def get_daily_notes_context(db, tables) -> str:
 
 @mcp.tool
 @with_db
-def get_new_meal_ideas_context(db, tables) -> str:
+def CHEF_GET_new_meal_ideas_context(db, tables) -> str:
     """List previously generated meal ideas.
 
     Returns:
@@ -119,7 +119,7 @@ def get_new_meal_ideas_context(db, tables) -> str:
 
 @mcp.tool
 @with_db
-def get_instock_meals_context(db, tables) -> str:
+def CHEF_GET_instock_meals_context(db, tables) -> str:
     """Find meals that can be prepared with current inventory.
 
     Returns:
@@ -136,7 +136,7 @@ def get_instock_meals_context(db, tables) -> str:
 
 @mcp.tool
 @with_db
-def get_ingredients_info_context(db, tables) -> str:
+def CHEF_GET_ingredients_info_context(db, tables) -> str:
     """Provide general information about ingredients.
 
     Returns:

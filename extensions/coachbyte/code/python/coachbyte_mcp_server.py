@@ -44,7 +44,7 @@ def _get_exercise_id(conn: PGConnection, name: str) -> int:
     return cur.fetchone()["id"]
 
 
-def new_daily_plan(items: List[Dict[str, Any]]) -> str:
+def COACH_UPDATE_new_daily_plan(items: List[Dict[str, Any]]) -> str:
     """Create today's daily workout plan with a list of planned sets.
 
     Parameters:
@@ -104,7 +104,7 @@ def new_daily_plan(items: List[Dict[str, Any]]) -> str:
     return f"planned {len(items)} sets for today"
 
 
-def get_today_plan() -> List[Dict[str, Any]]:
+def COACH_GET_today_plan() -> List[Dict[str, Any]]:
     """Retrieve today's planned workout sets in order."""
     conn = get_connection()
     try:
@@ -126,7 +126,7 @@ def get_today_plan() -> List[Dict[str, Any]]:
     return rows
 
 
-def log_completed_set(exercise: str, reps: int, load: float) -> str:
+def COACH_UPDATE_log_completed_set(exercise: str, reps: int, load: float) -> str:
     """Record an unplanned set completion (not part of today's plan)."""
     if not (1 <= int(reps) <= MAX_REPS):
         raise ValueError("reps out of range")
@@ -147,7 +147,7 @@ def log_completed_set(exercise: str, reps: int, load: float) -> str:
     return "logged"
 
 
-def complete_planned_set(
+def COACH_UPDATE_complete_planned_set(
     exercise: Optional[str] = None,
     reps: Optional[int] = None,
     load: Optional[float] = None,
@@ -252,7 +252,7 @@ def complete_planned_set(
         conn.close()
 
 
-def update_summary(text: str) -> str:
+def COACH_UPDATE_summary(text: str) -> str:
     """Update today's workout summary text."""
     conn = get_connection()
     try:
@@ -265,7 +265,7 @@ def update_summary(text: str) -> str:
     return "summary updated"
 
 
-def get_recent_history(days: int) -> List[Dict[str, Any]]:
+def COACH_GET_recent_history(days: int) -> List[Dict[str, Any]]:
     """Retrieve recent workout history for the last N days."""
     conn = get_connection()
     try:
@@ -290,7 +290,7 @@ def get_recent_history(days: int) -> List[Dict[str, Any]]:
     return rows
 
 
-def set_weekly_split_day(day: str, items: List[Dict[str, Any]]) -> str:
+def COACH_UPDATE_set_weekly_split_day(day: str, items: List[Dict[str, Any]]) -> str:
     """Replace the weekly split plan for a specific day.
 
     Each item requires: exercise (str), reps (int), load (float), order (int), rest (int optional), relative (bool optional).
@@ -326,7 +326,7 @@ def set_weekly_split_day(day: str, items: List[Dict[str, Any]]) -> str:
     return f"split updated for {key} with {len(items)} sets"
 
 
-def get_weekly_split(day: Optional[str] = None) -> List[Dict[str, Any]]:
+def COACH_GET_weekly_split(day: Optional[str] = None) -> List[Dict[str, Any]]:
     """Retrieve weekly split plan. If day is provided, limit to that day."""
     conn = get_connection()
     try:
@@ -360,7 +360,7 @@ def get_weekly_split(day: Optional[str] = None) -> List[Dict[str, Any]]:
     return rows
 
 
-def set_timer(minutes: int) -> str:
+def COACH_ACTION_set_timer(minutes: int) -> str:
     """Set a rest/workout timer in minutes (1-180)."""
     duration = int(minutes)
     if not (1 <= duration <= 180):
@@ -383,7 +383,7 @@ def set_timer(minutes: int) -> str:
         return f"Timer error: {e}"
 
 
-def get_timer() -> Dict[str, Any]:
+def COACH_GET_timer() -> Dict[str, Any]:
     """Get current timer status and remaining time."""
     try:
         import subprocess
@@ -408,16 +408,16 @@ def get_timer() -> Dict[str, Any]:
 
 
 # Register all tools with MCP
-mcp.tool(new_daily_plan)
-mcp.tool(get_today_plan)
-mcp.tool(log_completed_set)
-mcp.tool(complete_planned_set)
-mcp.tool(update_summary)
-mcp.tool(get_recent_history)
-mcp.tool(set_weekly_split_day)
-mcp.tool(get_weekly_split)
-mcp.tool(set_timer)
-mcp.tool(get_timer)
+mcp.tool(COACH_UPDATE_new_daily_plan)
+mcp.tool(COACH_GET_today_plan)
+mcp.tool(COACH_UPDATE_log_completed_set)
+mcp.tool(COACH_UPDATE_complete_planned_set)
+mcp.tool(COACH_UPDATE_summary)
+mcp.tool(COACH_GET_recent_history)
+mcp.tool(COACH_UPDATE_set_weekly_split_day)
+mcp.tool(COACH_GET_weekly_split)
+mcp.tool(COACH_ACTION_set_timer)
+mcp.tool(COACH_GET_timer)
 
 if __name__ == "__main__":
     import argparse

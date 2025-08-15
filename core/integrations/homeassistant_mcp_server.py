@@ -34,8 +34,7 @@ def check_token():
         return False, "Error: HA_TOKEN environment variable not set!"
     return True, None
 
-@mcp.tool
-def list_devices() -> str:
+def HA_GET_devices() -> str:
     """Get list of all available Home Assistant devices and their current states.
     
     Returns devices with their entity IDs. Use the entity_id values with other tools."""
@@ -69,8 +68,7 @@ def list_devices() -> str:
     except Exception as e:
         return f"Error listing devices: {str(e)}"
 
-@mcp.tool
-def get_entity_status(entity_id: str) -> str:
+def HA_GET_entity_status(entity_id: str) -> str:
     """Get status of a specific Home Assistant entity by entity ID.
     
     Use entity IDs like 'light.living_room' or 'switch.kitchen'.
@@ -101,8 +99,7 @@ def get_entity_status(entity_id: str) -> str:
     except Exception as e:
         return f"Error getting entity status: {str(e)}"
 
-@mcp.tool
-def turn_entity_on(entity_id: str) -> str:
+def HA_ACTION_turn_entity_on(entity_id: str) -> str:
     """Turn on a specific Home Assistant entity by entity ID.
     
     Use entity IDs like 'light.living_room' or 'switch.kitchen'.
@@ -127,8 +124,7 @@ def turn_entity_on(entity_id: str) -> str:
     except Exception as e:
         return f"Error turning on {entity_id}: {str(e)}"
 
-@mcp.tool
-def turn_entity_off(entity_id: str) -> str:
+def HA_ACTION_turn_entity_off(entity_id: str) -> str:
     """Turn off a specific Home Assistant entity by entity ID.
     
     Use entity IDs like 'light.living_room' or 'switch.kitchen'.
@@ -160,18 +156,18 @@ def test_all_tools():
     print("=" * 50)
     
     # Test 1: List devices
-    print("\n1️⃣ Testing list_devices()...")
-    devices = list_devices()
+    print("\n1️⃣ Testing HA_GET_devices()...")
+    devices = HA_GET_devices()
     print(f"Devices: {devices}")
     
     # Test 2: Get entity status
-    print("\n2️⃣ Testing get_entity_status('light.living_room')...")
-    status = get_entity_status("light.living_room")
+    print("\n2️⃣ Testing HA_GET_entity_status('light.living_room')...")
+    status = HA_GET_entity_status("light.living_room")
     print(f"Status: {status}")
     
     # Test 3: Turn entity on
-    print("\n3️⃣ Testing turn_entity_on('light.living_room')...")
-    on_result = turn_entity_on("light.living_room")
+    print("\n3️⃣ Testing HA_ACTION_turn_entity_on('light.living_room')...")
+    on_result = HA_ACTION_turn_entity_on("light.living_room")
     print(f"Turn on result: {on_result}")
     
     # Wait a moment
@@ -179,8 +175,8 @@ def test_all_tools():
     time.sleep(2)
     
     # Test 4: Turn entity off
-    print("\n4️⃣ Testing turn_entity_off('light.living_room')...")
-    off_result = turn_entity_off("light.living_room")
+    print("\n4️⃣ Testing HA_ACTION_turn_entity_off('light.living_room')...")
+    off_result = HA_ACTION_turn_entity_off("light.living_room")
     print(f"Turn off result: {off_result}")
     
     print("\n✅ All tests completed!")
@@ -207,8 +203,14 @@ def main():
         # Run MCP server
         url = f"http://{args.host if args.host != '0.0.0.0' else 'localhost'}:{args.port}/sse"
         print(f"[HomeAssistant] Running MCP server via SSE at {url}")
-        print(f"Available tools: list_devices, get_entity_status, turn_entity_on, turn_entity_off")
+        print(f"Available tools: HA_GET_devices, HA_GET_entity_status, HA_ACTION_turn_entity_on, HA_ACTION_turn_entity_off")
         print(f"All tools now use entity IDs directly (like 'light.living_room')")
+        
+        # Register tools (no decorator) so local tests can call functions directly
+        mcp.tool(HA_GET_devices)
+        mcp.tool(HA_GET_entity_status)
+        mcp.tool(HA_ACTION_turn_entity_on)
+        mcp.tool(HA_ACTION_turn_entity_off)
         
         mcp.run(transport="sse", host=args.host, port=args.port)
 
