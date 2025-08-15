@@ -25,13 +25,13 @@ except ModuleNotFoundError:
             from db_config import get_connection  # type: ignore
 
 try:
-    from extensions.chefbyte.code.chefbyte.db.db_functions import init_tables
+    from extensions.chefbyte.code.db.db_functions import init_tables
 except ModuleNotFoundError:
     import sys as _sys2
     import os as _os2
     # Add repo root to sys.path
     _sys2.path.insert(0, _os2.path.abspath(_os2.path.join(_os2.path.dirname(__file__), '..', '..', '..', '..')))
-    from extensions.chefbyte.code.chefbyte.db.db_functions import init_tables
+    from extensions.chefbyte.code.db.db_functions import init_tables
 
 # Paths and config
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

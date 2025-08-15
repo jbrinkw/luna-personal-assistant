@@ -25,12 +25,12 @@ COPY . .
 # Use Python orchestrator instead of shell script
 
 # Expose ports (hub + apps linked from hub)
-EXPOSE 8090 8050 5173 3001
+EXPOSE 8032 8030 8031 3001
 
-ENV CHEF_PORT=8050 \
+ENV CHEF_PORT=8030 \
   COACH_API_PORT=3001 \
-  COACH_UI_PORT=5173 \
-  HUB_PORT=8090
+  COACH_UI_PORT=8031 \
+  HUB_PORT=8032
 
 ENTRYPOINT ["tini", "--"]
 CMD ["./start-all.sh"]

@@ -112,12 +112,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--url",
-        default=os.getenv("LANGFLOW_URL", "http://localhost:7860"),
+        default=os.getenv("LANGFLOW_URL", "http://192.168.0.226:7860"),
         help="Base URL of the Langflow server (env: LANGFLOW_URL)",
     )
     parser.add_argument(
         "--flow-id",
-        default=os.getenv("LANGFLOW_FLOW_ID"),
+        default=os.getenv("LANGFLOW_FLOW_ID", "e5d633c6-75a1-46c1-bcf0-3629c912e4f4"),
         help="Flow ID to run (env: LANGFLOW_FLOW_ID). If omitted, you will be prompted.",
     )
     parser.add_argument(

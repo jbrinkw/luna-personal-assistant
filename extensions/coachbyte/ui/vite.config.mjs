@@ -6,6 +6,8 @@ const apiPort = process.env.COACH_API_PORT || process.env.VITE_COACH_API_PORT ||
 export default defineConfig({
   plugins: [react()],
   server: {
+    host: '0.0.0.0',
+    port: 8031,
     proxy: {
       '/api': `http://localhost:${apiPort}`
     }

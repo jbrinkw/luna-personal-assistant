@@ -10,7 +10,8 @@ try:
 except ModuleNotFoundError:
     import sys as _sys
     import os as _os
-    _sys.path.insert(0, _os.path.abspath(_os.path.join(_os.path.dirname(__file__), '..', '..', '..')))
+    # Ensure repository root is on sys.path so "core.shared.db_config" resolves
+    _sys.path.insert(0, _os.path.abspath(_os.path.join(_os.path.dirname(__file__), '..', '..', '..', '..')))
     from core.shared.db_config import get_connection
 import psycopg2
 import psycopg2.extras

@@ -9,3 +9,4 @@ requests
 fastmcp
 Jinja2
 python-multipart
+httpx
