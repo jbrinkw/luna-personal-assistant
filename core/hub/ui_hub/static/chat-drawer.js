@@ -55,10 +55,18 @@
     ta.value = '';
     state.loading = true; render();
     try {
-      const r = await fetch('/api/langflow/chat', {
+      // Build OpenAI-style message array using local history
+      const history = [];
+      for (const m of state.messages) {
+        if (m.type === 'user') history.push({ role: 'user', content: m.content });
+        if (m.type === 'ai') history.push({ role: 'assistant', content: m.content });
+      }
+      history.push({ role: 'user', content: text });
+
+      const r = await fetch('/api/agent/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text })
+        body: JSON.stringify({ messages: history })
       });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const data = await r.json();
@@ -74,7 +82,7 @@
   }
 
   async function clearSession() {
-    try { await fetch('/api/langflow/session', { method: 'DELETE' }); } catch {}
+    try { await fetch('/api/agent/session', { method: 'DELETE' }); } catch {}
     state.messages = []; save(); render();
   }
 

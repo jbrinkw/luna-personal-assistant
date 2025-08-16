@@ -4,7 +4,7 @@ Temporary timer implementation for testing when database is unavailable
 """
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # Use absolute path to ensure both UI and agent use the same timer file
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -15,12 +15,12 @@ def set_timer_temp(duration: int, unit: str = "minutes"):
     if unit == "minutes":
         if not (1 <= duration <= 180):
             raise ValueError("Timer duration must be between 1 and 180 minutes")
-        end_time = datetime.now() + timedelta(minutes=duration)
+        end_time = datetime.now(timezone.utc) + timedelta(minutes=duration)
         duration_text = f"{duration} minutes"
     elif unit == "seconds":
         if not (1 <= duration <= 10800):  # Max 3 hours in seconds
             raise ValueError("Timer duration must be between 1 and 10800 seconds")
-        end_time = datetime.now() + timedelta(seconds=duration)
+        end_time = datetime.now(timezone.utc) + timedelta(seconds=duration)
         minutes = duration // 60
         seconds = duration % 60
         if minutes > 0:
@@ -33,7 +33,7 @@ def set_timer_temp(duration: int, unit: str = "minutes"):
     # Save to file
     timer_data = {
         "end_time": end_time.isoformat(),
-        "created_at": datetime.now().isoformat()
+        "created_at": datetime.now(timezone.utc).isoformat()
     }
     
     with open(TIMER_FILE, 'w') as f:
@@ -52,7 +52,11 @@ def get_timer_temp():
         
         end_time = datetime.fromisoformat(timer_data["end_time"])
         created_at = datetime.fromisoformat(timer_data["created_at"])
-        now = datetime.now()
+        if end_time.tzinfo is None:
+            end_time = end_time.replace(tzinfo=timezone.utc)
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
         
         if now >= end_time:
             # Timer has expired
