@@ -73,22 +73,23 @@ def complete_planned_set(exercise: Optional[str] = None, reps: Optional[int] = N
         
         conn.commit()
         
-        # Set timer for rest period if there's a rest time
-        rest_time = planned_set.get('rest', 60)  # Default to 60 seconds
+        # Set timer for rest period if there's a rest time (write to DB so UI can read it)
+        rest_time = int(planned_set.get('rest', 60) or 0)
         if rest_time > 0:
             try:
-                import subprocess
-                import os
-                # Ensure we're in the correct directory for the timer script
-                script_dir = os.path.dirname(os.path.abspath(__file__))
-                timer_script = os.path.join(script_dir, 'timer_temp.py')
-                result = subprocess.run(['python', timer_script, 'set', str(rest_time), 'seconds'], 
-                                       capture_output=True, text=True, cwd=script_dir)
-                if result.returncode == 0:
-                    rest_info = f" Rest timer set for {rest_time} seconds."
-                else:
-                    rest_info = f" (Timer error: {result.stderr.strip()})"
+                # Replace any existing timer and set new end time in seconds from now
+                cur.execute('DELETE FROM timer')
+                cur.execute(
+                    """
+                    INSERT INTO timer (timer_end_time)
+                    VALUES (CURRENT_TIMESTAMP + (%s || ' seconds')::interval)
+                    """,
+                    (str(rest_time),)
+                )
+                conn.commit()
+                rest_info = f" Rest timer set for {rest_time} seconds."
             except Exception as e:
+                # Do not fail the main operation on timer error
                 rest_info = f" (Timer error: {e})"
         else:
             rest_info = ""

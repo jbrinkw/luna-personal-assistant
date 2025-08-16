@@ -5,6 +5,8 @@ from fastapi.templating import Jinja2Templates
 import os
 import json
 import re
+import uuid
+from typing import Any, Dict, List
 
 # External HTTP client for Langflow proxy
 try:
@@ -228,67 +230,110 @@ def _try_extract_text(response_json: object) -> str | None:
 
 @app.post("/api/langflow/chat")
 async def langflow_chat(request: Request):
+    # Compatibility alias: route all old Langflow chat requests to the agent API
+    return await agent_chat(request)
+
+
+# =============================
+# Agent (OpenAI-compatible) Chat Proxy
+# =============================
+
+# Configure target for the new agent API
+AGENT_API_HOST = os.getenv("AGENT_API_HOST", "127.0.0.1").strip()
+AGENT_API_PORT = int(os.getenv("AGENT_API_PORT", "8010"))
+AGENT_API_TIMEOUT = float(os.getenv("AGENT_API_TIMEOUT", "60"))
+AGENT_SESSION_COOKIE = os.getenv("AGENT_SESSION_COOKIE", "agent_sid")
+AGENT_MAX_HISTORY = int(os.getenv("AGENT_MAX_HISTORY", "25"))
+
+# In-memory per-session message history for the hub chat drawer
+_SESSION_MESSAGES: Dict[str, List[Dict[str, Any]]] = {}
+
+def _get_or_create_session_id(request: Request) -> tuple[str, bool]:
+    sid = request.cookies.get(AGENT_SESSION_COOKIE)
+    if sid and isinstance(sid, str) and sid.strip():
+        return sid, False
+    return uuid.uuid4().hex, True
+
+
+@app.post("/api/agent/chat")
+async def agent_chat(request: Request):
     if httpx is None:
         return JSONResponse({"error": "httpx not installed on server"}, status_code=500)
-    if not LANGFLOW_FLOW_ID:
-        return JSONResponse({"error": "LANGFLOW_FLOW_ID not configured"}, status_code=500)
 
     try:
         body = await request.json()
     except Exception:
         body = {}
 
-    message = (body or {}).get("message")
-    if not message or not isinstance(message, str):
-        return JSONResponse({"error": "message is required"}, status_code=400)
+    # Accept either a simple 'message' string or full OpenAI-style 'messages' array
+    msg = (body or {}).get("message")
+    messages = (body or {}).get("messages")
+    # Establish or retrieve session and merge server-side memory
+    sid, is_new = _get_or_create_session_id(request)
+    stored = _SESSION_MESSAGES.get(sid, [])
 
-    tweaks = (body or {}).get("tweaks") or _TWEAKS_DEFAULT or {
-        "ChatInput-3Z3av": {"files": [], "should_store_message": False}
-    }
-    input_type = (body or {}).get("input_type") or LANGFLOW_INPUT_TYPE
-    output_type = (body or {}).get("output_type") or LANGFLOW_OUTPUT_TYPE
-    session_id = request.cookies.get("lf_session_id")
+    if messages and isinstance(messages, list):
+        # If client provided full history, trust it and overwrite stored copy
+        merged = [m for m in messages if isinstance(m, dict) and m.get("role") in ("user", "assistant")]
+        _SESSION_MESSAGES[sid] = merged[-AGENT_MAX_HISTORY:]
+        out_messages = _SESSION_MESSAGES[sid]
+    else:
+        if not msg or not isinstance(msg, str):
+            return JSONResponse({"error": "message or messages is required"}, status_code=400)
+        # Append new user message to stored history
+        stored.append({"role": "user", "content": msg})
+        _SESSION_MESSAGES[sid] = stored[-AGENT_MAX_HISTORY:]
+        out_messages = _SESSION_MESSAGES[sid]
 
-    payload = _build_payload(
-        message=message,
-        input_type=input_type,
-        output_type=output_type,
-        session_id=session_id,
-        tweaks=tweaks,
-    )
+    url = f"http://{AGENT_API_HOST}:{AGENT_API_PORT}/v1/chat/completions"
 
-    url = f"{LANGFLOW_URL}/api/v1/run/{LANGFLOW_FLOW_ID}?stream=false"
-
-    async with httpx.AsyncClient(timeout=LANGFLOW_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=AGENT_API_TIMEOUT) as client:
         try:
-            r = await client.post(url, headers=_build_headers(LANGFLOW_API_KEY), json=payload)
+            r = await client.post(url, json={"messages": out_messages})
         except httpx.TimeoutException:
             return JSONResponse({"error": "timeout"}, status_code=504)
         except Exception as e:
             return JSONResponse({"error": str(e)}, status_code=502)
 
-    text = r.text
     if r.status_code != 200:
-        return JSONResponse({"error": "Langflow error", "detail": text}, status_code=r.status_code)
+        return JSONResponse({"error": "Agent error", "detail": r.text}, status_code=r.status_code)
 
+    # Agent returns plain text body; append assistant reply to session history
+    reply_text = (r.text or "").strip()
+    _SESSION_MESSAGES.setdefault(sid, [])
+    _SESSION_MESSAGES[sid].append({"role": "assistant", "content": reply_text})
+    _SESSION_MESSAGES[sid] = _SESSION_MESSAGES[sid][-AGENT_MAX_HISTORY:]
+
+    resp = JSONResponse({"response": reply_text})
+    if is_new:
+        resp.set_cookie(AGENT_SESSION_COOKIE, sid, httponly=True, samesite="lax", max_age=60 * 60 * 24 * 7)
+    return resp
+
+
+@app.delete("/api/agent/session")
+def agent_session_reset(request: Request):
+    sid = request.cookies.get(AGENT_SESSION_COOKIE)
+    if sid in _SESSION_MESSAGES:
+        try:
+            del _SESSION_MESSAGES[sid]
+        except Exception:
+            pass
+    resp = JSONResponse({"ok": True})
     try:
-        data = r.json()
+        resp.delete_cookie(AGENT_SESSION_COOKIE)
     except Exception:
-        return JSONResponse({"response": text})
-
-    extracted = _try_extract_text(data) or ""
-    new_sid = data.get("session_id") if isinstance(data, dict) else None
-
-    resp = JSONResponse({"response": extracted, "raw": data})
-    if isinstance(new_sid, str) and new_sid and new_sid != session_id:
-        resp.set_cookie("lf_session_id", new_sid, httponly=True, samesite="lax", max_age=60 * 60 * 24 * 7)
+        pass
     return resp
 
 
 @app.delete("/api/langflow/session")
 def langflow_session_reset():
-    resp = JSONResponse({"ok": True})
-    resp.delete_cookie("lf_session_id")
+    # Compatibility alias: clear agent session (stateless) and remove legacy cookie if present
+    resp = agent_session_reset()
+    try:
+        resp.delete_cookie("lf_session_id")
+    except Exception:
+        pass
     return resp
 
 

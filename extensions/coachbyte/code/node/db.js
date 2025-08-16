@@ -186,12 +186,21 @@ async function setTimerSeconds(seconds) {
 async function getTimerStatus() {
   const client = await pool.connect();
   try {
-    const res = await client.query('SELECT timer_end_time FROM timer ORDER BY id DESC LIMIT 1');
+    const res = await client.query(
+      `SELECT 
+         timer_end_time,
+         EXTRACT(EPOCH FROM (timer_end_time - CURRENT_TIMESTAMP))::BIGINT AS remaining_seconds
+       FROM timer 
+       ORDER BY id DESC 
+       LIMIT 1`
+    );
     if (res.rows.length === 0) {
       return { running: false, remainingSeconds: 0, endsAt: null };
     }
-    const endsAtIso = res.rows[0].timer_end_time.toISOString();
-    const remaining = Math.max(0, Math.floor((new Date(endsAtIso).getTime() - Date.now()) / 1000));
+    const row = res.rows[0];
+    const remaining = Math.max(0, Number(row.remaining_seconds) || 0);
+    const endsAtDate = row.timer_end_time instanceof Date ? row.timer_end_time : new Date(row.timer_end_time);
+    const endsAtIso = endsAtDate.toISOString();
     return { running: remaining > 0, remainingSeconds: remaining, endsAt: endsAtIso };
   } finally {
     client.release();
