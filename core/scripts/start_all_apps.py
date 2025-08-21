@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Start all primary apps (ChefByte UI, CoachByte API, CoachByte UI, Hub) and
-gracefully shut them down on exit.
+Start all primary apps (ChefByte UI, CoachByte API, CoachByte UI, Hub, OpenAI API server)
+and gracefully shut them down on exit.
 """
 
 from __future__ import annotations
@@ -114,6 +114,7 @@ def main() -> int:
     coach_api_port = os.getenv("COACH_API_PORT", "3001")  # API is not a UI; keep existing port
     coach_ui_port = "8031"
     hub_port = "8032"
+    openai_api_port = os.getenv("OPENAI_API_PORT", "8010")
 
     # Expose links for hub
     os.environ["AGENT_LINKS"] = f"ChefByte:http://localhost:{chef_port},CoachByte:http://localhost:{coach_ui_port}"
@@ -137,6 +138,28 @@ def main() -> int:
     env_py = os.environ.copy()
     env_py["PYTHONPATH"] = f"{root}{os.pathsep}" + env_py.get("PYTHONPATH", "")
     procs.append(spawn([sys.executable, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", chef_port], chef_dir, env=env_py, label="chefbyte_ui"))
+
+    # OpenAI-compatible API server (FastAPI)
+    openai_dir = root / "core" / "agent"
+    procs.append(
+        spawn(
+            [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "openai_api_server:app",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                str(openai_api_port),
+                "--log-level",
+                "warning",
+            ],
+            openai_dir,
+            env=env_py,
+            label="openai_api_server",
+        )
+    )
 
     # CoachByte API (Node)
     coach_api_dir = root / "extensions" / "coachbyte" / "code" / "node"

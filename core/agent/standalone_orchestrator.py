@@ -26,8 +26,8 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 # ==========================
 
 # Distinct models for the top-level orchestrator and specialist domain agents.
-ORCHESTRATOR_MODEL = os.environ.get("ORCHESTRATOR_MODEL", "gpt-4.1-mini")
-SPECIALIST_MODEL = os.environ.get("SPECIALIST_MODEL", "gpt-4.1-mini")
+ORCHESTRATOR_MODEL = os.environ.get("ORCHESTRATOR_MODEL", "gpt-4.1")
+SPECIALIST_MODEL = os.environ.get("SPECIALIST_MODEL", "gpt-4.1")
 
 # Timeouts (seconds) and concurrency controls
 MCP_TOOL_TIMEOUT_S = float(os.environ.get("MCP_TOOL_TIMEOUT_S", "4.0"))
