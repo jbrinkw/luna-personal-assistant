@@ -22,71 +22,71 @@ def main():
             "name": "New Daily Plan Test",
             "description": "Test adding a new daily plan set to the database using new_daily_plan tool",
             "prompts": [
-                "Plan bench press 10 reps at 135 pounds as set 1 for today."
+                "Use the tool named exactly 'new_daily_plan' to add today's plan: bench press, 10 reps at 135 pounds as set 1. Return the tool's result."
             ]
         },
         {
             "name": "Get Today Plan Test",
             "description": "Test retrieving today's planned sets using get_today_plan tool",
             "prompts": [
-                "What is today's workout plan?"
+                "Use the tool named exactly 'get_today_plan' to retrieve and show today's workout plan. Return the tool's result."
             ]
         },
         {
             "name": "Log Completed Set Test",
             "description": "Test logging an unplanned set with log_completed_set tool",
             "prompts": [
-                "Log 20 push-ups at bodyweight."
+                "Use the tool named exactly 'log_completed_set' to log an unplanned set: 20 push-ups at bodyweight. Return the tool's result."
             ]
         },
         {
             "name": "Complete Planned Set Test",
             "description": "Test marking the next planned set complete using complete_planned_set tool",
             "prompts": [
-                "Complete the planned set."
+                "Use the tool named exactly 'complete_planned_set' to mark the next planned set as complete. Do not reason it yourself; call the tool and return its result."
             ]
         },
         {
             "name": "Update Summary Test",
             "description": "Test updating today's workout summary using update_summary tool",
             "prompts": [
-                "Update today's summary to 'Felt strong today.'"
+                "Use the tool named exactly 'update_summary' to set today's summary to 'Felt strong today.'. Return the tool's result."
             ]
         },
         {
             "name": "Recent History Test",
             "description": "Test retrieving recent workout history using get_recent_history tool",
             "prompts": [
-                "Show my workout history for the last 1 day."
+                "Use the tool named exactly 'get_recent_history' to show my workout history for the last 1 day. Return the tool's result."
             ]
         },
         {
             "name": "Set Weekly Split Day Test",
             "description": "Test storing weekly split for a day using set_weekly_split_day tool",
             "prompts": [
-                "Set Monday split to bench press 5 reps at 135 pounds."
+                "Use the tool named exactly 'set_weekly_split_day' to set Monday split to bench press 5 reps at 135 pounds. Return the tool's result."
             ]
         },
         {
             "name": "Get Weekly Split Test",
             "description": "Test retrieving weekly split for a day using get_weekly_split tool",
             "prompts": [
-                "What is my split for Monday?"
+                "Use the tool named exactly 'get_weekly_split' to retrieve my split for Monday. Return the tool's result."
             ]
         },
         {
             "name": "Set Timer Test",
             "description": "Test setting a rest timer using set_timer tool",
             "prompts": [
-                "Set a rest timer for 1 minute."
+                "Use the tool named exactly 'set_timer' to set a rest timer for 1 minute. Return the tool's result."
             ]
         },
         {
             "name": "Get Timer Test",
             "description": "Test checking timer status using get_timer tool",
             "prompts": [
-                "Set a rest timer for 1 minute.",
-                "Check my timer."
+                "Use the tool named exactly 'set_timer' to set a rest timer for 1 minute. Return the tool's result.",
+                "Use the tool named exactly 'get_timer' to check my timer status. Return the tool's result."
             ]
         }
     ]
