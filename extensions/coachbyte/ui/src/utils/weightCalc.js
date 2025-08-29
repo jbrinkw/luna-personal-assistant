@@ -16,6 +16,10 @@ const BAR_WEIGHT = 45;
  * @returns {{weight: number, plates: number[]}} Actual weight and plates needed (one side)
  */
 function calculatePlates(targetWeight, maxOverage = 5) {
+  // If target is less than the bar, don't attempt plate calculation
+  if (targetWeight < BAR_WEIGHT) {
+    return { weight: targetWeight, plates: [] };
+  }
   // Subtract bar weight and round to nearest achievable weight
   let remainingWeight = Math.max(0, targetWeight - BAR_WEIGHT) / 2; // Divide by 2 since plates go on both sides
   
@@ -70,6 +74,8 @@ function calculatePlates(targetWeight, maxOverage = 5) {
  */
 function formatWeightAndPlates(weight, plates) {
   if (plates.length === 0) {
+    // Show "bar" instead of 45 when there are no plates
+    if (weight === BAR_WEIGHT) return 'bar';
     return `${weight}`;
   }
   return `${weight} (${plates.join(',')})`;

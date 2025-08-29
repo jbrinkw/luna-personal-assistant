@@ -117,6 +117,11 @@ async function initDb(sample = false) {
         rest INTEGER DEFAULT 60,
         relative BOOLEAN DEFAULT FALSE
       );
+      CREATE TABLE IF NOT EXISTS split_notes (
+        id SERIAL PRIMARY KEY,
+        notes TEXT NOT NULL DEFAULT '',
+        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      );
     `);
     
     // Add 'relative' column to split_sets if it doesn't exist, for backward compatibility
@@ -299,6 +304,37 @@ async function getAllSplit() {
        ORDER BY ss.day_of_week, ss.order_num`
     );
     return result.rows;
+  } finally {
+    client.release();
+  }
+}
+
+async function getSplitNotes() {
+  const client = await pool.connect();
+  try {
+    const res = await client.query('SELECT notes, updated_at FROM split_notes ORDER BY updated_at DESC LIMIT 1');
+    if (res.rows.length === 0) {
+      await client.query("INSERT INTO split_notes (notes) VALUES ('')");
+      return { notes: '', updated_at: new Date().toISOString() };
+    }
+    const row = res.rows[0];
+    const updatedAtIso = (row.updated_at instanceof Date ? row.updated_at : new Date(row.updated_at)).toISOString();
+    return { notes: row.notes || '', updated_at: updatedAtIso };
+  } finally {
+    client.release();
+  }
+}
+
+async function setSplitNotes(notes) {
+  const client = await pool.connect();
+  try {
+    await client.query(`
+      INSERT INTO split_notes (notes) VALUES ($1)
+      ON CONFLICT (id) DO NOTHING
+    `, [notes]);
+    // Instead of relying on an upsert on PK, maintain a single-row policy by wiping existing and inserting fresh
+    await client.query('DELETE FROM split_notes');
+    await client.query('INSERT INTO split_notes (notes, updated_at) VALUES ($1, CURRENT_TIMESTAMP)', [notes]);
   } finally {
     client.release();
   }
@@ -768,6 +804,8 @@ module.exports = {
   deleteDay,
   getSplit,
   getAllSplit,
+  getSplitNotes,
+  setSplitNotes,
   addSplit,
   updateSplit,
   deleteSplit,

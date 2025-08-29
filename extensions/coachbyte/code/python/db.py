@@ -87,6 +87,12 @@ CREATE TABLE timer (
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS split_notes (
+    id SERIAL PRIMARY KEY,
+    notes TEXT NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE chat_messages (
     id SERIAL PRIMARY KEY,
     message_type VARCHAR(10) NOT NULL CHECK (message_type IN ('user', 'assistant')),
@@ -393,6 +399,16 @@ def apply_migrations():
             cur.execute(
                 "ALTER TABLE completed_sets ADD COLUMN planned_set_id INTEGER REFERENCES planned_sets(id)"
             )
+        # Ensure split_notes table exists
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS split_notes (
+                id SERIAL PRIMARY KEY,
+                notes TEXT NOT NULL DEFAULT '',
+                updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
         conn.commit()
     finally:
         conn.close()

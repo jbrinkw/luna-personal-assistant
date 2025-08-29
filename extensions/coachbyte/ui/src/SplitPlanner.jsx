@@ -6,6 +6,8 @@ export default function SplitPlanner({ onBack }) {
   const [split, setSplit] = useState(() => Object.fromEntries(dayNames.map((_,i)=>[i,[]])));
   const [newSets, setNewSets] = useState(() => Object.fromEntries(dayNames.map((_,i)=>[i,{...emptySet}])));
   const [loading, setLoading] = useState(true);
+  const [splitNotes, setSplitNotes] = useState('');
+  const [notesSaving, setNotesSaving] = useState(false);
 
   const loadSplit = async () => {
     try {
@@ -16,6 +18,16 @@ export default function SplitPlanner({ onBack }) {
         grouped[row.day_of_week].push(row);
       });
       setSplit(grouped);
+      // Load split notes
+      try {
+        const nresp = await fetch('/api/split/notes');
+        if (nresp.ok) {
+          const ndata = await nresp.json();
+          setSplitNotes(ndata.notes || '');
+        }
+      } catch (e) {
+        console.error('Error loading split notes:', e);
+      }
       setLoading(false);
     } catch (err) {
       console.error('Error loading split:', err);
@@ -64,6 +76,8 @@ export default function SplitPlanner({ onBack }) {
   const restInputStyle = { ...inputStyle, width:'50px', textAlign:'center' };
   const buttonStyle = { padding:'4px 8px', backgroundColor:'#dc3545', color:'white', border:'none', borderRadius:'3px', cursor:'pointer', fontSize:'12px' };
   const addButtonStyle = { ...buttonStyle, backgroundColor:'#28a745' };
+  const notesStyle = { width:'100%', minHeight:'100px', padding:'8px', border:'1px solid #ccc', borderRadius:'4px', fontSize:'14px' };
+  const notesHeaderStyle = { marginTop:'10px', marginBottom:'6px' };
 
   return (
     <div style={containerStyle}>
@@ -148,6 +162,27 @@ export default function SplitPlanner({ onBack }) {
           </table>
         </div>
       ))}
+      {/* Split Notes */}
+      <div>
+        <h3 style={notesHeaderStyle}>Split Notes</h3>
+        <textarea
+          style={notesStyle}
+          value={splitNotes}
+          placeholder="High-level preferences, constraints, injuries, etc."
+          onChange={e=>setSplitNotes(e.target.value)}
+          onBlur={async ()=>{
+            try {
+              setNotesSaving(true);
+              await fetch('/api/split/notes', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ notes: splitNotes })});
+            } catch (e) {
+              console.error('Error saving split notes:', e);
+            } finally {
+              setNotesSaving(false);
+            }
+          }}
+        />
+        {notesSaving && <div style={{fontSize:'12px', color:'#666', marginTop:'4px'}}>Saving…</div>}
+      </div>
     </div>
   );
 }
