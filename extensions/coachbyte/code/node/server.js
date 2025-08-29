@@ -84,6 +84,28 @@ app.get('/api/split', async (req, res) => {
   }
 });
 
+// Split notes endpoints
+app.get('/api/split/notes', async (req, res) => {
+  try {
+    const notes = await db.getSplitNotes();
+    res.json(notes);
+  } catch (error) {
+    console.error('Error getting split notes:', error);
+    res.status(500).json({ error: 'Failed to get split notes' });
+  }
+});
+
+app.put('/api/split/notes', async (req, res) => {
+  try {
+    const { notes } = req.body || {};
+    await db.setSplitNotes(String(notes || ''));
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Error updating split notes:', error);
+    res.status(500).json({ error: 'Failed to update split notes' });
+  }
+});
+
 app.get('/api/split/:day', async (req, res) => {
   try {
     const items = await db.getSplit(Number(req.params.day));

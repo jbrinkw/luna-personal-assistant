@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { calculatePlates, formatWeightAndPlates } from './utils/weightCalc';
 
 export default function DayDetail({ id, onBack, onDelete }) {
@@ -11,6 +11,13 @@ export default function DayDetail({ id, onBack, onDelete }) {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [timerStatus, setTimerStatus] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const isEditingRef = useRef(false);
+  const [summaryDraft, setSummaryDraft] = useState('');
+
+  useEffect(() => {
+    isEditingRef.current = isEditing;
+  }, [isEditing]);
 
   const loadTimer = async () => {
     try {
@@ -37,6 +44,10 @@ export default function DayDetail({ id, onBack, onDelete }) {
       
       // Only update if data has actually changed
       setData(prevData => {
+        // Avoid overwriting user input while editing
+        if (isEditingRef.current) {
+          return prevData;
+        }
         const newDataString = JSON.stringify(newData);
         const currentDataString = JSON.stringify(prevData);
         
@@ -44,7 +55,7 @@ export default function DayDetail({ id, onBack, onDelete }) {
           setLastUpdated(new Date());
           
           // Pre-fill completion form with next set in queue
-          if (newData.plan && newData.plan.length > 0) {
+          if (newData.plan && newData.plan.length > 0 && !isEditingRef.current) {
             const nextSet = newData.plan[0]; // First set in queue
             setCompletionForm({
               exercise: nextSet.exercise,
@@ -52,6 +63,8 @@ export default function DayDetail({ id, onBack, onDelete }) {
               load_done: nextSet.calculatedLoad || nextSet.load
             });
           }
+          // Sync summary draft when not editing
+          setSummaryDraft((newData && newData.log && newData.log.summary) ? newData.log.summary : '');
           
           return newData;
         }
@@ -128,8 +141,8 @@ export default function DayDetail({ id, onBack, onDelete }) {
     completeSet();
   };
 
-  const updateSummary = async () => {
-    await fetch(`/api/days/${id}/summary`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ summary: data.log.summary }) });
+  const updateSummary = async (summary) => {
+    await fetch(`/api/days/${id}/summary`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ summary }) });
   };
 
   const updatePlan = async (p) => {
@@ -143,7 +156,16 @@ export default function DayDetail({ id, onBack, onDelete }) {
     const copy = [...data.plan];
     copy[idx] = upd;
     setData({ ...data, plan: copy });
-    updatePlan(upd);
+  };
+
+  const handlePlanFocus = () => {
+    setIsEditing(true);
+  };
+
+  const handlePlanBlur = (idx) => {
+    setIsEditing(false);
+    const updated = data.plan[idx];
+    updatePlan(updated);
   };
 
   const handleCompletionChange = (field, value) => {
@@ -450,6 +472,8 @@ export default function DayDetail({ id, onBack, onDelete }) {
               <input
                 style={{ ...inputStyle, width: '180px', padding: '8px', fontSize: '16px' }}
                 value={completionForm.exercise}
+                onFocus={() => setIsEditing(true)}
+                onBlur={() => setIsEditing(false)}
                 onChange={e => handleCompletionChange('exercise', e.target.value)}
                 placeholder="Exercise name"
               />
@@ -460,6 +484,8 @@ export default function DayDetail({ id, onBack, onDelete }) {
                 style={{ ...numberInputStyle, width: '80px', padding: '8px', fontSize: '16px' }}
                 type="number"
                 value={completionForm.reps_done}
+                onFocus={() => setIsEditing(true)}
+                onBlur={() => setIsEditing(false)}
                 onChange={e => handleCompletionChange('reps_done', parseInt(e.target.value) || 0)}
               />
             </div>
@@ -469,6 +495,8 @@ export default function DayDetail({ id, onBack, onDelete }) {
                 style={{ ...numberInputStyle, width: '80px', padding: '8px', fontSize: '16px' }}
                 type="number"
                 value={completionForm.load_done}
+                onFocus={() => setIsEditing(true)}
+                onBlur={() => setIsEditing(false)}
                 onChange={e => handleCompletionChange('load_done', parseFloat(e.target.value) || 0)}
               />
             </div>
@@ -505,6 +533,8 @@ export default function DayDetail({ id, onBack, onDelete }) {
                     <input 
                       style={inputStyle}
                       value={p.exercise} 
+                      onFocus={handlePlanFocus}
+                      onBlur={() => handlePlanBlur(i)}
                       onChange={e => handlePlanChange(i,'exercise', e.target.value)} 
                     />
                   </td>
@@ -513,19 +543,23 @@ export default function DayDetail({ id, onBack, onDelete }) {
                       style={numberInputStyle}
                       type="number" 
                       value={p.reps} 
-                      onChange={e => handlePlanChange(i,'reps', e.target.value)} 
+                      onFocus={handlePlanFocus}
+                      onBlur={() => handlePlanBlur(i)}
+                      onChange={e => handlePlanChange(i,'reps', parseInt(e.target.value) || 0)} 
                     />
                   </td>
                   <td style={tdStyle}>
                     <input 
                       style={numberInputStyle}
                       type="number" 
-                      value={p.originalLoad || p.load} 
-                      onChange={e => handlePlanChange(i,'load', e.target.value)} 
+                      value={p.load} 
+                      onFocus={handlePlanFocus}
+                      onBlur={() => handlePlanBlur(i)}
+                      onChange={e => handlePlanChange(i,'load', parseFloat(e.target.value) || 0)} 
                     />
                     {p.relative && (
                       <div style={{ fontSize: '10px', color: '#666', marginTop: '1px' }}>
-                        {p.originalLoad}% → {displayWeight(p.calculatedLoad || p.load)}
+                        {p.load}% → {displayWeight(p.calculatedLoad || p.load)}
                       </div>
                     )}
                     {!p.relative && (
@@ -539,7 +573,9 @@ export default function DayDetail({ id, onBack, onDelete }) {
                       style={restInputStyle}
                       type="number" 
                       value={p.rest || 60} 
-                      onChange={e => handlePlanChange(i,'rest', e.target.value)} 
+                      onFocus={handlePlanFocus}
+                      onBlur={() => handlePlanBlur(i)}
+                      onChange={e => handlePlanChange(i,'rest', parseInt(e.target.value) || 60)} 
                     />
                   </td>
                   <td style={tdStyle}>
@@ -547,7 +583,9 @@ export default function DayDetail({ id, onBack, onDelete }) {
                       style={orderInputStyle}
                       type="number" 
                       value={p.order_num} 
-                      onChange={e => handlePlanChange(i,'order_num', e.target.value)} 
+                      onFocus={handlePlanFocus}
+                      onBlur={() => handlePlanBlur(i)}
+                      onChange={e => handlePlanChange(i,'order_num', parseInt(e.target.value) || 0)} 
                     />
                   </td>
                   <td style={tdStyle}>
@@ -688,9 +726,15 @@ export default function DayDetail({ id, onBack, onDelete }) {
           style={textareaStyle}
           rows="4"
           placeholder="Add your workout summary here..."
-          value={data.log.summary || ''} 
-          onChange={e => setData({ ...data, log: { ...data.log, summary: e.target.value } })} 
-          onBlur={updateSummary} 
+          value={summaryDraft}
+          onFocus={() => setIsEditing(true)}
+          onChange={e => setSummaryDraft(e.target.value)} 
+          onBlur={() => {
+            setIsEditing(false);
+            // Optimistically update local data and persist
+            setData(prev => prev ? { ...prev, log: { ...prev.log, summary: summaryDraft } } : prev);
+            updateSummary(summaryDraft);
+          }} 
         />
       </div>
     </div>

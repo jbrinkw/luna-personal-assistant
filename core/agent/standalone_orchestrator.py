@@ -26,12 +26,14 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 # ==========================
 
 # Distinct models for the top-level orchestrator and specialist domain agents.
-ORCHESTRATOR_MODEL = os.environ.get("ORCHESTRATOR_MODEL", "gpt-4.1")
-SPECIALIST_MODEL = os.environ.get("SPECIALIST_MODEL", "gpt-4.1")
+ORCHESTRATOR_MODEL = os.environ.get("ORCHESTRATOR_MODEL", "gpt-5-nano")
+SPECIALIST_MODEL = os.environ.get("SPECIALIST_MODEL", "gpt-5-nano")
 
 # Timeouts (seconds) and concurrency controls
 MCP_TOOL_TIMEOUT_S = float(os.environ.get("MCP_TOOL_TIMEOUT_S", "4.0"))
 DOMAIN_RUN_TIMEOUT_S = float(os.environ.get("DOMAIN_RUN_TIMEOUT_S", "20.0"))
+# Allow per-domain overrides; default CoachByte to 240s (4 minutes)
+COACHBYTE_DOMAIN_RUN_TIMEOUT_S = float(os.environ.get("COACHBYTE_DOMAIN_RUN_TIMEOUT_S", "240.0"))
 ROUTER_TIMEOUT_S = float(os.environ.get("ROUTER_TIMEOUT_S", "30.0"))
 SCHEMA_BUILD_CONCURRENCY = int(os.environ.get("SCHEMA_BUILD_CONCURRENCY", "4"))
 LIGHT_SCHEMA_SOURCE = os.environ.get("LIGHT_SCHEMA_SOURCE", "mcp").strip().lower()  # 'mcp' or 'file'
@@ -209,6 +211,7 @@ def make_router_system_prompt(light_schema: str) -> str:
         "Each domain field is an object with optional 'instruction' (string or null).\n"
         "Set 'final_output' only when no domain calls are required; otherwise keep it null.\n"
         "Do not include extra fields.\n"
+        "WHEN SENDING INSTRUCITONS TO A DOMAIN YOU HAVE TO INCLUDE ALL REQUIRED CONTEXT AS THEY CAN NOT SEE THE CHAT YOU CAN SEE.\n"
     )
 
 
@@ -348,9 +351,11 @@ async def _run_one_domain(server_label: str, instruction: str) -> tuple[str, Dic
     cb = ToolTimingCallback()
     t0 = time.perf_counter()
     try:
+        # Use a longer timeout for CoachByte domain by default (overridable via env)
+        per_domain_timeout = COACHBYTE_DOMAIN_RUN_TIMEOUT_S if server_label == "CoachByte" else DOMAIN_RUN_TIMEOUT_S
         resp = await asyncio.wait_for(
             agent.ainvoke({"messages": [system, HumanMessage(content=instruction)]}, config={"callbacks": [cb]}),
-            timeout=DOMAIN_RUN_TIMEOUT_S,
+            timeout=per_domain_timeout,
         )
     except asyncio.TimeoutError:
         return "ERROR: domain execution timed out", {"run_s": round(time.perf_counter() - t0, 3), "tool_calls": cb.tool_calls}
