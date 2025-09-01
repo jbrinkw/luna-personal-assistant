@@ -5,6 +5,8 @@ This creates 3 days of MMA-focused workout data (current day, current day - 1, c
 """
 
 import uuid
+import time
+import errno
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import date, timedelta
@@ -12,6 +14,58 @@ import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..')))
 import db_config
+
+# Guard & cooldown configuration
+GUARD_PATH = os.environ.get("COACHBYTE_DB_RESET_GUARD", "/tmp/coachbyte_db_reset.guard")
+TS_PATH = os.environ.get("COACHBYTE_DB_RESET_TS", "/tmp/coachbyte_db_reset.ts")
+COOLDOWN_S = int(os.environ.get("COACHBYTE_DB_RESET_COOLDOWN_S", "60"))
+
+
+def _acquire_guard() -> int | None:
+    """Try to create an exclusive guard file. Return fd if acquired, else None."""
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+    try:
+        fd = os.open(GUARD_PATH, flags, 0o644)
+        return fd
+    except FileExistsError:
+        return None
+    except OSError as e:
+        if e.errno == errno.EEXIST:
+            return None
+        raise
+
+
+def _release_guard(fd: int | None) -> None:
+    try:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except Exception:
+                pass
+        if os.path.exists(GUARD_PATH):
+            os.unlink(GUARD_PATH)
+    except Exception:
+        pass
+
+
+def _cooldown_active() -> bool:
+    try:
+        if not os.path.exists(TS_PATH):
+            return False
+        with open(TS_PATH, "r") as f:
+            raw = f.read().strip()
+        last = float(raw) if raw else 0.0
+        return (time.time() - last) < COOLDOWN_S
+    except Exception:
+        return False
+
+
+def _update_timestamp() -> None:
+    try:
+        with open(TS_PATH, "w") as f:
+            f.write(str(int(time.time())))
+    except Exception:
+        pass
 
 
 def generate_uuid():
@@ -323,7 +377,20 @@ def load_comprehensive_sample_data():
 
 
 if __name__ == "__main__":
+    fd = _acquire_guard()
+    if fd is None:
+        # Another process is managing the reset (or a very recent reset occurred). Skip.
+        print("DB reset skipped: guard present (another process or recent reset).")
+        sys.exit(0)
     try:
+        if _cooldown_active():
+            print(f"DB reset skipped: cooldown active (< {COOLDOWN_S}s).")
+            sys.exit(0)
+        # Perform reset
         load_comprehensive_sample_data()
+        _update_timestamp()
     except Exception as error:
         print(f"Error loading sample data: {error}")
+        raise
+    finally:
+        _release_guard(fd)

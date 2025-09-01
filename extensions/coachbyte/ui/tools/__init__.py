@@ -4,7 +4,15 @@ from typing import List, Dict, Any, Optional
 from datetime import date, timedelta, datetime, timezone
 import psycopg2.extras
 
-from db import get_connection, get_today_log_id
+try:
+    # Prefer absolute import from repo root
+    from extensions.coachbyte.code.python.db import get_connection, get_today_log_id
+except ModuleNotFoundError:  # pragma: no cover
+    # Fallback for environments running this module directly
+    import sys as _sys
+    import os as _os
+    _sys.path.insert(0, _os.path.abspath(_os.path.join(_os.path.dirname(__file__), '..', '..', 'code', 'python')))
+    from db import get_connection, get_today_log_id  # type: ignore
 
 
 def get_corrected_time():
@@ -70,6 +78,7 @@ def new_daily_plan(items: List[Dict[str, Any]]):
         min_order = result['min_order'] if result['min_order'] is not None else 0
         max_order = result['max_order'] if result['max_order'] is not None else 0
         
+        details: List[str] = []
         for item in items:
             reps = int(item["reps"])
             load = float(item["load"])
@@ -100,10 +109,15 @@ def new_daily_plan(items: List[Dict[str, Any]]):
                 "INSERT INTO planned_sets (log_id, exercise_id, order_num, reps, load, rest) VALUES (%s, %s, %s, %s, %s, %s)",
                 (log_id, exercise_id, order_num, reps, load, rest),
             )
+            # Build human-readable detail for this set
+            details.append(f"{item['exercise']}, {reps} reps at {load:g} pounds as set {order_num}")
         conn.commit()
     finally:
         conn.close()
-    return f"planned {len(items)} sets for today"
+    summary = f"planned {len(items)} sets for today"
+    if details:
+        summary += ": " + "; ".join(details)
+    return summary
 
 
 def get_today_plan() -> List[Dict[str, Any]]:
@@ -171,7 +185,7 @@ def log_completed_set(exercise: str, reps: int, load: float):
         conn.commit()
     finally:
         conn.close()
-    return "logged"
+    return f"logged: {exercise}, {reps} reps @ {load:g}"
 
 
 def complete_planned_set(exercise: Optional[str] = None, reps: Optional[int] = None, load: Optional[float] = None):

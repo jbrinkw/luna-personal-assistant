@@ -3,12 +3,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 from core.tools.test_proxy import TestRunner
 import subprocess
 
-def main():
-    """Run ChefByte tests for MCP tool coverage"""
-
-    # Reset database with sample data
-    subprocess.run(["python", "extensions/chefbyte/code/debug/reset_db.py"], check=True)
-
+def get_prompt_sets():
+    """Return the list of ChefByte prompt sets used for testing."""
     prompt_sets = [
         {
             "name": "Get Inventory Context Test",
@@ -120,7 +116,15 @@ def main():
             ]
         }
     ]
+    return prompt_sets
 
+
+def main():
+    """Run ChefByte tests for MCP tool coverage"""
+    # Reset database with sample data
+    subprocess.run(["python", "extensions/chefbyte/code/debug/reset_db.py"], check=True)
+
+    prompt_sets = get_prompt_sets()
     runner = TestRunner()
     results = runner.run_tests(prompt_sets)
     return results

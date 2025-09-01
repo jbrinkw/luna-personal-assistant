@@ -1,7 +1,7 @@
 import os
 import time
 import json
-import requests
+import asyncio
 from openai import OpenAI
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -9,13 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Load environment variables
 load_dotenv()
 
-# Target the new OpenAI-compatible server
-API_HOST = os.environ.get("API_HOST", "127.0.0.1").strip()
-API_PORT = int(os.environ.get("API_PORT", "8010"))
-API_URL = f"http://{API_HOST}:{API_PORT}/v1/chat/completions"
-
-# Keep a 'url' variable for backward references (other tooling may read it)
-url = API_URL
+from core.agent.orchestrator_local import orchestrate
 
 # Initialize OpenAI client (set your API key as environment variable OPENAI_API_KEY)
 openai_client = OpenAI()
@@ -36,30 +30,32 @@ class ChatSession:
         return messages
 
     def send_message(self, message):
-        """Send a message to the server with full conversation history."""
+        """Send a message using the new local orchestrator (no HTTP)."""
         start_time = time.time()
 
-        payload = {"messages": self._build_messages(message)}
-
         try:
-            resp = requests.post(API_URL, json=payload, timeout=60)
-            resp.raise_for_status()
-            # Server returns plain text body for the completion
-            agent_reply = resp.text.strip()
+            result = asyncio.run(orchestrate(message))
+            agent_reply = (result.get("synth", {}) or {}).get("output", "") or ""
+            # Aggregate tool calls from domains, annotated with domain name
+            tool_calls = []
+            for d in (result.get("domains") or []):
+                domain_name = d.get("name")
+                for tc in (d.get("tool_calls") or []):
+                    tool_calls.append({"domain": domain_name, **tc})
 
             duration = time.time() - start_time
+            schema_errors = result.get("schema_errors") or []
             self.chat_history.append(
                 {
                     "user": message,
                     "agent": agent_reply,
                     "timestamp": time.time(),
                     "duration": duration,
+                    "tool_calls": tool_calls,
+                    "schema_errors": schema_errors,
                 }
             )
             return agent_reply, duration
-        except requests.exceptions.RequestException as e:
-            duration = time.time() - start_time
-            return f"Error making request - {e}", duration
         except Exception as e:
             duration = time.time() - start_time
             return f"Unexpected error - {e}", duration
@@ -93,8 +89,10 @@ You are evaluating an AI memory test. Based on the test description and chat log
 Test Name: {test_name}
 Test Description: {test_description}
 
-Chat Log:
+Chat Log (verbatim; content is exactly between the markers):
+<CHAT_LOG_START>
 {chat_log}
+<CHAT_LOG_END>
 
 
 Return your judgment as a JSON object with this exact structure:
@@ -105,7 +103,7 @@ Return your judgment as a JSON object with this exact structure:
 }}
 
 Be strict in your evaluation - the AI must demonstrate clear memory of the specific information provided.
-IF THE TEST IS A FAIL ECHO THE CHAT LOG YOU RECIVED
+If the test is a FAIL, include the exact Chat Log content between <CHAT_LOG_START> and <CHAT_LOG_END> in the reason (verbatim). If there is no content between the markers, explicitly state that the chat log was empty.
 """
 
         try:
@@ -134,26 +132,10 @@ IF THE TEST IS A FAIL ECHO THE CHAT LOG YOU RECIVED
         test_start_time = time.time()
         chat = ChatSession()  # New session for each set
 
-        print(f"=== Prompt Set {set_index}: {prompt_set['name']} ===")
-        print(f"Description: {prompt_set['description']}\n")
-
         for i, prompt in enumerate(prompt_set['prompts'], 1):
-            print(f"{i}. You: {prompt}")
-            print("   Thinking...")
-
             reply, duration = chat.send_message(prompt)
-            print(f"   Agent: {reply} (took {duration:.2f}s)")
-            print()
-
-        # Print history for this set
-        print(f"--- History for {prompt_set['name']} ---")
-        for i, exchange in enumerate(chat.chat_history, 1):
-            print(f"{i}. You: {exchange['user']}")
-            print(f"   Agent: {exchange['agent']} (took {exchange['duration']:.2f}s)")
-        print("=" * 50 + "\n")
 
         # Judge the test with LLM
-        print("🤖 Judging test with LLM...")
         judgment = self.judge_test_with_llm(
             prompt_set["name"], prompt_set["description"], chat.chat_history
         )
@@ -166,25 +148,19 @@ IF THE TEST IS A FAIL ECHO THE CHAT LOG YOU RECIVED
             "judgment": judgment,
             "set_index": set_index,
             "duration": test_duration,
+            "chat_history": chat.chat_history,
         }
-
-        # Print individual judgment
-        status = "✅ PASSED" if judgment["success"] else "❌ FAILED"
-        print(f"Result: {status}")
-        print(f"Reason: {judgment['reason']}")
-        print(f"Confidence: {judgment['confidence']}")
-        print(f"⏱️  Individual test time: {test_duration:.2f} seconds")
-        print("=" * 50 + "\n")
 
         return result
 
     def run_tests(self, prompt_sets):
         """Run multiple sets of prompts in parallel"""
 
-        print("🚀 Starting parallel test execution...")
         overall_start_time = time.time()
 
         test_results = []
+        total = len(prompt_sets)
+        completed = 0
 
         # Run tests in parallel using ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=len(prompt_sets)) as executor:
@@ -198,6 +174,8 @@ IF THE TEST IS A FAIL ECHO THE CHAT LOG YOU RECIVED
             for future in as_completed(future_to_test):
                 result = future.result()
                 test_results.append(result)
+                completed += 1
+                print(f"[{completed}/{total}] {result['name']}")
 
         overall_end_time = time.time()
         total_duration = overall_end_time - overall_start_time
@@ -205,9 +183,7 @@ IF THE TEST IS A FAIL ECHO THE CHAT LOG YOU RECIVED
         # Sort results by original set index to maintain order
         test_results.sort(key=lambda x: x["set_index"])
 
-        # Print summary of all results
-        print(f"\n🏁 All tests completed!")
-        print(f"⏱️  Total parallel execution time: {total_duration:.2f} seconds")
+        # Final consolidated summary
         self.print_test_summary(test_results, total_duration)
 
         return test_results
@@ -215,48 +191,57 @@ IF THE TEST IS A FAIL ECHO THE CHAT LOG YOU RECIVED
     def print_test_summary(self, test_results, total_parallel_time):
         """Print a structured summary of all test results"""
 
-        print("🏁 TEST SUMMARY")
-        print("=" * 60)
-
-        passed_count = 0
-        failed_count = 0
-        total_test_time = 0
-
-        for result in test_results:
-            name = result["name"]
-            judgment = result["judgment"]
-            success = judgment["success"]
-            reason = judgment["reason"]
-            confidence = judgment["confidence"]
-            duration = result.get("duration", 0)
-            total_test_time += duration
-
-            if success:
-                passed_count += 1
-                status_icon = "✅"
-                status_text = "PASSED"
-            else:
-                failed_count += 1
-                status_icon = "❌"
-                status_text = "FAILED"
-
-            print(f"{status_icon} {name}: {status_text}")
-            print(f"   ⏱️  Test time: {duration:.2f}s")
-            print(f"   📝 Reason: {reason}")
-            print(f"   🎯 Confidence: {confidence}")
-            print()
+        passed = [r for r in test_results if r.get("judgment", {}).get("success")]
+        failed = [r for r in test_results if not r.get("judgment", {}).get("success")]
 
         total_tests = len(test_results)
-        pass_rate = (passed_count / total_tests * 100) if total_tests > 0 else 0
+        passed_count = len(passed)
+        failed_count = len(failed)
+        total_test_time = sum(r.get("duration", 0.0) for r in test_results)
+        pass_rate = (passed_count / total_tests * 100) if total_tests else 0.0
 
+        print("\n🏁 TEST RESULTS")
         print("=" * 60)
-        print(f"📊 OVERALL RESULTS:")
-        print(f"   Total Tests: {total_tests}")
-        print(f"   Passed: {passed_count}")
-        print(f"   Failed: {failed_count}")
-        print(f"   Pass Rate: {pass_rate:.1f}%")
-        print()
-        print(f"⏱️  TIMING SUMMARY:")
-        print(f"   Total Test Time (sequential): {total_test_time:.2f}s")
-        print(f"   Actual Runtime (parallel): {total_parallel_time:.2f}s")
+        print(f"Total: {total_tests}   Passed: {passed_count}   Failed: {failed_count}   Pass Rate: {pass_rate:.1f}%")
+        print(f"Parallel runtime: {total_parallel_time:.2f}s   Sum of test times: {total_test_time:.2f}s")
         print("=" * 60)
+
+        def _print_test_block(section_title, items):
+            if not items:
+                return
+            print(section_title)
+            for r in items:
+                name = r["name"]
+                j = r["judgment"]
+                duration = r.get("duration", 0.0)
+                icon = "✅" if j.get("success") else "❌"
+                print(f"{icon} {name}")
+                print(f"   ⏱️  {duration:.2f}s   🎯 {j.get('confidence')}   📝 {j.get('reason')}")
+                # Chat log with tool calls
+                for idx, ex in enumerate(r.get("chat_history", []), 1):
+                    print(f"   {idx}. User: {ex.get('user')}")
+                    schema_errs = ex.get("schema_errors") or []
+                    for se in schema_errs:
+                        print(f"      ! schema error [{se.get('domain')}]: {se.get('error')}")
+                    tcs = ex.get("tool_calls") or []
+                    for tc in tcs:
+                        domain = tc.get("domain")
+                        name_tc = tc.get("name")
+                        args = tc.get("args")
+                        result = tc.get("result") if "result" in tc else tc.get("error")
+                        print(f"      - tool: {name_tc} [{domain}]")
+                        print(f"        args: {json.dumps(args, ensure_ascii=False)}")
+                        # stringify result safely
+                        try:
+                            result_str = json.dumps(result, ensure_ascii=False)
+                        except Exception:
+                            result_str = str(result)
+                        print(f"        result: {result_str}")
+                    print(f"     Agent: {ex.get('agent')} (took {ex.get('duration', 0.0):.2f}s)")
+                print()
+
+        _print_test_block("PASSED TESTS", passed)
+        _print_test_block("FAILED TESTS", failed)
+
+        # Final one-line summary
+        print(f"{passed_count}/{total_tests} tests passed")

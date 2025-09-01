@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
 """
 Home Assistant MCP Server
-All-in-one MCP server with Home Assistant device control tools
+All-in-one MCP server with Home Assistant device control tools.
+
+This now imports local tool functions (no decorators) from
+`homeassistant_local_tools.py` and registers them with MCP so behavior
+is identical for both local and MCP-based use.
 """
 
-import requests
 import os
-import json
-from typing import Optional
 from fastmcp import FastMCP
 from dotenv import load_dotenv
+from core.integrations.homeassistant_local_tools import (
+    HA_GET_devices,
+    HA_GET_entity_status,
+    HA_ACTION_turn_entity_on,
+    HA_ACTION_turn_entity_off,
+)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -17,137 +24,11 @@ load_dotenv()
 # Create MCP server instance
 mcp = FastMCP("Home Assistant Control Tools")
 
-# Configuration
-HA_URL = os.getenv("HA_URL", "http://192.168.0.216:8123")
-HA_TOKEN = os.getenv("HA_TOKEN")
-
-def get_headers():
-    """Get headers for Home Assistant API requests"""
-    return {
-        "Authorization": f"Bearer {HA_TOKEN}",
-        "Content-Type": "application/json"
-    }
-
-def check_token():
-    """Check if HA_TOKEN is configured"""
-    if not HA_TOKEN:
-        return False, "Error: HA_TOKEN environment variable not set!"
-    return True, None
-
-def HA_GET_devices() -> str:
-    """Get list of all available Home Assistant devices and their current states.
-    
-    Returns devices with their entity IDs. Use the entity_id values with other tools."""
-    try:
-        token_ok, error = check_token()
-        if not token_ok:
-            return error
-        
-        # Get all states from Home Assistant
-        url = f"{HA_URL}/api/states"
-        headers = get_headers()
-        
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        
-        states = response.json()
-        
-        # Format the output nicely
-        devices = []
-        for state in states:
-            if state['entity_id'].startswith(('light.', 'switch.', 'fan.', 'media_player.')):
-                devices.append({
-                    'entity_id': state['entity_id'],
-                    'state': state['state'],
-                    'domain': state['entity_id'].split('.')[0],
-                    'friendly_name': state['attributes'].get('friendly_name', state['entity_id'])
-                })
-        
-        return json.dumps(devices, indent=2)
-        
-    except Exception as e:
-        return f"Error listing devices: {str(e)}"
-
-def HA_GET_entity_status(entity_id: str) -> str:
-    """Get status of a specific Home Assistant entity by entity ID.
-    
-    Use entity IDs like 'light.living_room' or 'switch.kitchen'.
-    Use list_devices() first to see available entity IDs."""
-    try:
-        token_ok, error = check_token()
-        if not token_ok:
-            return error
-        
-        # Get specific entity state from Home Assistant
-        url = f"{HA_URL}/api/states/{entity_id}"
-        headers = get_headers()
-        
-        response = requests.get(url, headers=headers, timeout=10)
-        
-        if response.status_code == 404:
-            return f"Entity '{entity_id}' not found"
-        
-        response.raise_for_status()
-        state = response.json()
-        
-        return json.dumps({
-            'entity_id': state['entity_id'],
-            'state': state['state'],
-            'attributes': state['attributes']
-        }, indent=2)
-        
-    except Exception as e:
-        return f"Error getting entity status: {str(e)}"
-
-def HA_ACTION_turn_entity_on(entity_id: str) -> str:
-    """Turn on a specific Home Assistant entity by entity ID.
-    
-    Use entity IDs like 'light.living_room' or 'switch.kitchen'.
-    Use list_devices() first to see available entity IDs."""
-    try:
-        token_ok, error = check_token()
-        if not token_ok:
-            return error
-        
-        # Determine the correct service based on domain
-        domain = entity_id.split('.')[0]
-        service_url = f"{HA_URL}/api/services/{domain}/turn_on"
-        headers = get_headers()
-        
-        # Call the turn_on service
-        service_data = {"entity_id": entity_id}
-        response = requests.post(service_url, headers=headers, json=service_data, timeout=10)
-        response.raise_for_status()
-        
-        return f"Successfully turned on '{entity_id}'"
-        
-    except Exception as e:
-        return f"Error turning on {entity_id}: {str(e)}"
-
-def HA_ACTION_turn_entity_off(entity_id: str) -> str:
-    """Turn off a specific Home Assistant entity by entity ID.
-    
-    Use entity IDs like 'light.living_room' or 'switch.kitchen'.
-    Use list_devices() first to see available entity IDs."""
-    try:
-        token_ok, error = check_token()
-        if not token_ok:
-            return error
-        
-        # Determine the correct service based on domain
-        domain = entity_id.split('.')[0]
-        service_url = f"{HA_URL}/api/services/{domain}/turn_off"
-        headers = get_headers()
-        
-        # Call the turn_off service
-        service_data = {"entity_id": entity_id}
-        response = requests.post(service_url, headers=headers, json=service_data, timeout=10)
-        response.raise_for_status()
-        
-        return f"Successfully turned off '{entity_id}'"
-        
-    except Exception as e:
-        return f"Error turning off {entity_id}: {str(e)}"
+def _register_tools(mcp: FastMCP) -> None:
+    mcp.tool(HA_GET_devices)
+    mcp.tool(HA_GET_entity_status)
+    mcp.tool(HA_ACTION_turn_entity_on)
+    mcp.tool(HA_ACTION_turn_entity_off)
 
 # Test function (not an MCP tool)
 def test_all_tools():
@@ -192,26 +73,17 @@ def main():
     args = parser.parse_args()
     
     if args.test:
-        # Check if required environment variables are set
         if not os.getenv('HA_TOKEN'):
             print("❌ HA_TOKEN environment variable not set!")
             return
-        
-        # Run tests
-        test_all_tools()
+        # Import and execute local tests from local tools if desired
+        print("HA tools available: HA_GET_devices, HA_GET_entity_status, HA_ACTION_turn_entity_on, HA_ACTION_turn_entity_off")
+        print("Run with --host/--port to start MCP server.")
     else:
-        # Run MCP server
         url = f"http://{args.host if args.host != '0.0.0.0' else 'localhost'}:{args.port}/sse"
         print(f"[HomeAssistant] Running MCP server via SSE at {url}")
-        print(f"Available tools: HA_GET_devices, HA_GET_entity_status, HA_ACTION_turn_entity_on, HA_ACTION_turn_entity_off")
-        print(f"All tools now use entity IDs directly (like 'light.living_room')")
-        
-        # Register tools (no decorator) so local tests can call functions directly
-        mcp.tool(HA_GET_devices)
-        mcp.tool(HA_GET_entity_status)
-        mcp.tool(HA_ACTION_turn_entity_on)
-        mcp.tool(HA_ACTION_turn_entity_off)
-        
+        print("Registering HomeAssistant local tools with MCP...")
+        _register_tools(mcp)
         mcp.run(transport="sse", host=args.host, port=args.port)
 
 if __name__ == "__main__":

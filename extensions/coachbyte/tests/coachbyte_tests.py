@@ -4,19 +4,8 @@ from core.tools.test_proxy import TestRunner
 import subprocess
 
 
-def main():
-    """Run CoachByte tests for MCP tool coverage"""
-
-    # Reset database with sample data (new location under extensions)
-    try:
-        subprocess.run([
-            "python",
-            "extensions/coachbyte/code/python/load_sample_data.py",
-        ], check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"Warning: Could not reset database - {e}")
-        print("Continuing with tests using existing data...")
-
+def get_prompt_sets():
+    """Return the list of CoachByte prompt sets used for testing."""
     prompt_sets = [
         {
             "name": "New Daily Plan Test",
@@ -83,14 +72,29 @@ def main():
         },
         {
             "name": "Get Timer Test",
-            "description": "Test checking timer status using get_timer tool",
+            "description": "Test setting a timer with set_timer, then checking status with get_timer",
             "prompts": [
                 "Use the tool named exactly 'set_timer' to set a rest timer for 1 minute. Return the tool's result.",
                 "Use the tool named exactly 'get_timer' to check my timer status. Return the tool's result."
             ]
         }
     ]
+    return prompt_sets
 
+
+def main():
+    """Run CoachByte tests for MCP tool coverage"""
+    # Reset database with sample data (new location under extensions)
+    try:
+        subprocess.run([
+            "python",
+            "extensions/coachbyte/code/python/load_sample_data.py",
+        ], check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Warning: Could not reset database - {e}")
+        print("Continuing with tests using existing data...")
+
+    prompt_sets = get_prompt_sets()
     runner = TestRunner()
     results = runner.run_tests(prompt_sets)
     return results

@@ -12,7 +12,12 @@ import psycopg2.extras
 from psycopg2.extensions import connection as PGConnection
 from fastmcp import FastMCP
 
-from db import get_connection, get_today_log_id
+try:
+    from db import get_connection, get_today_log_id
+except ModuleNotFoundError:
+    import sys as _sys, os as _os
+    _sys.path.insert(0, _os.path.abspath(_os.path.join(_os.path.dirname(__file__))))
+    from db import get_connection, get_today_log_id  # type: ignore
 
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage
@@ -73,6 +78,7 @@ def COACH_UPDATE_new_daily_plan(items: List[Dict[str, Any]]) -> str:
         min_order = result["min_order"] if result["min_order"] is not None else 0
         max_order = result["max_order"] if result["max_order"] is not None else 0
 
+        details: List[str] = []
         for item in items:
             reps = int(item["reps"])
             load = float(item["load"])
@@ -100,10 +106,14 @@ def COACH_UPDATE_new_daily_plan(items: List[Dict[str, Any]]) -> str:
                 "INSERT INTO planned_sets (log_id, exercise_id, order_num, reps, load, rest) VALUES (%s, %s, %s, %s, %s, %s)",
                 (log_id, exercise_id, order_num, reps, load, rest),
             )
+            details.append(f"{str(item['exercise'])}, {reps} reps at {load:g} pounds as set {order_num}")
         conn.commit()
     finally:
         conn.close()
-    return f"planned {len(items)} sets for today"
+    summary = f"planned {len(items)} sets for today"
+    if details:
+        summary += ": " + "; ".join(details)
+    return summary
 
 
 def COACH_GET_today_plan() -> List[Dict[str, Any]]:
@@ -146,7 +156,7 @@ def COACH_UPDATE_log_completed_set(exercise: str, reps: int, load: float) -> str
         conn.commit()
     finally:
         conn.close()
-    return "logged"
+    return f"logged: {exercise}, {int(reps)} reps @ {float(load):g}"
 
 
 def COACH_UPDATE_complete_planned_set(

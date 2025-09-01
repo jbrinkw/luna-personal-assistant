@@ -1,17 +1,23 @@
-"""Run the GeneralByte MCP server with Home Assistant tools."""
+"""Run the GeneralByte MCP server with Home Assistant tools.
+
+This registers local tool functions (no decorators) from `tool_local.py`
+so behavior matches the direct/local usage.
+"""
 
 from fastmcp import FastMCP
 try:
-    import tool
+    import tool_local as gb_local
 except ModuleNotFoundError:
     import sys as _sys
     import os as _os
     _sys.path.insert(0, _os.path.abspath(_os.path.dirname(__file__)))
-    import tool
+    import tool_local as gb_local
 mcp = FastMCP("GeneralByte Aggregated Tools")
 
-# Expose tools with unified GET/UPDATE/TOOL prefixes only (no extra namespace prefix)
-mcp.mount(tool.mcp)
+def _register_tools() -> None:
+    mcp.tool(gb_local.GENERAL_ACTION_send_phone_notification)
+    mcp.tool(gb_local.GENERAL_GET_todo_list)
+    mcp.tool(gb_local.GENERAL_ACTION_modify_todo_item)
 
 if __name__ == "__main__":
     import argparse
@@ -23,5 +29,5 @@ if __name__ == "__main__":
 
     url = f"http://{args.host if args.host != '0.0.0.0' else 'localhost'}:{args.port}/sse"
     print(f"[GeneralByte] Running via SSE at {url}")
-
+    _register_tools()
     mcp.run(transport="sse", host=args.host, port=args.port)
