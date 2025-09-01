@@ -1,4 +1,9 @@
-"""Tools for notifications and to-do lists via Home Assistant."""
+"""Tools for notifications and to-do lists via Home Assistant.
+
+Primary exposure is via MCP decorators here. These functions mirror
+the logic in `tool_local.py` so the same behavior is available for
+direct/local use without MCP.
+"""
 
 import os
 from typing import Optional

@@ -9,23 +9,23 @@ def main():
     prompt_sets = [
         {
             "name": "Send Notification Test",
-            "description": "Test sending a phone notification with title",
+            "description": "Test sending a phone notification using GENERAL_ACTION_send_phone_notification tool",
             "prompts": [
-                "Send me a notification with title 'Test Alert' and message 'This is a test notification from GeneralByte'"
+                "Use the tool named exactly 'GENERAL_ACTION_send_phone_notification' to send a notification with title 'Test Alert' and message 'This is a test notification from GeneralByte'. Return the tool's result."
             ]
         },
         {
             "name": "Add Todo Item Test", 
-            "description": "Test adding a todo item with expiration date to the todo.todo entity",
+            "description": "Test adding a todo item via GENERAL_ACTION_modify_todo_item tool",
             "prompts": [
-                "Add 'Buy groceries' to the todo.todo list with due date 2025-02-15"
+                "Use the tool named exactly 'GENERAL_ACTION_modify_todo_item' with action 'create' to add 'Buy groceries' to entity_id 'todo.todo' with due_date '2025-02-15'. Return the tool's result."
             ]
         },
         {
             "name": "Get Todo List Test",
-            "description": "Test retrieving the contents of the todo.todo list",
+            "description": "Test retrieving the contents of the todo.todo list using GENERAL_GET_todo_list tool",
             "prompts": [
-                "Show me my todo.todo list"
+                "Use the tool named exactly 'GENERAL_GET_todo_list' to retrieve the items in entity_id 'todo.todo'. Return the tool's result."
             ]
         }
     ]
