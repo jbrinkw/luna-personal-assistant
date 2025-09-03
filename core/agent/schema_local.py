@@ -137,8 +137,14 @@ def build_light_schema_text() -> str:
         for grp_label in ("Update tools", "Getter tools", "Actions tools"):
             ha_lines.append(grp_label)
             if grouped[grp_label]:
-                for full, _short, desc in grouped[grp_label]:
-                    ha_lines.append(f"- {full}: {desc}" if desc else f"- {full}:")
+                for full, short, desc in grouped[grp_label]:
+                    if full in ("HA_GET_entity_status", "HA_ACTION_turn_entity_on", "HA_ACTION_turn_entity_off"):
+                        # Emphasize that these accept friendly names or entity IDs
+                        suffix = " Accepts friendly name or entity_id." if desc else "Accepts friendly name or entity_id."
+                        label = f"- {full}: {desc}{suffix}" if desc else f"- {full}: {suffix}"
+                        ha_lines.append(label)
+                    else:
+                        ha_lines.append(f"- {full}: {desc}" if desc else f"- {full}:")
             ha_lines.append("")
         if grouped["Other tools"]:
             ha_lines.append("Other tools")
