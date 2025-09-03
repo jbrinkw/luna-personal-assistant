@@ -163,7 +163,10 @@ async def run_homeassistant(user_input: str, model_name: str = "gpt-4.1") -> Tup
     agent = build_homeassistant_agent(model_name)
     system = SystemMessage(
         content=(
-            "You are the HomeAssistant domain agent. Use tools for device control/status and return a concise answer."
+            "You are the HomeAssistant domain agent. Use tools for device control/status and return a concise answer.\n"
+            "Device tools accept either a friendly name or an entity_id. If you are not certain of the entity_id, DO NOT INVENT one.\n"
+            "Instead, pass the exact friendly name (e.g., 'Living Room Fan'), or call HA_GET_devices to list devices and select the exact name.\n"
+            "If multiple devices match a name, ask the user to clarify rather than guessing."
         )
     )
     t0 = time.perf_counter()
