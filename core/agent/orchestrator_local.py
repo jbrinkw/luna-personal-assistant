@@ -4,25 +4,15 @@ import time
 from typing import Any, Dict, Optional
 
 from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_openai import ChatOpenAI
 
 from .schema_local import build_light_schema_text
-from .agents_local import run_general, run_homeassistant, run_chefbyte, run_coachbyte
+from .agents_local import run_general, run_homeassistant, run_chefbyte, run_coachbyte, make_llm, DEFAULT_MODEL_NAME
 
 
-def _require_openai_key() -> str:
-    key = os.environ.get("OPENAI_API_KEY")
-    if not key:
-        raise RuntimeError("OPENAI_API_KEY not set.")
-    return key
+ 
 
 
-def make_llm(model_name: str) -> ChatOpenAI:
-    _require_openai_key()
-    return ChatOpenAI(model=model_name, temperature=0)
-
-
-async def route(user_input: str, light_schema: str, model_name: str = "gpt-4.1") -> Dict[str, Optional[str]]:
+async def route(user_input: str, light_schema: str, model_name: str = DEFAULT_MODEL_NAME) -> Dict[str, Optional[str]]:
     model = make_llm(model_name)
     system = SystemMessage(
         content=(
@@ -75,20 +65,19 @@ async def orchestrate(user_input: str) -> Dict[str, Any]:
                 schema_errors.append({"domain": current_domain or "unknown", "error": err})
     except Exception:
         pass
-    _require_openai_key()
     t_route = time.perf_counter()
-    decision = await route(user_input, light_schema, model_name="gpt-4.1")
+    decision = await route(user_input, light_schema, model_name=DEFAULT_MODEL_NAME)
     routing_s = round(time.perf_counter() - t_route, 3)
 
     tasks: Dict[str, asyncio.Task] = {}
     if decision.get("general"):
-        tasks["general"] = asyncio.create_task(run_general(decision["general"], model_name="gpt-4.1"))
+        tasks["general"] = asyncio.create_task(run_general(decision["general"], model_name=DEFAULT_MODEL_NAME))
     if decision.get("ha"):
-        tasks["ha"] = asyncio.create_task(run_homeassistant(decision["ha"], model_name="gpt-4.1"))
+        tasks["ha"] = asyncio.create_task(run_homeassistant(decision["ha"], model_name=DEFAULT_MODEL_NAME))
     if decision.get("chefbyte"):
-        tasks["chefbyte"] = asyncio.create_task(run_chefbyte(decision["chefbyte"], model_name="gpt-4.1"))
+        tasks["chefbyte"] = asyncio.create_task(run_chefbyte(decision["chefbyte"], model_name=DEFAULT_MODEL_NAME))
     if decision.get("coachbyte"):
-        tasks["coachbyte"] = asyncio.create_task(run_coachbyte(decision["coachbyte"], model_name="gpt-4.1"))
+        tasks["coachbyte"] = asyncio.create_task(run_coachbyte(decision["coachbyte"], model_name=DEFAULT_MODEL_NAME))
 
     domain_results: Dict[str, Optional[str]] = {"general": None, "ha": None, "chefbyte": None, "coachbyte": None}
     domain_timings: Dict[str, float] = {"general": 0.0, "ha": 0.0, "chefbyte": 0.0, "coachbyte": 0.0}
@@ -110,7 +99,7 @@ async def orchestrate(user_input: str) -> Dict[str, Any]:
                     domain_results[k] = str(val)
 
     # Synthesize final answer
-    model = make_llm("gpt-4.1")
+    model = make_llm(DEFAULT_MODEL_NAME)
     synth_system = SystemMessage(
         content=(
             "You are the output agent. Using the light schema and domain responses, produce a single concise plain-text answer."

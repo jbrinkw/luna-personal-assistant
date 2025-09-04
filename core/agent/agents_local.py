@@ -8,6 +8,10 @@ from langgraph.prebuilt import create_react_agent
 from langchain_openai import ChatOpenAI
 from langchain_core.callbacks import BaseCallbackHandler
 
+# Model selection: uncomment the one you want to use
+DEFAULT_MODEL_NAME = "gpt-4.1"  # OpenAI
+DEFAULT_MODEL_NAME = "gemini-2.5-flash-lite"  # Gemini Flash Lite
+
 
 def _require_openai_key() -> str:
     key = os.environ.get("OPENAI_API_KEY")
@@ -15,8 +19,29 @@ def _require_openai_key() -> str:
         raise RuntimeError("OPENAI_API_KEY not set.")
     return key
 
+def _require_google_key() -> str:
+    key = os.environ.get("GOOGLE_API_KEY")
+    if not key:
+        raise RuntimeError("GOOGLE_API_KEY not set.")
+    return key
 
-def make_llm(model_name: str) -> ChatOpenAI:
+def _is_gemini_model(model_name: str) -> bool:
+    try:
+        return "gemini" in model_name.lower()
+    except Exception:
+        return False
+
+
+def make_llm(model_name: str) -> Any:
+    if _is_gemini_model(model_name):
+        try:
+            from langchain_google_genai import ChatGoogleGenerativeAI  # type: ignore
+        except Exception as err:
+            raise RuntimeError(
+                "Gemini model selected but 'langchain-google-genai' is not installed. Install with: pip install langchain-google-genai google-genai"
+            ) from err
+        _require_google_key()
+        return ChatGoogleGenerativeAI(model=model_name, temperature=0)
     _require_openai_key()
     return ChatOpenAI(model=model_name, temperature=0)
 
@@ -79,7 +104,7 @@ class ToolLogCallback(BaseCallbackHandler):
         )
 
 
-def build_general_agent(model_name: str = "gpt-4.1"):
+def build_general_agent(model_name: str = DEFAULT_MODEL_NAME):
     # Import local tools lazily to avoid import-time side effects
     from extensions.generalbyte.code import tool_local as gb
 
@@ -93,7 +118,7 @@ def build_general_agent(model_name: str = "gpt-4.1"):
     return create_react_agent(make_llm(model_name), tools)
 
 
-def build_homeassistant_agent(model_name: str = "gpt-4.1"):
+def build_homeassistant_agent(model_name: str = DEFAULT_MODEL_NAME):
     from core.integrations import homeassistant_local_tools as ha
 
     tools = []
@@ -106,7 +131,7 @@ def build_homeassistant_agent(model_name: str = "gpt-4.1"):
     return create_react_agent(make_llm(model_name), tools)
 
 
-def build_chefbyte_agent(model_name: str = "gpt-4.1"):
+def build_chefbyte_agent(model_name: str = DEFAULT_MODEL_NAME):
     from extensions.chefbyte.code import local_tools as chef
 
     tools = []
@@ -119,7 +144,7 @@ def build_chefbyte_agent(model_name: str = "gpt-4.1"):
     return create_react_agent(make_llm(model_name), tools)
 
 
-def build_coachbyte_agent(model_name: str = "gpt-4.1"):
+def build_coachbyte_agent(model_name: str = DEFAULT_MODEL_NAME):
     # Ensure repository root is on sys.path for absolute imports during runtime
     try:
         from extensions.coachbyte.ui import tools as coach_ui
@@ -143,7 +168,7 @@ def build_coachbyte_agent(model_name: str = "gpt-4.1"):
     return create_react_agent(make_llm(model_name), tools)
 
 
-async def run_general(user_input: str, model_name: str = "gpt-4.1") -> Tuple[Optional[str], float, List[Dict[str, Any]]]:
+async def run_general(user_input: str, model_name: str = DEFAULT_MODEL_NAME) -> Tuple[Optional[str], float, List[Dict[str, Any]]]:
     agent = build_general_agent(model_name)
     system = SystemMessage(
         content=(
@@ -159,7 +184,7 @@ async def run_general(user_input: str, model_name: str = "gpt-4.1") -> Tuple[Opt
     return (str(final_msg) if final_msg is not None else None), dt, cb.tool_calls
 
 
-async def run_homeassistant(user_input: str, model_name: str = "gpt-4.1") -> Tuple[Optional[str], float, List[Dict[str, Any]]]:
+async def run_homeassistant(user_input: str, model_name: str = DEFAULT_MODEL_NAME) -> Tuple[Optional[str], float, List[Dict[str, Any]]]:
     agent = build_homeassistant_agent(model_name)
     system = SystemMessage(
         content=(
@@ -178,7 +203,7 @@ async def run_homeassistant(user_input: str, model_name: str = "gpt-4.1") -> Tup
     return (str(final_msg) if final_msg is not None else None), dt, cb.tool_calls
 
 
-async def run_chefbyte(user_input: str, model_name: str = "gpt-4.1") -> Tuple[Optional[str], float, List[Dict[str, Any]]]:
+async def run_chefbyte(user_input: str, model_name: str = DEFAULT_MODEL_NAME) -> Tuple[Optional[str], float, List[Dict[str, Any]]]:
     agent = build_chefbyte_agent(model_name)
     system = SystemMessage(
         content=(
@@ -194,7 +219,7 @@ async def run_chefbyte(user_input: str, model_name: str = "gpt-4.1") -> Tuple[Op
     return (str(final_msg) if final_msg is not None else None), dt, cb.tool_calls
 
 
-async def run_coachbyte(user_input: str, model_name: str = "gpt-4.1") -> Tuple[Optional[str], float, List[Dict[str, Any]]]:
+async def run_coachbyte(user_input: str, model_name: str = DEFAULT_MODEL_NAME) -> Tuple[Optional[str], float, List[Dict[str, Any]]]:
     agent = build_coachbyte_agent(model_name)
     system = SystemMessage(
         content=(
