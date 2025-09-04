@@ -25,7 +25,6 @@ project_root = os.getcwd()
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 # --- End sys.path modification ---
-print(f"DEBUG: sys.path after modification: {sys.path}")
 
 # --- NEW Pydantic Models ---
 class InventoryUpdateOperation(BaseModel):

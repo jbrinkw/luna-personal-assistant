@@ -13,6 +13,7 @@ except Exception:
 if __package__ is None or __package__ == "":
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from core.agent.orchestrator_local import orchestrate
+from core.agent.agents_local import DEFAULT_MODEL_NAME
 
 
 def _json_default(obj):
@@ -124,6 +125,10 @@ def main() -> None:
 
     if load_dotenv is not None:
         load_dotenv()
+    try:
+        print(f"Active model: {DEFAULT_MODEL_NAME}")
+    except Exception:
+        pass
 
     if args.once is not None:
         # One-shot, no session memory
