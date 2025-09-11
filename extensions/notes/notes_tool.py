@@ -106,8 +106,9 @@ def _base_dir(path: Optional[str]) -> Path:
 
 def NOTES_GET_project_hierarchy(base_dir: Optional[str] = None) -> str:
     """Return a simplified hierarchy: root names and immediate child names only.
-
-    Example: "show my project hierarchy"
+    Example Prompt: "show my project hierarchy"
+    Example Response: "Eco AI\n- Roadmap\n- Research"
+    Example Args: {"base_dir": "string[optional override path]"}
     """
     base = _base_dir(base_dir)
     projects = gen.build_projects(base)
@@ -127,8 +128,9 @@ def NOTES_GET_project_hierarchy(base_dir: Optional[str] = None) -> str:
 
 def NOTES_GET_project_text(project_id: str, base_dir: Optional[str] = None) -> ProjectTextResponse:
     """Return the root project page text and note page text for a given project_id or display name.
-
-    Example: "show the text for project Eco AI"
+    Example Prompt: "show the text for project Eco AI"
+    Example Response: {"project_id": "Eco AI", "root_page_path": "...", "root_page_text": "# Eco AI ...", "note_page_path": "...", "note_page_text": "..."}
+    Example Args: {"project_id": "string[id or display name]", "base_dir": "string[optional path]"}
     """
     if not project_id:
         return ProjectTextResponse(project_id="", error="project_id is required")
@@ -242,8 +244,9 @@ def _find_notes_files(base_dir: Path) -> List[Path]:
 
 def NOTES_GET_notes_by_date_range(start_date: str, end_date: str, base_dir: Optional[str] = None) -> NotesByDateResponse | OperationResult:
     """Return dated note entries within [start_date, end_date] (MM/DD/YY), newest-first.
-
-    Example: "find my notes between 06/01/24 and 06/15/24"
+    Example Prompt: "find my notes between 06/01/24 and 06/15/24"
+    Example Response: {"start_date": "06/01/24", "end_date": "06/15/24", "entries": [{"file": "...Notes.md", "date": "2024-06-01", "date_str": "6/1/24", "content": "..."}]}
+    Example Args: {"start_date": "string[MM/DD/YY]", "end_date": "string[MM/DD/YY]", "base_dir": "string[optional path]"}
     """
     def parse_mdyy(s: str) -> datetime:
         m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{2})$", s.strip())
@@ -289,8 +292,9 @@ def NOTES_GET_notes_by_date_range(start_date: str, end_date: str, base_dir: Opti
 
 def NOTES_UPDATE_project_note(project_id: str, content: str, section_id: Optional[str] = None, base_dir: Optional[str] = None) -> UpdateProjectNoteResponse | OperationResult:
     """Append content to today's dated note entry for a project. Creates file/entry if needed.
-
-    Example: "add 'ship MVP' under 'Milestones' for project Eco AI"
+    Example Prompt: "add 'ship MVP' under 'Milestones' for project Eco AI"
+    Example Response: {"project_id": "Eco AI", "note_file": ".../Notes.md", "created_file": false, "created_entry": true, "appended": true, "date_str": "6/1/24"}
+    Example Args: {"project_id": "string[id or display name]", "content": "string[text to append]", "section_id": "string[optional section]", "base_dir": "string[optional path]"}
     """
     if not project_id:
         return OperationResult(success=False, message="project_id is required")

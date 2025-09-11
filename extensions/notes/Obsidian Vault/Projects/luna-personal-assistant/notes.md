@@ -1,6 +1,57 @@
 ---
 note_project_id: Luna
 ---
+9/10/25
+ok it is crunch time i gotta lock in. i need to finish the docs, get basic gorcy import done, and hopefully get a local voice agent done or at least set up calling bc that would be a great demo then also the dynamic memory feature. 
+
+im gonna stick with gpt realtime for now just for the demo bc itll be easier
+9/9/25
+the biggest thing between me and release 1 right now is good docs. i need to make docs for the the doc and all the extentions and each of the diffrent strageies for speeding things up. i think if im going to have multiple speed up strategys im going to need to make a tool manager to toggle all of the settings. that can be a later problem tho. so rn i just need to make docs for for the core and the starting extensions. 
+
+how do i want to setup the docs?
+project summary
+user guide
+core:
+- agent setup
+- tool setup
+- agents:
+	- basic 3 layer
+	- ... other agents
+- agent helpers
+	- light schema
+
+ok so i finish the basic testing system and refine the docstring structure a bit and started working on the documentation system. im definaly gonna move it into the same repo tath makes a lot more sense for ai coding. next steps are just finsish the docs and make the code more presentable and then ill pretty much be good for first release. after that i want to get right to figureing out how to make stuff faster again and also figureing out the dynamic memory system so i can have natual coversations with my notes. i also dont really imagene myself using gpt-realtime long term bc i wan to have long conversations so im probaly gonna need to setup something local. all of that plus getting grocy intergrated and ill be in a greate place for applying for jobs and starting to market
+
+honestly my main goal for tmr is just to get the basic docs and cleaning done and then figuure out the chat with notes and then maybe a local voice agent bc ive been dying to be able to chat with my projects
+
+9/8/25
+give tools a flag to be async with 2 types. confirmed will run in background and return confirmation message. then a types for unconfirmed async which will generate an llm call in the background to confirm that the tool call was sucesssful and only return a confirmation to the chat if there way an error. 
+
+Run the router and domain functions all at the same time so by the time that router has completed
+9/6/25
+For queries that require a thought, set up the thinking  model to essentially think out loud by returning regular updates on its process to the voice model
+
+An important feature for the note agent would be collaboratively expanding details on the future roadmap for example with professor bite, it would start with a general explanation of the intent of the project, and then the side-by-side with the note agent the user could conceptually build out their project into more and more detail
+
+If I want to have a intellectual conversation about the future of work after the singularity I should be able to ask it to do deep research with the focus of generating a knowledgbase of the subject that I can then directly load into the context to give it a stronger foundation in the conversation 
+
+9/5/25
+I'm trying to figure out how to speed stuff up be right now were looking at at least 3 seconds with the 3 layer router, tools and synth strucutre with 4.1 mini which is mostly reliable and 2 second with gemini flash lite which is alright buti wouldnt use in production as is. 4.1 has acceptable time for just the domain layer if it only calls 1 tool but its ttft adds up really fast 4.1-mini. maybe that extra timeis just the react agent it seems like the 4.1 family has decent speed
+
+I’ve decided that GPT real time has enough context window that I can dynamically load in context such as project notes so I can chat seamlessly to ask questions that should handle most of my interactions, but the voice model isn’t going to do any serious thinking so I need to have a toolthat will reflect on the query asynchronously and and get back to me 
+
+Should have a tool to turn up the intelligence of different layers in the model for when I have more complex queries
+Tool result pass through will help with latency quite a bit
+
+Document all workflows
+
+Set up a space in the database for pending messages from a sink tools
+
+And the automation layer I should be able to define context groups like notes and to do’s for a project or personal notes then the load context tool can load that in and unload it dynamically
+
+Have tools that trigger agents of very intelligence that have full access to the tools of the whole project so I can ask her to look through my notes and think about something or go to My to get hub and stuff like that. I can ask the model to think and it’ll ask me what level of intelligence and then I’ll go about it.
+
+
 
 9/1/25
 There a lot to do. I fixed the wierd latency issue appartely it was the mcp server no clue why that was so slow but local tools work great. i dont think im going to try the cut down model statck without  a router yet i need to get with a router working reliably. its gonna be a pain in the ass to go through all the tests and figure out why each one is failing. i think the best way to start is be rewriting the test to tell the agent exactly what to do and then once i got that down we can do progressively more ambigous. thats definaly a good place to start like use the exact tool names. after i get that i need to impolmetn all the other tools i made for todo list and obisian and then theres also the whole reseach agent piece i havent done yet. i havent enen really figure out how i want to impolnet that yet. i also need to implnet a memory system so the ai can remeber the ways i interact with the tools. fuck theres kinda a lot to do.

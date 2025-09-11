@@ -331,9 +331,9 @@ def _parse_tv_remote_intent(button: str) -> Tuple[str, Dict[str, Any], str]:
 
 def HA_ACTION_tv_remote(button: str) -> str:
     """Send a TV remote action by name (single string).
-
-    Example prompt: "open spotify on my tv"
-
+    Example Prompt: "open spotify on my tv"
+    Example Response: {"success": true, "message": "Sent 'open spotify' to remote.living_room_tv"}
+    Example Args: {"button": "string[action or app name]"}
     Examples: 'up', 'down', 'left', 'right', 'ok', 'back', 'home',
     'play', 'pause', 'stop', 'next', 'previous', 'rewind', 'fast forward',
     'mute', 'volume up', 'volume down', 'youtube', 'netflix', 'spotify', 'disney+'.
@@ -364,9 +364,9 @@ def HA_ACTION_tv_remote(button: str) -> str:
 
 def HA_GET_devices() -> DevicesResponse | OperationResult:
     """Get list of all available Home Assistant devices and their current states.
-
-    Example prompt: "list my home devices"
-
+    Example Prompt: "list my home devices"
+    Example Response: {"devices": [{"entity_id": "light.kitchen", "domain": "light", "state": "off", "friendly_name": "Kitchen Light"}]}
+    Example Args: {}
     Includes each entity's `entity_id`, `domain`, current `state`, and `friendly_name`.
     """
     err = _require_token()
@@ -398,9 +398,9 @@ def HA_GET_devices() -> DevicesResponse | OperationResult:
 
 def HA_GET_entity_status(entity_id: str) -> EntityStatus | OperationResult:
     """Get status of a specific Home Assistant entity.
-
-    Example prompt: "what's the status of the living room light?"
-
+    Example Prompt: "what's the status of the living room light?"
+    Example Response: {"entity_id": "light.kitchen", "state": "on", "attributes": {"brightness": 200}}
+    Example Args: {"entity_id": "string[entity id or friendly name]"}
     Accepts either a full `entity_id` (e.g. 'switch.living_room_light') or a `friendly name`
     (e.g. 'Living Room Light').
     """
@@ -429,9 +429,9 @@ def HA_GET_entity_status(entity_id: str) -> EntityStatus | OperationResult:
 
 def HA_ACTION_turn_entity_on(entity_id: str) -> OperationResult:
     """Turn on a specific Home Assistant entity.
-
-    Example prompt: "turn on the kitchen light"
-
+    Example Prompt: "turn on the kitchen light"
+    Example Response: {"success": true, "message": "Successfully turned on 'light.kitchen'"}
+    Example Args: {"entity_id": "string[entity id or friendly name]"}
     Accepts either a full `entity_id` (e.g. 'light.kitchen') or a `friendly name`
     (e.g. 'Kitchen Light'). Returns a clear message if the entity does not exist
     or if Home Assistant reports no changes.
@@ -464,9 +464,9 @@ def HA_ACTION_turn_entity_on(entity_id: str) -> OperationResult:
 
 def HA_ACTION_turn_entity_off(entity_id: str) -> OperationResult:
     """Turn off a specific Home Assistant entity.
-
-    Example prompt: "turn off the kitchen light"
-
+    Example Prompt: "turn off the kitchen light"
+    Example Response: {"success": true, "message": "Successfully turned off 'light.kitchen'"}
+    Example Args: {"entity_id": "string[entity id or friendly name]"}
     Accepts either a full `entity_id` (e.g. 'light.kitchen') or a `friendly name`
     (e.g. 'Kitchen Light'). Returns a clear message if the entity does not exist
     or if Home Assistant reports no changes.

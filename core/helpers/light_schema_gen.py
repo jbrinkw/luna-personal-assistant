@@ -4,7 +4,7 @@ import importlib.util
 import inspect
 import textwrap
 from types import ModuleType
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
@@ -40,11 +40,12 @@ def _parse_tool_doc(fn) -> Dict[str, str]:
     return {"summary": summary, "example": example, "notes": notes}
 
 
-def discover_extensions() -> List[Dict[str, Any]]:
+def discover_extensions(tool_root: Optional[str] = None) -> List[Dict[str, Any]]:
     exts: List[Dict[str, Any]] = []
-    if not os.path.isdir(EXTENSIONS_DIR):
+    base_dir = os.path.abspath(tool_root) if isinstance(tool_root, str) and tool_root.strip() else EXTENSIONS_DIR
+    if not os.path.isdir(base_dir):
         return exts
-    for root, dirs, files in os.walk(EXTENSIONS_DIR):
+    for root, dirs, files in os.walk(base_dir):
         for fname in files:
             if not fname.endswith("_tool.py"):
                 continue

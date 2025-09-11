@@ -124,6 +124,10 @@ class AgentResult(BaseModel):
     final: str
     results: List[DomainResult] = Field(default_factory=list)
     timings: List[Timing] = Field(default_factory=list)
+    # Minimal spec fields (for easy integrations)
+    content: str
+    response_time_secs: float
+    traces: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 # ---- Runtime caches ----
@@ -453,7 +457,17 @@ async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory
                 end_offsets.append((dr.name, float(latest - fs)))
         for name, off in sorted(end_offsets, key=lambda x: x[1]):
             timings.append(Timing(name=f"llm_end:{name}", seconds=off))
-    return AgentResult(final=final, results=results, timings=timings)
+    # Minimal spec fields
+    flat_traces: List[Dict[str, Any]] = []
+    # Broadcast agent doesn’t collect per-tool traces by default; leave empty
+    return AgentResult(
+        final=final,
+        results=results,
+        timings=timings,
+        content=final,
+        response_time_secs=float(elapsed),
+        traces=flat_traces,
+    )
 
 
 def main(argv: List[str]) -> int:
