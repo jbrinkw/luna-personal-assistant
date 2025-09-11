@@ -1,4 +1,4 @@
-### Agent Minimum Interface Spec
+# Agent Format — Minimum Interface Spec
 
 This document defines the minimal, implementation-agnostic interface that all agents must support. Agents may add richer inputs/outputs, but these fields and behaviors are mandatory for easy integration across the system.
 

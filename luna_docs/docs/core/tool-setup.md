@@ -1,3 +1,0 @@
-# Tool setup
-
-TBD.
