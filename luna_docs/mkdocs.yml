@@ -6,11 +6,10 @@ theme:
 
 nav:
   - Home: index.md
-  - Project summary: project-summary.md
   - User guide: user-guide.md
   - Core:
-      - Agent setup: core/agent-setup.md
-      - Tool setup: core/tool-setup.md
+      - Agent Format: core/agent-format.md
+      - Extension Format: core/extension-format.md
       - Agents:
           - Overview: core/agents/README.md
           - Basic hierarchical: core/agents/basic-hierarchical.md

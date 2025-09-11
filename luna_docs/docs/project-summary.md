@@ -1,3 +1,0 @@
-# Project summary
-
-TBD.
