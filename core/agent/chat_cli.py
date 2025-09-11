@@ -19,7 +19,27 @@ try:
 except Exception:
     pass
 
-from core.agent import parallel_agent as pa  # noqa: E402
+# Resolve active agent module from env path (defaults to parallel_agent)
+ACTIVE_AGENT_PATH = os.getenv("ACTIVE_AGENT_PATH", "core/agent/parallel_agent.py")
+
+def _import_agent_from_path(path: str):
+    name = os.path.splitext(os.path.basename(path))[0]
+    spec = None
+    try:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(name, os.path.join(PROJECT_ROOT, path))
+        mod = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(mod)  # type: ignore[attr-defined]
+        return mod
+    except Exception:
+        # Fallback to built-in parallel agent
+        from core.agent import parallel_agent as fallback
+
+        return fallback
+
+pa = _import_agent_from_path(ACTIVE_AGENT_PATH)  # noqa: E402
 
 
 class ChatSession:
@@ -38,6 +58,7 @@ class ChatSession:
 
 
 def _print_banner() -> None:
+    print(f"Active agent path: {ACTIVE_AGENT_PATH}")
     models = pa._active_models()
     print(f"Active models: router={models.get('router')} | domain={models.get('domain')} | synth={models.get('synth')}")
     print("")

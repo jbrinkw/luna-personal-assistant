@@ -104,7 +104,9 @@ to advance the workout queue; use log_completed_set for unplanned sets.
 
 def COACHBYTE_UPDATE_new_daily_plan(items: List[Dict[str, Any]]):
     """Create today's daily workout plan with a list of planned sets.
-    Make a plan for today: bench press 10x135 at order 1; squat 8x185 at order 2.
+    Example Prompt: Make a plan for today: bench press 10x135 at order 1; squat 8x185 at order 2.
+    Example Response: Planned today's workout: bench press 10x135 (order 1); squat 8x185 (order 2).
+    Example Args: {"items": [{"exercise": "string[exercise name]", "reps": int[number of reps], "load": float[weight], "rest": int[seconds], "order": int[sequence index]}]}
     """
     conn = _get_connection()
     try:
@@ -158,7 +160,9 @@ def COACHBYTE_UPDATE_new_daily_plan(items: List[Dict[str, Any]]):
 
 def COACHBYTE_GET_today_plan() -> List[Dict[str, Any]]:
     """Return today's planned workout sets in order.
-    What's my workout plan for today?
+    Example Prompt: What's my workout plan for today?
+    Example Response: Today's plan: bench press 10x135; squat 8x185.
+    Example Args: {}
     """
     conn = _get_connection()
     try:
@@ -182,7 +186,9 @@ def COACHBYTE_GET_today_plan() -> List[Dict[str, Any]]:
 
 def COACHBYTE_ACTION_complete_next_set(exercise: Optional[str] = None, reps: Optional[int] = None, load: Optional[float] = None) -> str:
     """Complete the next planned set (optionally specify exercise and/or override reps/load).
-    Complete my next set; if it's squats, do 8 reps instead.
+    Example Prompt: Complete my next set; if it's squats, do 8 reps instead.
+    Example Response: Completed next set (squats): 8 reps.
+    Example Args: {"exercise": "string[exercise name]", "reps": int[override reps], "load": float[override load]}
     """
     conn = _get_connection()
     try:
@@ -257,7 +263,9 @@ def COACHBYTE_ACTION_complete_next_set(exercise: Optional[str] = None, reps: Opt
 
 def COACHBYTE_ACTION_log_completed_set(exercise: str, reps: int, load: float) -> str:
     """Log an unplanned, completed set (not from the queue).
-    I did extra push-ups: 20 reps at bodyweight.
+    Example Prompt: I did extra push-ups: 20 reps at bodyweight.
+    Example Response: Logged set: push-ups, 20 reps at bodyweight.
+    Example Args: {"exercise": "string[exercise name]", "reps": int[number of reps], "load": float[weight]}
     """
     if not (1 <= int(reps) <= MAX_REPS):
         raise ValueError("reps out of range")
@@ -280,7 +288,9 @@ def COACHBYTE_ACTION_log_completed_set(exercise: str, reps: int, load: float) ->
 
 def COACHBYTE_UPDATE_summary(text: str) -> str:
     """Update today's workout summary text.
-    Add summary: Great session, felt strong on bench.
+    Example Prompt: Add summary: Great session, felt strong on bench.
+    Example Response: summary updated
+    Example Args: {"text": "string[summary text]"}
     """
     conn = _get_connection()
     try:
@@ -295,7 +305,9 @@ def COACHBYTE_UPDATE_summary(text: str) -> str:
 
 def COACHBYTE_GET_recent_history(days: int) -> List[Dict[str, Any]]:
     """Get recent workout history for N days (planned vs completed).
-    Show my last 7 days of workouts.
+    Example Prompt: Show my last 7 days of workouts.
+    Example Response: Recent 7-day workout summary returned.
+    Example Args: {"days": int[number of days]}
     """
     conn = _get_connection()
     try:
@@ -321,7 +333,10 @@ def COACHBYTE_GET_recent_history(days: int) -> List[Dict[str, Any]]:
 
 def COACHBYTE_UPDATE_weekly_split_day(day: str, items: List[Dict[str, Any]]) -> str:
     """Replace the weekly split plan for a specific day with provided sets.
-    Set Monday split to bench 5x at 80% 1RM and squat 10x185.
+    Example Prompt: Set Monday split to bench 5x at 80% 1RM and squat 10x185.
+    Example Response: split updated for monday with 2 sets
+    Example Args: {"day": "monday", "items": [{"exercise": "bench press", "reps": 5, "load": 0.8, "relative": true, "rest": 90, "order": 1}, {"exercise": "squat", "reps": 10, "load": 185, "relative": false, "rest": 90, "order": 2}]}
+    Usage: To specify a percent-of-1RM load, set "relative": true and pass "load" as a decimal fraction (e.g., 0.8 means 80% 1RM). For absolute loads (lbs/kg), set "relative": false (or omit) and pass a numeric load (e.g., 185).
     """
     key = (day or "").lower()
     if key not in DAY_MAP:
@@ -356,7 +371,9 @@ def COACHBYTE_UPDATE_weekly_split_day(day: str, items: List[Dict[str, Any]]) -> 
 
 def COACHBYTE_GET_weekly_split(day: Optional[str] = None) -> List[Dict[str, Any]]:
     """Get weekly split plan (all days or a specific day).
-    What's my Wednesday split?
+    Example Prompt: What's my Wednesday split?
+    Example Response: Wednesday split listed.
+    Example Args: {"day": "string[day name]"}
     """
     conn = _get_connection()
     try:
@@ -381,7 +398,9 @@ def COACHBYTE_GET_weekly_split(day: Optional[str] = None) -> List[Dict[str, Any]
 
 def COACHBYTE_ACTION_set_timer(minutes: int) -> str:
     """Set a rest/workout timer in minutes (1–180).
-    Set a 3 minute rest timer.
+    Example Prompt: Set a 3 minute rest timer.
+    Example Response: Timer set for 3 minutes
+    Example Args: {"minutes": int[1-180]}
     """
     if not (1 <= int(minutes) <= 180):
         raise ValueError("Timer duration must be between 1 and 180 minutes")
@@ -399,7 +418,9 @@ def COACHBYTE_ACTION_set_timer(minutes: int) -> str:
 
 def COACHBYTE_GET_timer() -> Dict[str, Any]:
     """Get current timer status and remaining time.
-    How much time is left on my rest timer?
+    Example Prompt: How much time is left on my rest timer?
+    Example Response: {"status": "running", "remaining_seconds": 120}
+    Example Args: {}
     """
     try:
         script_dir = os.path.join(os.path.dirname(__file__), "ui", "tools")
@@ -429,6 +450,8 @@ TOOLS = [
     COACHBYTE_ACTION_set_timer,
     COACHBYTE_GET_timer,
 ]
+
+
 
 
 

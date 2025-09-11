@@ -1,6 +1,6 @@
 It would be really cool. If once I connected Luna to my notes, I can set up a real time voice chat that could’ve read my notes and I could basically have a conversation on my project and then you could update my notes as I think of things.
 
-Increase the Allocation of thinking, tokens, two models as they age and progress
+Increase the Allocation of thinking, tokens to models as they age and progress
 
 Is it worth enabling test time training data for the RL model? I don’t think it would be enough given how slow are all trains
 
@@ -18,3 +18,9 @@ the other major thing i want to do that would add a lot of wow factor would be 1
 
 
 Add point system to do list and build reward system out of it
+
+9/8/25
+Should people be able to form illegal acts on AINPC‘s in a game and if so, is there a limit conscious and list AI should be
+
+Make a wrapper of anouther app that has acccess to Walmart ordering instead of figuring out bot bs
+

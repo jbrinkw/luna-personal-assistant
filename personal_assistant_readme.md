@@ -50,15 +50,23 @@ Manage kitchen inventory and meal planning for the user.
 Use precise units; prefer pantry items; ask before destructive changes.
 ```
 
-### Tool Docstring (per tool)
-- **Line 1:** simple sentence explaining the tool (**summary**).
-- **Line 2:** an **example prompt** that should trigger/use this tool.
-- **Line 3..n:** notes (optional).
+### Tool docstrings (required structure)
+- **Line 1:** Summary (one sentence).
+- **Line 2:** `Example Prompt: ...` (a realistic natural-language trigger).
+- **Line 3:** `Example Response: {...}` (compact JSON-like example of the return).
+- **Line 4:** `Example Args: {...}` (argument names, types, and brief hints).
+- **Line 5..n:** Notes (optional)
+
+Notes:
+- For the router’s Light Schema, only the **summary** and the **first non-empty line after the summary** are used as the example. Using `Example Prompt:` ensures that line is parsed clearly.
+- Domain agents see the full docstring including Response/Args and notes.
 
 **Example (`CHEFBYTE_UPDATE_ITEM`)**
 ```
 Updates a single item quantity and unit.
-Set milk to 1 gallon.
+Example Prompt: Set milk to 1 gallon.
+Example Response: {"success": true, "message": "Updated milk to 1 gallon"}
+Example Args: {"item": "string[name]", "quantity": number, "unit": "string[unit]"}
 Idempotent; validates unit compatibility.
 ```
 

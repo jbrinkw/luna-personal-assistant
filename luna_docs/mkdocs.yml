@@ -1,0 +1,18 @@
+site_name: Luna Docs
+theme:
+  name: readthedocs
+  navigation_depth: 4
+  collapse_navigation: false
+
+nav:
+  - Home: index.md
+  - Project summary: project-summary.md
+  - User guide: user-guide.md
+  - Core:
+      - Agent setup: core/agent-setup.md
+      - Tool setup: core/tool-setup.md
+      - Agents:
+          - Overview: core/agents/README.md
+          - Basic hierarchical: core/agents/basic-hierarchical.md
+      - Agent helpers:
+          - Light schema: core/agent-helpers/light-schema.md

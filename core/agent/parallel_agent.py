@@ -7,7 +7,14 @@ import inspect
 import time
 from datetime import datetime
 from functools import lru_cache
-from typing import Any, Dict, List, Callable, Optional, Tuple
+from typing import Any, Dict, List, Callable, Optional, Tuple, get_type_hints
+
+# Load environment variables from .env if present
+try:
+	from dotenv import load_dotenv  # type: ignore
+	load_dotenv()
+except Exception:
+	pass
 
 # Ensure project root on sys.path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
@@ -22,6 +29,7 @@ from pydantic import BaseModel, Field, ValidationError, create_model  # noqa: E4
 # Declared model names (supported/used by the agent)
 MODEL_GPT_41_MINI = "gpt-4.1-mini"
 MODEL_GPT_41_NANO = "gpt-4.1-nano"
+MODEL_GPT_41 = "gpt-4.1"
 MODEL_GEMINI_25_FLASH = "gemini-2.5-flash"
 MODEL_GEMINI_25_FLASH_LITE = "gemini-2.5-flash-lite"
 
@@ -34,8 +42,12 @@ DEFAULT_SYNTH_MODEL = MODEL_GEMINI_25_FLASH_LITE
 # DEFAULT_DOMAIN_MODEL = MODEL_GEMINI_25_FLASH
 # DEFAULT_SYNTH_MODEL = MODEL_GEMINI_25_FLASH
 
-DEFAULT_ROUTER_MODEL = MODEL_GPT_41_MINI
-DEFAULT_DOMAIN_MODEL = MODEL_GPT_41_MINI
+# DEFAULT_ROUTER_MODEL = MODEL_GPT_41_MINI
+# DEFAULT_DOMAIN_MODEL = MODEL_GPT_41_MINI
+# DEFAULT_SYNTH_MODEL = MODEL_GPT_41_NANO
+
+DEFAULT_ROUTER_MODEL = MODEL_GPT_41
+DEFAULT_DOMAIN_MODEL = MODEL_GPT_41
 DEFAULT_SYNTH_MODEL = MODEL_GPT_41_NANO
 
 def _get_env(key: str, default: Optional[str] = None) -> Optional[str]:
@@ -119,6 +131,7 @@ LLM_DURATIONS: Dict[str, List[float]] = {}
 # Preloaded extensions and schema to avoid per-turn setup overhead
 PRELOADED_EXTENSIONS: Optional[List[Dict[str, Any]]] = None
 PRELOADED_SCHEMA: Optional[str] = None
+PRELOADED_TOOL_ROOT: Optional[str] = None
 PRELOADED_LLM: Dict[str, Any] = {}
 
 
@@ -203,69 +216,93 @@ class AgentResult(BaseModel):
 	final: str
 	results: List[DomainResult] = Field(default_factory=list)
 	timings: List[Timing] = Field(default_factory=list)
+	# Minimal spec fields (for easy integrations)
+	content: str
+	response_time_secs: float
+	traces: List[ToolTrace] = Field(default_factory=list)
 
 
 def _wrap_callable_as_tool(fn: Callable[..., Any], ext_name: str):
 	from langchain_core.tools import StructuredTool
 
-	meta = _doc_summary_and_example(fn)
-	description = meta["summary"]
-	if meta["example"]:
-		description = f"{description} Example: {meta['example']}"
+	# Prefer full docstring so the domain agent sees complete instructions
+	try:
+		full_doc = inspect.getdoc(fn) or ""
+	except Exception:
+		full_doc = ""
+	if full_doc.strip():
+		description = full_doc.strip()
+	else:
+		# Fallback to summary + first example line
+		meta = _doc_summary_and_example(fn)
+		description = meta["summary"]
+		if meta["example"]:
+			description = f"{description} Example: {meta['example']}"
 
 	sig = inspect.signature(fn)
 	fields = {}
+	# Resolve forward-ref annotations (e.g., Optional[str]) to actual types
+	try:
+		hints = get_type_hints(fn, globalns=getattr(fn, "__globals__", {}))
+	except Exception:
+		hints = {}
 	for name, param in sig.parameters.items():
-		ann = param.annotation if param.annotation is not inspect._empty else str
+		ann = hints.get(name, (param.annotation if param.annotation is not inspect._empty else str))
 		default = param.default if param.default is not inspect._empty else ...
 		fields[name] = (ann, default)
 	ArgsSchema = create_model(f"{fn.__name__}Args", **fields)  # type: ignore[arg-type]
 
 	def _runner(**kwargs):
-		try:
-			t0 = time.perf_counter()
-			result = fn(**kwargs)
-			# Prefer structured JSON for Pydantic or native containers
-			if isinstance(result, BaseModel):
-				try:
-					sres = json.dumps(result.model_dump(), ensure_ascii=False)
-				except Exception:
-					# Try Pydantic v2 JSON, then v1 .json(), then str
-					try:
-						sres = result.model_dump_json()
-					except Exception:
-						try:
-							sres = result.json()
-						except Exception:
-							sres = str(result)
-			elif isinstance(result, (dict, list)):
-				try:
-					sres = json.dumps(result, ensure_ascii=False)
-				except Exception:
-					sres = str(result)
-			else:
-				sres = str(result)
-			dur = time.perf_counter() - t0
-			TOOL_TRACES.setdefault(ext_name, []).append({
-				"tool": fn.__name__,
-				"args": kwargs or None,
-				"output": sres,
-				"duration_secs": dur,
-			})
-			return sres
-		except Exception as e:
+		# Simple retry-on-exception once to handle transient/tool init errors
+		last_err: Optional[str] = None
+		for attempt in range(2):
 			try:
-				dur = time.perf_counter() - t0  # type: ignore[name-defined]
-			except Exception:
-				dur = None
-			err = f"Error running tool {fn.__name__}: {str(e)}"
-			TOOL_TRACES.setdefault(ext_name, []).append({
-				"tool": fn.__name__,
-				"args": kwargs or None,
-				"output": err,
-				"duration_secs": dur,
-			})
-			return err
+				t0 = time.perf_counter()
+				result = fn(**kwargs)
+				# Prefer structured JSON for Pydantic or native containers
+				if isinstance(result, BaseModel):
+					try:
+						sres = json.dumps(result.model_dump(), ensure_ascii=False)
+					except Exception:
+						# Try Pydantic v2 JSON, then v1 .json(), then str
+						try:
+							sres = result.model_dump_json()
+						except Exception:
+							try:
+								sres = result.json()
+							except Exception:
+								sres = str(result)
+				elif isinstance(result, (dict, list)):
+					try:
+						sres = json.dumps(result, ensure_ascii=False)
+					except Exception:
+						sres = str(result)
+				else:
+					sres = str(result)
+				dur = time.perf_counter() - t0
+				TOOL_TRACES.setdefault(ext_name, []).append({
+					"tool": fn.__name__,
+					"args": kwargs or None,
+					"output": sres,
+					"duration_secs": dur,
+				})
+				return sres
+			except Exception as e:
+				last_err = f"Error running tool {fn.__name__}: {str(e)}"
+				# On first failure, try once more immediately
+				if attempt == 0:
+					continue
+				try:
+					dur = time.perf_counter() - t0  # type: ignore[name-defined]
+				except Exception:
+					dur = None
+				TOOL_TRACES.setdefault(ext_name, []).append({
+					"tool": fn.__name__,
+					"args": kwargs or None,
+					"output": last_err,
+					"duration_secs": dur,
+				})
+				return last_err
 
 	return StructuredTool(name=fn.__name__, description=description, args_schema=ArgsSchema, func=_runner)
 
@@ -287,15 +324,24 @@ def _build_light_schema(extensions: List[Dict[str, Any]]) -> str:
 	return "\n\n".join(p for p in parts if p)
 
 
-def initialize_runtime() -> None:
-	"""Preload extensions and the light schema into module-level caches."""
-	global PRELOADED_EXTENSIONS, PRELOADED_SCHEMA
+def initialize_runtime(tool_root: Optional[str] = None) -> None:
+	"""Preload extensions and the light schema into module-level caches.
+
+	When tool_root is provided, only discover extensions under that root.
+	"""
+	global PRELOADED_EXTENSIONS, PRELOADED_SCHEMA, PRELOADED_TOOL_ROOT
 	try:
-		exts = discover_extensions()
+		exts = discover_extensions(tool_root)
 	except Exception:
 		exts = []
 	PRELOADED_EXTENSIONS = exts
 	PRELOADED_SCHEMA = _build_light_schema(exts) if exts else ""
+	PRELOADED_TOOL_ROOT = tool_root
+	# Invalidate cached domain agents so they rebuild against the new extension set
+	try:
+		_build_domain_agent.cache_clear()  # type: ignore[attr-defined]
+	except Exception:
+		pass
 	# Warm LLM clients (no callbacks so they are cached)
 	try:
 		_load_llm_for_role("router")
@@ -314,29 +360,46 @@ def initialize_runtime() -> None:
 			continue
 
 
-def _get_extensions() -> List[Dict[str, Any]]:
-	global PRELOADED_EXTENSIONS
-	return PRELOADED_EXTENSIONS if PRELOADED_EXTENSIONS is not None else discover_extensions()
+def _get_extensions(tool_root: Optional[str] = None) -> List[Dict[str, Any]]:
+	global PRELOADED_EXTENSIONS, PRELOADED_TOOL_ROOT
+	if tool_root is not None:
+		try:
+			normalized_in = os.path.abspath(tool_root)
+			normalized_pre = os.path.abspath(PRELOADED_TOOL_ROOT) if PRELOADED_TOOL_ROOT else None
+		except Exception:
+			normalized_in = tool_root
+			normalized_pre = PRELOADED_TOOL_ROOT
+		if normalized_in != normalized_pre:
+			return discover_extensions(tool_root)
+	return PRELOADED_EXTENSIONS if PRELOADED_EXTENSIONS is not None else discover_extensions(tool_root)
 
 
-def _get_light_schema(extensions: List[Dict[str, Any]]) -> str:
-	global PRELOADED_EXTENSIONS, PRELOADED_SCHEMA
+def _get_light_schema(extensions: List[Dict[str, Any]], tool_root: Optional[str] = None) -> str:
+	global PRELOADED_EXTENSIONS, PRELOADED_SCHEMA, PRELOADED_TOOL_ROOT
 	if PRELOADED_EXTENSIONS is not None and PRELOADED_SCHEMA is not None:
 		try:
 			pre = [e.get("name") for e in PRELOADED_EXTENSIONS]
 			cur = [e.get("name") for e in extensions]
-			if pre == cur:
+			same_exts = (pre == cur)
+			if tool_root is None:
+				same_root = (PRELOADED_TOOL_ROOT is None)
+			else:
+				try:
+					same_root = os.path.abspath(PRELOADED_TOOL_ROOT or "") == os.path.abspath(tool_root)
+				except Exception:
+					same_root = (PRELOADED_TOOL_ROOT == tool_root)
+			if same_exts and same_root:
 				return PRELOADED_SCHEMA
 		except Exception:
 			pass
 	return _build_light_schema(extensions)
 
 
-async def _route(user_prompt: str, chat_history: Optional[str], memory: Optional[str], extensions: List[Dict[str, Any]]) -> Tuple[RouterResult, float]:
+async def _route(user_prompt: str, chat_history: Optional[str], memory: Optional[str], extensions: List[Dict[str, Any]], tool_root: Optional[str] = None) -> Tuple[RouterResult, float]:
 	from langchain_core.messages import SystemMessage, HumanMessage
 
 	llm = _load_llm_for_role("router")
-	light_schema = _get_light_schema(extensions)
+	light_schema = _get_light_schema(extensions, tool_root=tool_root)
 	ext_names = [ext["name"] for ext in extensions]
 
 	system = (
@@ -386,7 +449,7 @@ def _build_domain_agent(ext_name: str) -> Any:
 	from langgraph.prebuilt import create_react_agent
 
 	# Reload extensions and find this one (cache key keeps cost small)
-	exts = _get_extensions()
+	exts = _get_extensions(PRELOADED_TOOL_ROOT)
 	target = next((e for e in exts if e.get("name") == ext_name), None)
 	if not target:
 		raise RuntimeError(f"Unknown extension: {ext_name}")
@@ -472,14 +535,21 @@ async def _respond_directly(user_prompt: str, chat_history: Optional[str], memor
 	return (resp.content or "").strip()
 
 
-async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory: Optional[str] = None) -> AgentResult:
+async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory: Optional[str] = None, tool_root: Optional[str] = None) -> AgentResult:
 	# Use preloaded extensions if available
-	exts = _get_extensions()
+	exts = _get_extensions(tool_root)
 	if not exts:
-		return AgentResult(final="No extensions discovered. Ensure files matching *_tool.py exist under extensions/.", results=[], timings=[])
+		return AgentResult(
+			final="No extensions discovered. Ensure files matching *_tool.py exist under extensions/.",
+			results=[],
+			timings=[],
+			content="No extensions discovered. Ensure files matching *_tool.py exist under extensions/.",
+			response_time_secs=0.0,
+			traces=[],
+		)
 
 	# Router: segment intents (measure only LLM call duration inside _route)
-	router_res, router_secs = await _route(user_prompt, chat_history, memory, exts)
+	router_res, router_secs = await _route(user_prompt, chat_history, memory, exts, tool_root=tool_root)
 	if not router_res.targets:
 		# No targets — respond directly using router-provided direct_text if available
 		if isinstance(router_res.direct_text, str) and router_res.direct_text.strip():
@@ -494,7 +564,16 @@ async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory
 		# Total time as sum of parts
 		total_secs = sum(tm.seconds for tm in timings)
 		timings.append(Timing(name="total", seconds=total_secs))
-		return AgentResult(final=final_direct, results=[], timings=timings)
+		# Minimal spec fields
+		traces_flat: List[ToolTrace] = []
+		return AgentResult(
+			final=final_direct,
+			results=[],
+			timings=timings,
+			content=final_direct,
+			response_time_secs=total_secs,
+			traces=traces_flat,
+		)
 
 	# Run domain agents in parallel
 	tasks = [
@@ -531,12 +610,28 @@ async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory
 	total_secs = sum(tm.seconds for tm in timings)
 	timings.append(Timing(name="total", seconds=total_secs))
 
-	return AgentResult(final=final, results=results, timings=timings)
+	# Minimal spec fields
+	traces_flat: List[ToolTrace] = []
+	for dr in results:
+		for t in (dr.traces or []):
+			try:
+				traces_flat.append(ToolTrace.model_validate(t) if not isinstance(t, ToolTrace) else t)
+			except Exception:
+				pass
+	return AgentResult(
+		final=final,
+		results=results,
+		timings=timings,
+		content=final,
+		response_time_secs=total_secs,
+		traces=traces_flat,
+	)
 
 
 def main(argv: List[str]) -> int:
 	parser = argparse.ArgumentParser(description="Parallel Agent (Router + Domain Agents + Synthesizer)")
 	parser.add_argument("-p", "--prompt", type=str, default="toggle the living room light.", help="Test prompt")
+	parser.add_argument("-r", "--tool-root", type=str, default=None, help="Optional root directory to discover tools under")
 	args = parser.parse_args(argv)
 
 	# Allow blocking run for Windows PowerShell simplicity
@@ -545,15 +640,15 @@ def main(argv: List[str]) -> int:
 	print("")
 	# Preload extensions/schema to reduce setup latency
 	try:
-		initialize_runtime()
+		initialize_runtime(tool_root=args.tool_root)
 	except Exception:
 		pass
 	try:
-		ret = asyncio.run(run_agent(args.prompt))
+		ret = asyncio.run(run_agent(args.prompt, tool_root=args.tool_root))
 	except RuntimeError:
 		# In case of existing running loop (e.g., notebooks)
 		loop = asyncio.get_event_loop()
-		ret = loop.run_until_complete(run_agent(args.prompt))
+		ret = loop.run_until_complete(run_agent(args.prompt, tool_root=args.tool_root))
 	# Print minimal debug: intent per domain and tool traces, then final output
 	if isinstance(ret, AgentResult):
 		results = ret.results or []

@@ -192,7 +192,9 @@ Use these tools to:
 
 def GENERAL_ACTION_send_phone_notification(message: str, title: str = "Notification", service: Optional[str] = None) -> OperationResult:
     """Send a phone notification via Home Assistant.
-    Notify me: "Garage door is open".
+    Example Prompt: Notify me: "Garage door is open".
+    Example Response: {"success": true, "message": "Notification sent"}
+    Example Args: {"message": "string[notification text]", "title": "string[optional title]", "service": "string[optional notify service]"}
     Uses the configured notify service (or provided service) to deliver a push notification.
     """
     if not HA_TOKEN:
@@ -203,8 +205,10 @@ def GENERAL_ACTION_send_phone_notification(message: str, title: str = "Notificat
 
 
 def GENERAL_GET_web_search(query: str, max_results: int = 5) -> WebSearchResponse | OperationResult:
-    """Search the web via Tavily and return top results (title, URL, snippet).
-    Example: "search for langchain tavily integration"
+    """Search the web and return top results (title, URL, snippet).
+    Example Prompt: "search for langchain tavily integration"
+    Example Response: {"query": "...", "answer": null, "results": [{"title": "...", "url": "...", "content": "..."}], "images": []}
+    Example Args: {"query": "string[search terms]", "max_results": int[number of results]}
     """
     if TavilySearch is None:
         return OperationResult(
@@ -270,9 +274,10 @@ def GENERAL_GET_web_search(query: str, max_results: int = 5) -> WebSearchRespons
 
 def GENERAL_GET_weather(location: Optional[str] = None) -> WeatherResponse | OperationResult:
     """Get current weather for a location.
-
+    Example Prompt: "weather in Paris" (or call without arguments for Charlotte)
+    Example Response: {"location_query": "Paris", "resolved_name": "Paris, Île-de-France, France", "current": {"temperature_c": 21.5, "weather_description": "Clear sky"}}
+    Example Args: {"location": "string[city, state/country]"}
     Defaults to Charlotte, NC if no location is provided.
-    Example: "weather in Paris" or just call without arguments for Charlotte.
     """
     place = (location or "").strip() or "Charlotte, NC"
     geo = _geocode_open_meteo(place)
