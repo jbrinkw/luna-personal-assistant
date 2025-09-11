@@ -15,3 +15,10 @@ nav:
           - Basic hierarchical: core/agents/basic-hierarchical.md
       - Agent helpers:
           - Light schema: core/agent-helpers/light-schema.md
+  - Extensions:
+      - CoachByte: extensions/coachbyte.md
+      - ChefByte: extensions/chefbyte.md
+      - GeneralByte: extensions/generalbyte.md
+      - Notes: extensions/notes.md
+      - Home Assistant: extensions/home-assistant.md
+      - Todo List: extensions/todo-list.md
