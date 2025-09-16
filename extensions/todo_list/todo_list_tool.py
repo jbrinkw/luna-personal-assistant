@@ -266,8 +266,8 @@ def TODOLIST_GET_list_sections(project_id: Optional[int] = None) -> ListSections
 def TODOLIST_GET_task_by_id(task_id: int) -> TaskEnvelope:
     """Get a single Todoist task by ID, enriched with project/section names.
     Example Prompt: Show task 123 details.
-    Example Response: {"success": true, "task": {"id": 123, "content": "..."}}
-    Example Args: {"task_id": 123}
+    Example Response: {"success": true, "task": {"id": 123, "content": "Buy groceries", "project": {"id": 1, "name": "Personal"}, "section": {"id": 2, "name": "Shopping"}}}
+    Example Args: {"task_id": int}
     """
     err = _require_token()
     if err:
