@@ -3,7 +3,7 @@ import sys
 import json
 import time
 import inspect
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, get_type_hints
 
 # Ensure project root on sys.path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
@@ -61,25 +61,37 @@ def _wrap_callable_as_tool(fn, ext_name: str):
     from langchain_core.tools import StructuredTool
     from pydantic import create_model
 
-    # Build description from docstring (first line summary + first non-empty example)
-    doc = inspect.getdoc(fn) or ""
-    lines = doc.splitlines()
-    summary = lines[0].strip() if lines else ""
-    example = ""
-    for idx in range(1, len(lines)):
-        ln = lines[idx].strip()
-        if ln:
-            example = ln
-            break
-    description = summary
-    if example:
-        description = f"{summary} Example: {example}"
+    # Prefer full docstring so the agent sees complete instructions
+    try:
+        full_doc = inspect.getdoc(fn) or ""
+    except Exception:
+        full_doc = ""
+    if full_doc.strip():
+        description = full_doc.strip()
+    else:
+        # Fallback to summary + first non-empty example line
+        doc = inspect.getdoc(fn) or ""
+        lines = doc.splitlines()
+        summary = lines[0].strip() if lines else ""
+        example = ""
+        for idx in range(1, len(lines)):
+            ln = lines[idx].strip()
+            if ln:
+                example = ln
+                break
+        description = summary
+        if example:
+            description = f"{summary} Example: {example}"
 
-    # Structured args schema
+    # Structured args schema (resolve forward refs like Optional[str])
     sig = inspect.signature(fn)
     fields: Dict[str, Tuple[Any, Any]] = {}
+    try:
+        hints = get_type_hints(fn, globalns=getattr(fn, "__globals__", {}))
+    except Exception:
+        hints = {}
     for name, param in sig.parameters.items():
-        ann = param.annotation if param.annotation is not inspect._empty else str
+        ann = hints.get(name, (param.annotation if param.annotation is not inspect._empty else str))
         default = param.default if param.default is not inspect._empty else ...
         fields[name] = (ann, default)
     ArgsSchema = create_model(f"{fn.__name__}Args", **fields)  # type: ignore[arg-type]
@@ -174,7 +186,7 @@ async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory
     # Build a simple ReAct agent with all tools
     try:
         from langgraph.prebuilt import create_react_agent
-        model = get_chat_model(role="domain", model=_get_env("REACT_MODEL", "gpt-4.1-mini"), callbacks=[LLMRunTracer("react")], temperature=0.0)
+        model = get_chat_model(role="domain", model=_get_env("REACT_MODEL", "gpt-4.1"), callbacks=[LLMRunTracer("react")], temperature=0.0)
         agent = create_react_agent(model, tools=tools)
     except Exception as e:
         msg = f"Error building ReAct agent: {str(e)}"
