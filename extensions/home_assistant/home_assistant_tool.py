@@ -47,10 +47,10 @@ make the correct change. prefer to use friendly names instead of id
 
 Use these functions when appropriate:
 - HA_GET_devices() to list devices
-- HA_GET_entity_status(entity_id_or_name) to get status
-- HA_ACTION_turn_entity_on(entity_id_or_name) to turn something on
-- HA_ACTION_turn_entity_off(entity_id_or_name) to turn something off
-- HA_ACTION_tv_remote(button_or_activity) to send remote intents or launch apps
+- HA_GET_entity_status(entity_id | friendly_name | entity_name) to get status
+- HA_ACTION_turn_entity_on(entity_id | friendly_name | entity_name) to turn something on
+- HA_ACTION_turn_entity_off(entity_id | friendly_name | entity_name) to turn something off
+- HA_ACTION_tv_remote(button) to send remote intents or launch apps
 """
 
 
@@ -396,21 +396,24 @@ def HA_GET_devices() -> DevicesResponse | OperationResult:
         return OperationResult(success=False, message=f"Error listing devices: {str(e)}")
 
 
-def HA_GET_entity_status(entity_id: str) -> EntityStatus | OperationResult:
+def HA_GET_entity_status(entity_id: Optional[str] = None, friendly_name: Optional[str] = None, entity_name: Optional[str] = None) -> EntityStatus | OperationResult:
     """Get status of a specific Home Assistant entity.
     Example Prompt: "what's the status of the living room light?"
     Example Response: {"entity_id": "light.kitchen", "state": "on", "attributes": {"brightness": 200}}
-    Example Args: {"entity_id": "string[entity id or friendly name]"}
-    Accepts either a full `entity_id` (e.g. 'switch.living_room_light') or a `friendly name`
-    (e.g. 'Living Room Light').
+    Example Args: {"entity_id": "string[entity id]"} or {"friendly_name": "string[name]"}
+    Accepts either a full `entity_id` (e.g. 'switch.living_room_light') or a `friendly_name`
+    (e.g. 'Living Room Light'). Also accepts `entity_name` as an alias for `friendly_name`.
     """
     err = _require_token()
     if err:
         return OperationResult(success=False, message=err)
-    resolved, rerr = _resolve_entity_id(entity_id)
+    identifier = entity_id or friendly_name or entity_name
+    if not isinstance(identifier, str) or not identifier.strip():
+        return OperationResult(success=False, message="Missing 'entity_id' or 'friendly_name'")
+    resolved, rerr = _resolve_entity_id(identifier)
     if rerr:
         return OperationResult(success=False, message=rerr)
-    entity_id = resolved or entity_id
+    entity_id = resolved or identifier
     try:
         url = f"{HA_URL}/api/states/{entity_id}"
         response = requests.get(url, headers=_headers(), timeout=10)
@@ -427,22 +430,25 @@ def HA_GET_entity_status(entity_id: str) -> EntityStatus | OperationResult:
         return OperationResult(success=False, message=f"Error getting entity status: {str(e)}")
 
 
-def HA_ACTION_turn_entity_on(entity_id: str) -> OperationResult:
+def HA_ACTION_turn_entity_on(entity_id: Optional[str] = None, friendly_name: Optional[str] = None, entity_name: Optional[str] = None) -> OperationResult:
     """Turn on a specific Home Assistant entity.
     Example Prompt: "turn on the kitchen light"
     Example Response: {"success": true, "message": "Successfully turned on 'light.kitchen'"}
-    Example Args: {"entity_id": "string[entity id or friendly name]"}
-    Accepts either a full `entity_id` (e.g. 'light.kitchen') or a `friendly name`
-    (e.g. 'Kitchen Light'). Returns a clear message if the entity does not exist
+    Example Args: {"entity_id": "string[entity id]"} or {"friendly_name": "string[name]"}
+    Accepts either a full `entity_id` (e.g. 'light.kitchen') or a `friendly_name`
+    (e.g. 'Kitchen Light'). Also accepts `entity_name` as an alias for `friendly_name`. Returns a clear message if the entity does not exist
     or if Home Assistant reports no changes.
     """
     err = _require_token()
     if err:
         return OperationResult(success=False, message=err)
-    resolved, rerr = _resolve_entity_id(entity_id)
+    identifier = entity_id or friendly_name or entity_name
+    if not isinstance(identifier, str) or not identifier.strip():
+        return OperationResult(success=False, message="Missing 'entity_id' or 'friendly_name'")
+    resolved, rerr = _resolve_entity_id(identifier)
     if rerr:
         return OperationResult(success=False, message=rerr)
-    entity_id = resolved or entity_id
+    entity_id = resolved or identifier
     try:
         domain = entity_id.split(".")[0]
         # Validate existence to avoid returning success on no-op
@@ -462,22 +468,25 @@ def HA_ACTION_turn_entity_on(entity_id: str) -> OperationResult:
         return OperationResult(success=False, message=f"Error turning on {entity_id}: {str(e)}")
 
 
-def HA_ACTION_turn_entity_off(entity_id: str) -> OperationResult:
+def HA_ACTION_turn_entity_off(entity_id: Optional[str] = None, friendly_name: Optional[str] = None, entity_name: Optional[str] = None) -> OperationResult:
     """Turn off a specific Home Assistant entity.
     Example Prompt: "turn off the kitchen light"
     Example Response: {"success": true, "message": "Successfully turned off 'light.kitchen'"}
-    Example Args: {"entity_id": "string[entity id or friendly name]"}
-    Accepts either a full `entity_id` (e.g. 'light.kitchen') or a `friendly name`
-    (e.g. 'Kitchen Light'). Returns a clear message if the entity does not exist
+    Example Args: {"entity_id": "string[entity id]"} or {"friendly_name": "string[name]"}
+    Accepts either a full `entity_id` (e.g. 'light.kitchen') or a `friendly_name`
+    (e.g. 'Kitchen Light'). Also accepts `entity_name` as an alias for `friendly_name`. Returns a clear message if the entity does not exist
     or if Home Assistant reports no changes.
     """
     err = _require_token()
     if err:
         return OperationResult(success=False, message=err)
-    resolved, rerr = _resolve_entity_id(entity_id)
+    identifier = entity_id or friendly_name or entity_name
+    if not isinstance(identifier, str) or not identifier.strip():
+        return OperationResult(success=False, message="Missing 'entity_id' or 'friendly_name'")
+    resolved, rerr = _resolve_entity_id(identifier)
     if rerr:
         return OperationResult(success=False, message=rerr)
-    entity_id = resolved or entity_id
+    entity_id = resolved or identifier
     try:
         domain = entity_id.split(".")[0]
         # Validate existence to avoid returning success on no-op
