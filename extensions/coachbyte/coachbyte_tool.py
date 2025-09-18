@@ -38,26 +38,59 @@ DAY_MAP = {
 }
 
 
-def _require_env(keys: List[str]) -> None:
-    missing = [k for k in keys if not os.getenv(k)]
-    if missing and not os.getenv("DATABASE_URL"):
-        raise RuntimeError(
-            "Database configuration missing. Set DATABASE_URL or PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD."
-        )
+def _require_env(required_any: List[List[str]]) -> None:
+    """Ensure at least one complete credential set is present.
+
+    required_any: list of alternative key sets; one full set must be satisfied.
+    Example: [["PGHOST","PGPORT","PGDATABASE","PGUSER","PGPASSWORD"], ["DB_HOST","DB_PORT","DB_NAME","DB_USER","DB_PASSWORD"]]
+    """
+    if os.getenv("DATABASE_URL"):
+        return
+    for keyset in required_any:
+        if all(os.getenv(k) for k in keyset):
+            return
+    raise RuntimeError(
+        "Database configuration missing. Set DATABASE_URL or PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD (or DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD)."
+    )
 
 
 def _get_connection():
     url = os.getenv("DATABASE_URL")
-    if url:
+    if isinstance(url, str) and url.strip():
         return psycopg2.connect(url)
-    _require_env(["PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD"])
-    return psycopg2.connect(
-        host=os.getenv("PGHOST"),
-        port=int(os.getenv("PGPORT")),
-        dbname=os.getenv("PGDATABASE"),
-        user=os.getenv("PGUSER"),
-        password=os.getenv("PGPASSWORD"),
+
+    # Support both PG_* and DB_* env schemas
+    _require_env([
+        ["PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD"],
+        ["DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"],
+    ])
+
+    host = os.getenv("PGHOST") or os.getenv("DB_HOST")
+    port_str = os.getenv("PGPORT") or os.getenv("DB_PORT")
+    dbname = os.getenv("PGDATABASE") or os.getenv("DB_NAME")
+    user = os.getenv("PGUSER") or os.getenv("DB_USER")
+    password = os.getenv("PGPASSWORD") or os.getenv("DB_PASSWORD")
+
+    conn = psycopg2.connect(
+        host=host,
+        port=int(port_str) if isinstance(port_str, str) and port_str.strip() else 5432,
+        dbname=dbname,
+        user=user,
+        password=password,
     )
+
+    # Optional: set search_path if DB_SCHEMA is provided
+    schema = os.getenv("DB_SCHEMA")
+    if isinstance(schema, str) and schema.strip():
+        try:
+            safe = schema.strip().replace(";", "")
+            cur = conn.cursor()
+            cur.execute(f"SET search_path TO {safe}")
+            cur.close()
+        except Exception:
+            # Non-fatal if schema cannot be set
+            pass
+    return conn
 
 
 def _get_exercise_id(conn, name: str) -> int:

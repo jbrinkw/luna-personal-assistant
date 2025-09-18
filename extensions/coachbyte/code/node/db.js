@@ -16,6 +16,7 @@ function getTodayInEst() {
 
 // Database configuration (supports DB_ENV=prod|test to mirror Python config)
 const DB_ENV = (process.env.DB_ENV || 'prod').toLowerCase();
+console.log('[CoachByte DB] Active DB_ENV:', DB_ENV);
 const envGet = (key, fallback) => (process.env[key] !== undefined ? process.env[key] : fallback);
 const pick = (...keys) => {
   for (const k of keys) {
