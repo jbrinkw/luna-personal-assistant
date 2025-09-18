@@ -4,15 +4,15 @@ import os
 import uuid
 from datetime import datetime, date, timedelta, timezone
 
-# Database configuration (unified at repo root)
+# Database configuration (use existing CoachByte helper at repo root)
 try:
-    from core.shared.db_config import get_connection
+    from extensions.coachbyte.coachbyte_tool import _get_connection as get_connection
 except ModuleNotFoundError:
     import sys as _sys
     import os as _os
-    # Ensure repository root is on sys.path so "core.shared.db_config" resolves
+    # Ensure repository root is on sys.path so the extensions package resolves
     _sys.path.insert(0, _os.path.abspath(_os.path.join(_os.path.dirname(__file__), '..', '..', '..', '..')))
-    from core.shared.db_config import get_connection
+    from extensions.coachbyte.coachbyte_tool import _get_connection as get_connection
 import psycopg2
 import psycopg2.extras
 

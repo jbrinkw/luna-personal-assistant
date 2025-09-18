@@ -116,8 +116,20 @@ def main() -> int:
     hub_port = "8032"
     openai_api_port = os.getenv("OPENAI_API_PORT", "8010")
 
-    # Expose links for hub
-    os.environ["AGENT_LINKS"] = f"ChefByte:http://localhost:{chef_port},CoachByte:http://localhost:{coach_ui_port}"
+    # Define app directories
+    chef_dir = root / "extensions" / "chefbyte" / "ui" / "chefbyte_webapp"
+    openai_dir = root / "core" / "agent"
+    coach_api_dir = root / "extensions" / "coachbyte" / "code" / "node"
+    coach_ui_dir = root / "extensions" / "coachbyte" / "ui"
+    hub_dir = root / "core" / "hub" / "ui_hub"
+
+    # Expose links for hub based on availability
+    agent_links = []
+    if chef_dir.exists():
+        agent_links.append(f"ChefByte:http://localhost:{chef_port}")
+    if coach_ui_dir.exists():
+        agent_links.append(f"CoachByte:http://localhost:{coach_ui_port}")
+    os.environ["AGENT_LINKS"] = ",".join(agent_links)
 
     procs: List[ManagedProc] = []
 
@@ -133,53 +145,79 @@ def main() -> int:
     atexit.register(shutdown_all)
 
     # ChefByte UI (FastAPI)
-    chef_dir = root / "extensions" / "chefbyte" / "ui" / "chefbyte_webapp"
     # Ensure repo root is importable by the app
     env_py = os.environ.copy()
     env_py["PYTHONPATH"] = f"{root}{os.pathsep}" + env_py.get("PYTHONPATH", "")
-    procs.append(spawn([sys.executable, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", chef_port], chef_dir, env=env_py, label="chefbyte_ui"))
+    if chef_dir.exists():
+        procs.append(spawn([sys.executable, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", chef_port], chef_dir, env=env_py, label="chefbyte_ui"))
+    else:
+        print(f"[skip] ChefByte UI directory not found: {chef_dir}")
 
     # OpenAI-compatible API server (FastAPI)
-    openai_dir = root / "core" / "agent"
-    procs.append(
-        spawn(
-            [
-                sys.executable,
-                "-m",
-                "uvicorn",
-                "openai_api_server:app",
-                "--host",
-                "0.0.0.0",
-                "--port",
-                str(openai_api_port),
-                "--log-level",
-                "warning",
-            ],
-            openai_dir,
-            env=env_py,
-            label="openai_api_server",
+    if openai_dir.exists():
+        procs.append(
+            spawn(
+                [
+                    sys.executable,
+                    "-m",
+                    "uvicorn",
+                    "HaVa_server:app",
+                    "--host",
+                    "0.0.0.0",
+                    "--port",
+                    str(openai_api_port),
+                    "--log-level",
+                    "warning",
+                ],
+                openai_dir,
+                env=env_py,
+                label="openai_api_server",
+            )
         )
-    )
+    else:
+        print(f"[skip] OpenAI API server directory not found: {openai_dir}")
 
     # CoachByte API (Node)
-    coach_api_dir = root / "extensions" / "coachbyte" / "code" / "node"
     env_api = os.environ.copy()
     env_api["PORT"] = str(coach_api_port)
-    procs.append(spawn(["node", "server.js"], coach_api_dir, env=env_api, label="coachbyte_api"))
+    if coach_api_dir.exists():
+        try:
+            nm = coach_api_dir / "node_modules"
+            if not nm.exists():
+                print(f"[deps] Installing Node deps for coachbyte_api in {coach_api_dir}...")
+                install_cmd = ["npm", "ci"] if (coach_api_dir / "package-lock.json").exists() else ["npm", "install"]
+                subprocess.run(install_cmd + ["--silent", "--no-audit", "--fund=false"], cwd=str(coach_api_dir), check=False)
+        except Exception as e:
+            print(f"[deps] Failed to ensure deps for coachbyte_api: {e}")
+        procs.append(spawn(["node", "server.js"], coach_api_dir, env=env_api, label="coachbyte_api"))
+    else:
+        print(f"[skip] CoachByte API directory not found: {coach_api_dir}")
 
     # CoachByte UI (Vite)
-    coach_ui_dir = root / "extensions" / "coachbyte" / "ui"
     env_ui = os.environ.copy()
     env_ui["COACH_API_PORT"] = str(coach_api_port)
-    vite_bin = coach_ui_dir / "node_modules" / "vite" / "bin" / "vite.js"
-    if vite_bin.exists():
-        procs.append(spawn(["node", str(vite_bin), "--host", "0.0.0.0", "--port", str(coach_ui_port)], coach_ui_dir, env=env_ui, label="coachbyte_ui"))
+    if coach_ui_dir.exists():
+        try:
+            nm = coach_ui_dir / "node_modules"
+            if not nm.exists():
+                print(f"[deps] Installing Node deps for coachbyte_ui in {coach_ui_dir}...")
+                install_cmd = ["npm", "ci"] if (coach_ui_dir / "package-lock.json").exists() else ["npm", "install"]
+                subprocess.run(install_cmd + ["--silent", "--no-audit", "--fund=false"], cwd=str(coach_ui_dir), check=False)
+        except Exception as e:
+            print(f"[deps] Failed to ensure deps for coachbyte_ui: {e}")
+        vite_bin = coach_ui_dir / "node_modules" / "vite" / "bin" / "vite.js"
+        if vite_bin.exists():
+            procs.append(spawn(["node", str(vite_bin), "--host", "0.0.0.0", "--port", str(coach_ui_port)], coach_ui_dir, env=env_ui, label="coachbyte_ui"))
+        else:
+            procs.append(spawn(["npx", "--yes", "vite", "--host", "0.0.0.0", "--port", str(coach_ui_port)], coach_ui_dir, env=env_ui, label="coachbyte_ui"))
     else:
-        procs.append(spawn(["npx", "--yes", "vite", "--host", "0.0.0.0", "--port", str(coach_ui_port)], coach_ui_dir, env=env_ui, label="coachbyte_ui"))
+        print(f"[skip] CoachByte UI directory not found: {coach_ui_dir}")
 
     # Hub (FastAPI)
-    hub_dir = root / "core" / "hub" / "ui_hub"
-    procs.append(spawn([sys.executable, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", hub_port], hub_dir, env=env_py, label="hub"))
+    if hub_dir.exists():
+        procs.append(spawn([sys.executable, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", hub_port], hub_dir, env=env_py, label="hub"))
+    else:
+        print(f"[skip] Hub directory not found: {hub_dir}")
 
     try:
         while any(mp.running() for mp in procs):
