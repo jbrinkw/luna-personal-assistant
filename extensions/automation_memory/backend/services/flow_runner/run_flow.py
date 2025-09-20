@@ -13,7 +13,7 @@ def main(argv):
     except Exception:
         print("invalid prompts json")
         return 1
-    active_agent = os.getenv('ACTIVE_AGENT_PATH', 'core/agent/parallel_agent.py')
+    active_agent = os.getenv('ACTIVE_AGENT_PATH', 'core/agent/hierarchical.py')
     repo_root = Path(__file__).resolve().parents[5]
     agent_path = (repo_root / active_agent).resolve()
     if not agent_path.exists():

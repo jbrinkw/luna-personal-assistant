@@ -375,13 +375,13 @@ async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory
 
         # Invoke planner
         t0_plan = time.perf_counter()
-        _dbg_print(f"[mono-pt] step {step}: planning...")
+        _dbg_print(f"[simple-pt] step {step}: planning...")
         plan_resp = await model.ainvoke(messages)
         plan_secs = time.perf_counter() - t0_plan
         timings.append(Timing(name=f"plan:{step}", seconds=float(plan_secs)))
         # Parse plan JSON
         raw_text = (plan_resp.content or "") if hasattr(plan_resp, "content") else str(plan_resp)
-        _dbg_print(f"[mono-pt] step {step}: planner raw -> {_truncate(raw_text, int(_get_env('MONO_PT_LOG_MAXLEN', '600') or '600'))}")
+        _dbg_print(f"[simple-pt] step {step}: planner raw -> {_truncate(raw_text, int(_get_env('MONO_PT_LOG_MAXLEN', '600') or '600'))}")
         parsed = _extract_json_object(raw_text)
         planner_step = PlannerStep()
         if isinstance(parsed, dict):
@@ -402,17 +402,17 @@ async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory
         if not planner_step.calls:
             if isinstance(planner_step.final_text, str) and planner_step.final_text.strip():
                 accumulated_segments.append(planner_step.final_text.strip())
-                _dbg_print(f"[mono-pt] step {step}: final_text provided; finishing.")
+                _dbg_print(f"[simple-pt] step {step}: final_text provided; finishing.")
             break
 
         # Execute calls concurrently
-        _dbg_print(f"[mono-pt] step {step}: executing {len(planner_step.calls)} call(s) concurrently...")
+        _dbg_print(f"[simple-pt] step {step}: executing {len(planner_step.calls)} call(s) concurrently...")
         for idx, pc in enumerate(planner_step.calls, start=1):
             try:
                 args_str = json.dumps(pc.args or {}, ensure_ascii=False)
             except Exception:
                 args_str = str(pc.args or {})
-            _dbg_print(f"[mono-pt] step {step} CALL {idx}/{len(planner_step.calls)}: tool={pc.tool} passthrough={(pc.options.passthrough if pc.options else True)} args={_truncate(args_str, int(_get_env('MONO_PT_LOG_MAXLEN', '600') or '600'))}")
+            _dbg_print(f"[simple-pt] step {step} CALL {idx}/{len(planner_step.calls)}: tool={pc.tool} passthrough={(pc.options.passthrough if pc.options else True)} args={_truncate(args_str, int(_get_env('MONO_PT_LOG_MAXLEN', '600') or '600'))}")
 
         t0_exec = time.perf_counter()
         _, paired = await _execute_planned_calls(planner_step.calls)
@@ -427,14 +427,14 @@ async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory
                 # Stream directly by appending to segments
                 if isinstance(res.public_text, str) and res.public_text.strip():
                     accumulated_segments.append(res.public_text.strip())
-                _dbg_print(f"[mono-pt] step {step} RESULT {idx}/{len(paired)}: tool={res.tool} success={res.success} passthrough={passthrough} ROUTE=STREAMED text={_truncate(res.public_text, int(_get_env('MONO_PT_LOG_MAXLEN', '600') or '600'))}")
+                _dbg_print(f"[simple-pt] step {step} RESULT {idx}/{len(paired)}: tool={res.tool} success={res.success} passthrough={passthrough} ROUTE=STREAMED text={_truncate(res.public_text, int(_get_env('MONO_PT_LOG_MAXLEN', '600') or '600'))}")
             else:
                 followup_items.append(res)
-                _dbg_print(f"[mono-pt] step {step} RESULT {idx}/{len(paired)}: tool={res.tool} success={res.success} passthrough={passthrough} ROUTE=REVIEW text={_truncate(res.public_text, int(_get_env('MONO_PT_LOG_MAXLEN', '600') or '600'))}")
+                _dbg_print(f"[simple-pt] step {step} RESULT {idx}/{len(paired)}: tool={res.tool} success={res.success} passthrough={passthrough} ROUTE=REVIEW text={_truncate(res.public_text, int(_get_env('MONO_PT_LOG_MAXLEN', '600') or '600'))}")
 
         # If nothing needs review, continue next plan step
         if not followup_items:
-            _dbg_print(f"[mono-pt] step {step}: no follow-up needed; finishing.")
+            _dbg_print(f"[simple-pt] step {step}: no follow-up needed; finishing.")
             break
 
         # Otherwise, perform a follow-up planning turn over just the items needing review
@@ -444,7 +444,7 @@ async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory
     timings.append(Timing(name="total", seconds=float(total_secs)))
 
     final_text = "\n\n".join([seg for seg in accumulated_segments if isinstance(seg, str) and seg])
-    _dbg_print(f"[mono-pt] done. steps={step} segments={len(accumulated_segments)} total={total_secs:.2f}s")
+    _dbg_print(f"[simple-pt] done. steps={step} segments={len(accumulated_segments)} total={total_secs:.2f}s")
     return AgentResult(
         final=final_text,
         results=[],
@@ -457,7 +457,7 @@ async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory
 
 def main(argv: Optional[List[str]] = None) -> int:
     import argparse
-    parser = argparse.ArgumentParser(description="Mono passthrough agent over all tools")
+    parser = argparse.ArgumentParser(description="Simple passthough agent over all tools")
     parser.add_argument("-p", "--prompt", type=str, default="what can you do?", help="Test prompt")
     parser.add_argument("-r", "--tool-root", type=str, default=None, help="Optional root directory to discover tools under")
     args = parser.parse_args(argv)
@@ -476,5 +476,6 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
+
 
 

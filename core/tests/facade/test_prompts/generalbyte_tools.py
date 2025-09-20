@@ -8,7 +8,7 @@ if PROJECT_ROOT not in sys.path:
 TESTS = [{'prompt': 'search for langchain tavily integration".', 'expected_tool': 'GENERAL_ACTION_send_phone_notification'}, {'prompt': 'Example: "search for langchain tavily integration"', 'expected_tool': 'GENERAL_GET_web_search'}, {'prompt': 'Example: "weather in Paris" or just call without arguments for Charlotte.', 'expected_tool': 'GENERAL_GET_weather'}]
 TOOL_NAME = "GeneralByte"
 DEFAULT_TOOL_ROOT = os.getenv("TESTS_TOOL_ROOT", "core/tests/fakes")
-DEFAULT_AGENT_PATH = os.getenv("TESTS_AGENT_PATH", "core/agent/parallel_agent.py")
+DEFAULT_AGENT_PATH = os.getenv("TESTS_AGENT_PATH", "core/agent/hierarchical.py")
 
 if __name__ == "__main__":
 	from core.tests.runner import run_tests

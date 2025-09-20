@@ -1,6 +1,11 @@
 ---
 note_project_id: Luna
 ---
+9/20/25
+
+## Summary
+
+The Luna project is progressing towards its first release. Work has begun on the Grocy import wizard, including the implementation of AI-powered field generation to streamline the import process. The project summary and action items have been established, providing a clear roadmap for development. The primary focus for the upcoming milestone is the creation of a comprehensive user guide, which will be essential for onboarding and supporting users in the initial release.
 9/10/25
 ok it is crunch time i gotta lock in. i need to finish the docs, get basic gorcy import done, and hopefully get a local voice agent done or at least set up calling bc that would be a great demo then also the dynamic memory feature. 
 

@@ -168,10 +168,10 @@ def _vault_base_dir() -> Path:
 
 
 def PROJECT_NOTES_GET_load(project_id: str, include_children: bool = False) -> str:
-    """Load the note file for a project into working memory.
-    Example Prompt: Load the notes for project Luna.
+    """Load the root project page and the project notes page into working memory.
+    Example Prompt: Load the root page and notes for project Luna.
     Example Args: {"project_id": "Luna", "include_children": false}
-    Returns the note text for the project. Only includes child projects when include_children=true.
+    Returns both the root page text and the notes page text. Only includes child projects when include_children=true.
     """
     try:
         base_dir = _vault_base_dir()
@@ -198,21 +198,32 @@ def PROJECT_NOTES_GET_load(project_id: str, include_children: bool = False) -> s
         if target is None:
             return f"Error: project not found: {pid}"
 
-        def _read_note_for(proj) -> Optional[str]:
+        def _read_root_and_notes_for(proj) -> Tuple[Optional[str], Optional[str], str, Optional[str]]:
+            root_path = str(getattr(proj, "file_path", ""))
             try:
-                note_path: Optional[Path] = proj.note_file if getattr(proj, "note_file", None) else proj.file_path
-                if note_path and Path(note_path).exists():
-                    return Path(note_path).read_text(encoding="utf-8")
+                root_text = Path(root_path).read_text(encoding="utf-8") if root_path and Path(root_path).exists() else None
             except Exception:
-                return None
-            return None
+                root_text = None
+            # Prefer explicit linked note_file; else prefer sibling Notes.md if it exists
+            note_path_obj: Optional[Path] = None
+            nfile = getattr(proj, "note_file", None)
+            if nfile and Path(nfile).exists():
+                note_path_obj = Path(nfile)
+            else:
+                candidate = Path(root_path).parent / "Notes.md" if root_path else None
+                if candidate and candidate.exists():
+                    note_path_obj = candidate
+            note_path = str(note_path_obj) if isinstance(note_path_obj, Path) else None
+            try:
+                note_text = note_path_obj.read_text(encoding="utf-8") if note_path_obj else None
+            except Exception:
+                note_text = None
+            return root_text, note_text, root_path, note_path
 
         parts: List[str] = []
-        main_text = _read_note_for(target)
-        if isinstance(main_text, str) and main_text.strip():
-            parts.append(main_text)
-        else:
-            parts.append(f"<no note content available for project {pid}>")
+        root_text, note_text, root_path, note_path = _read_root_and_notes_for(target)
+        parts.append(f"[Root Project Page] ({root_path})\n" + (root_text if isinstance(root_text, str) and root_text.strip() else "<no root page content>"))
+        parts.append(f"\n[Project Notes Page] ({note_path or '<none>'})\n" + (note_text if isinstance(note_text, str) and note_text.strip() else "<no notes page content>"))
 
         if include_children:
             # Breadth-first traversal of children
@@ -226,9 +237,10 @@ def PROJECT_NOTES_GET_load(project_id: str, include_children: bool = False) -> s
                 child = projects.get(cid)
                 if not child:
                     continue
-                ctext = _read_note_for(child)
-                header = f"\n\n---\n[Child Project: {getattr(child, 'project_id', cid)}]\n"
-                parts.append(header + (ctext if isinstance(ctext, str) and ctext.strip() else "<no note content>"))
+                c_root, c_note, c_root_path, c_note_path = _read_root_and_notes_for(child)
+                parts.append("\n\n---\n" + f"[Child Project: {getattr(child, 'project_id', cid)}]\n")
+                parts.append(f"[Root Page] ({c_root_path})\n" + (c_root if isinstance(c_root, str) and c_root.strip() else "<no root page content>"))
+                parts.append(f"\n[Notes Page] ({c_note_path or '<none>'})\n" + (c_note if isinstance(c_note, str) and c_note.strip() else "<no notes page content>"))
                 # enqueue grandchildren
                 queue.extend(list(getattr(child, "children", []) or []))
 
@@ -285,6 +297,153 @@ def _build_tools() -> List[Any]:
     except Exception:
         pass
 
+    # Helper to build dynamic Todoist structure for docstrings
+    def _build_todoist_structure_bulleted_list() -> str:
+        try:
+            from extensions.todo_list import todo_list_tool as tlt  # type: ignore
+            proj_resp = tlt.TODOLIST_GET_list_projects()
+            # proj_resp may be a Pydantic model or error wrapper
+            projects = []
+            try:
+                data = proj_resp.model_dump() if hasattr(proj_resp, "model_dump") else json.loads(str(proj_resp))
+            except Exception:
+                data = None
+            if isinstance(data, dict) and data.get("success") and isinstance(data.get("projects"), list):
+                projects = data.get("projects")
+            lines: List[str] = []
+            for p in projects:
+                pid = p.get("id")
+                pname = p.get("name")
+                lines.append(f"- {pname} (id: {pid})")
+                try:
+                    secs_resp = tlt.TODOLIST_GET_list_sections(project_id=int(pid))
+                    sdata = secs_resp.model_dump() if hasattr(secs_resp, "model_dump") else json.loads(str(secs_resp))
+                except Exception:
+                    sdata = None
+                if isinstance(sdata, dict) and sdata.get("success") and isinstance(sdata.get("sections"), list):
+                    for s in sdata.get("sections"):
+                        sname = s.get("name")
+                        sid = s.get("id")
+                        lines.append(f"  - [section] {sname} (id: {sid})")
+            return "\n".join(lines) if lines else "<no Todoist projects found or token missing>"
+        except Exception:
+            return "<todo list structure unavailable>"
+
+    # Embedded push tool: commit approved summaries and action items
+    def PROJECT_SYNC_push_updates(updates_json: str, notes_section: Optional[str] = "Summary", default_due_string: Optional[str] = None) -> str:
+        """Push approved summaries and action items to Notes and Todoist.
+        Example Prompt: Push the approved summary and tasks now.
+        Example Args: {"updates_json": "{\"projects\":[{\"project_id\":\"Luna\",\"summary\":\"...\",\"action_items\":[\"...\"]}]}"}
+        Behavior:
+        - Appends the "summary" verbatim to today's Notes.md for each project under the specified notes_section (default: "Summary").
+        - Creates each "action_items" entry verbatim as a Todoist task under a project matched by name (case-insensitive). If no match, falls back to Inbox.
+        """
+        results: List[Dict[str, Any]] = []
+        errors: List[str] = []
+        # Parse payload
+        try:
+            payload = json.loads(updates_json)
+        except Exception as e:
+            return json.dumps({"success": False, "message": f"invalid updates_json: {e}"})
+        items = payload.get("projects") if isinstance(payload, dict) else None
+        if not isinstance(items, list) or not items:
+            return json.dumps({"success": False, "message": "no projects provided"})
+
+        # Build Todoist project name -> id map once
+        todo_name_to_id: Dict[str, int] = {}
+        try:
+            from extensions.todo_list import todo_list_tool as tlt  # type: ignore
+            proj_resp = tlt.TODOLIST_GET_list_projects()
+            pdata = proj_resp.model_dump() if hasattr(proj_resp, "model_dump") else json.loads(str(proj_resp))
+            if isinstance(pdata, dict) and pdata.get("success"):
+                for p in pdata.get("projects") or []:
+                    try:
+                        nm = str(p.get("name") or "").strip()
+                        pid = int(p.get("id")) if p.get("id") is not None else None
+                        if nm and isinstance(pid, int):
+                            todo_name_to_id[nm.lower()] = pid
+                    except Exception:
+                        continue
+        except Exception as e:
+            errors.append(f"todoist project list error: {e}")
+
+        # Process per project
+        from extensions.notes import notes_tool as nt  # type: ignore
+        try:
+            from extensions.todo_list import todo_list_tool as tlt  # type: ignore
+        except Exception as e:
+            return json.dumps({"success": False, "message": f"todo list module import error: {e}"})
+
+        created_total = 0
+        for entry in items:
+            proj_id = str(entry.get("project_id") or "").strip() if isinstance(entry, dict) else ""
+            summary = str(entry.get("summary") or "").strip() if isinstance(entry, dict) else ""
+            actions = entry.get("action_items") if isinstance(entry, dict) else None
+            if not proj_id:
+                results.append({"project_id": proj_id, "notes_updated": False, "todos_created": 0, "errors": ["missing project_id"]})
+                continue
+            errs: List[str] = []
+            notes_ok = False
+            todos_created = 0
+
+            # Update notes
+            if summary:
+                try:
+                    resp = nt.NOTES_UPDATE_project_note(project_id=proj_id, content=summary, section_id=(notes_section or "Summary"))
+                    # no need to inspect response deeply for now
+                    notes_ok = True
+                except Exception as e:
+                    errs.append(f"notes error: {e}")
+            else:
+                # still succeed if only todos
+                notes_ok = True
+
+            # Create todos
+            if isinstance(actions, list):
+                # Resolve target Todoist project by name
+                target_pid: Optional[int] = None
+                if todo_name_to_id:
+                    target_pid = todo_name_to_id.get(proj_id.lower())
+                for task_text in actions:
+                    try:
+                        content = str(task_text)
+                        if not content.strip():
+                            continue
+                        payload: Dict[str, Any] = {"content": content, "project_id": int(target_pid) if isinstance(target_pid, int) else int(todo_name_to_id.get("inbox", 0) or 0)}
+                        if default_due_string and default_due_string.strip():
+                            payload["due_string"] = default_due_string.strip()
+                        tlt.TODOLIST_ACTION_create_task(**payload)
+                        todos_created += 1
+                    except Exception as e:
+                        errs.append(f"todo error: {e}")
+
+            created_total += todos_created
+            results.append({"project_id": proj_id, "notes_updated": notes_ok, "todos_created": todos_created, "errors": errs})
+
+        return json.dumps({"success": True, "projects": results, "total_todos_created": created_total, "errors": errors})
+
+    # Attach dynamic docstring to push tool including current Todoist structure
+    try:
+        todo_structure = _build_todoist_structure_bulleted_list()
+        PROJECT_SYNC_push_updates.__doc__ = (
+            "Push approved summaries and action items to Notes and Todoist.\n\n"
+            "Input JSON shape (pass as updates_json):\n"
+            "{\n  \"projects\": [\n    {\n      \"project_id\": \"string\",\n      \"summary\": \"string\",\n      \"action_items\": [\"string\", \"string\"]\n    }\n  ]\n}\n\n"
+            "Behavior:\n"
+            "- Appends \"summary\" verbatim to today's Notes.md under section \"Summary\".\n"
+            "- Creates each action item verbatim as a Todoist task in a project matched by name (case-insensitive).\n"
+            "- If no match, tasks go to Inbox.\n\n"
+            "Current Todoist projects and sections:\n" + (todo_structure or "<unavailable>")
+        )
+    except Exception:
+        pass
+
+    # Register push tool
+    try:
+        tools.append(_wrap_callable_as_tool(PROJECT_SYNC_push_updates, "Project Sync"))
+    except Exception:
+        pass
+
     # Todo List: include all exposed tools from the extension module
     try:
         from extensions.todo_list import todo_list_tool as tlt  # type: ignore
@@ -333,16 +492,31 @@ async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory
         # Clear traces for this run
         del RUN_TRACES[:]
         hierarchy = _build_project_hierarchy_bulleted_list()
-        agent_instructions = (
+        core_instructions = (
             "You are a focused project assistant.\n"
-            "- When the user references a project, call PROJECT_NOTES_GET_load first to load context.\n"
+            "- When the user references a project, call PROJECT_NOTES_GET_load first to load the root page and the notes page.\n"
             "- Only pass include_children=true if the user explicitly requests child projects.\n"
             "- Use Todo List tools for task operations.\n"
             "- Use web search only when external info is needed.\n"
+            "\n"
+            "Summarization workflow (no tools until push):\n"
+            "- Do NOT produce any draft summary unless the user explicitly asks (e.g., \"summarize\").\n"
+            "- When asked to summarize, respond in natural language: for each project, provide a concise multi-paragraph summary and a bulleted list of action items. Do NOT include JSON or code fences. End by asking for approval or edits.\n"
+            "- Only when the user asks to \"format for upload\", \"show upload JSON\", or \"prepare to push\", convert the approved draft into JSON EXACTLY in this shape (no prose, no code fences, no extra keys):\n"
+            "{\n  \"projects\": [\n    {\n      \"project_id\": \"string\",\n      \"summary\": \"concise multi-paragraph summary\",\n      \"action_items\": [\"action 1\", \"action 2\"]\n    }\n  ]\n}\n"
+            "- Do not call any tools during drafting.\n"
+            "\n"
+            "Push workflow:\n"
+            "- Only after the user asks to push/upload/apply, call PROJECT_SYNC_push_updates with the approved JSON verbatim.\n"
+            "- The tool will append summaries to Notes and create Todoist tasks.\n"
         )
         if hierarchy and hierarchy.strip():
-            agent_instructions += ("\n\nProject hierarchy (use project_id in parentheses when calling tools):\n" + hierarchy)
-        agent = create_react_agent(model, tools=tools, prompt=agent_instructions)
+            final_prompt = (
+                "Project hierarchy (use project_id in parentheses when calling tools):\n" + hierarchy + "\n\n" + core_instructions
+            )
+        else:
+            final_prompt = core_instructions
+        agent = create_react_agent(model, tools=tools, prompt=final_prompt)
     except Exception as e:
         msg = f"Error building ReAct agent: {str(e)}"
         return AgentResult(final=msg, results=[], timings=[], content=msg, response_time_secs=0.0, traces=[])
@@ -412,14 +586,33 @@ async def run_agent_stream(user_prompt: str, chat_history: Optional[str] = None,
     try:
         from langgraph.prebuilt import create_react_agent
         model = get_chat_model(role="domain", model=_get_env("REACT_MODEL", "gpt-4.1"), callbacks=[LLMRunTracer("react")], temperature=0.0)
-        agent_instructions = (
+        # Keep streaming prompt consistent and with hierarchy first
+        hierarchy = _build_project_hierarchy_bulleted_list()
+        core_instructions = (
             "You are a focused project assistant.\n"
-            "- When the user references a project, call PROJECT_NOTES_GET_load first to load context.\n"
+            "- When the user references a project, call PROJECT_NOTES_GET_load first to load the root page and the notes page.\n"
             "- Only pass include_children=true if the user explicitly requests child projects.\n"
             "- Use Todo List tools for task operations.\n"
             "- Use web search only when external info is needed.\n"
+            "\n"
+            "Summarization workflow (no tools until push):\n"
+            "- Do NOT produce any draft summary unless the user explicitly asks to \"summarize\".\n"
+            "- When asked to summarize, respond with JSON ONLY in exactly this shape (no prose, no code fences, no extra keys):\n"
+            "{\n  \"projects\": [\n    {\n      \"project_id\": \"string\",\n      \"summary\": \"concise multi-paragraph summary\",\n      \"action_items\": [\"action 1\", \"action 2\"]\n    }\n  ]\n}\n"
+            "- Do not call any tools during drafting.\n"
+            "- Iterate with the user using JSON-only responses until they confirm the draft is approved.\n"
+            "\n"
+            "Push workflow:\n"
+            "- When the user asks to push/upload/apply, call PROJECT_SYNC_push_updates with the approved JSON verbatim.\n"
+            "- The tool will append summaries to Notes and create Todoist tasks.\n"
         )
-        agent = create_react_agent(model, tools=tools, prompt=agent_instructions)
+        if hierarchy and hierarchy.strip():
+            final_prompt = (
+                "Project hierarchy (use project_id in parentheses when calling tools):\n" + hierarchy + "\n\n" + core_instructions
+            )
+        else:
+            final_prompt = core_instructions
+        agent = create_react_agent(model, tools=tools, prompt=final_prompt)
     except Exception:
         # If building agent fails, just yield non-streaming result from run_agent
         res = await run_agent(user_prompt, chat_history=chat_history, memory=memory, tool_root=tool_root)
@@ -496,5 +689,6 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
+
 
 

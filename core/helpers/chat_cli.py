@@ -19,8 +19,8 @@ try:
 except Exception:
     pass
 
-# Resolve active agent module from env path (defaults to parallel_agent)
-ACTIVE_AGENT_PATH = os.getenv("ACTIVE_AGENT_PATH", "core/agent/parallel_agent.py")
+# Resolve active agent module from env path (defaults to hierarchical)
+ACTIVE_AGENT_PATH = os.getenv("ACTIVE_AGENT_PATH", "core/agent/hierarchical.py")
 
 def _import_agent_from_path(path: str):
     name = os.path.splitext(os.path.basename(path))[0]
@@ -34,8 +34,8 @@ def _import_agent_from_path(path: str):
         spec.loader.exec_module(mod)  # type: ignore[attr-defined]
         return mod
     except Exception:
-        # Fallback to built-in parallel agent
-        from core.agent import parallel_agent as fallback
+        # Fallback to built-in hierarchical agent
+        from core.agent import hierarchical as fallback
 
         return fallback
 
@@ -79,7 +79,7 @@ def _print_help() -> None:
 
 
 def _print_agent_result(ret: pa.AgentResult) -> None:
-    # Mirror parallel_agent.main output formatting
+    # Mirror hierarchical.main output formatting
     results = ret.results or []
     report_lines: List[str] = []
     for dr in results:
@@ -195,7 +195,7 @@ def chat_loop(initial_memory: Optional[str] = None) -> None:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="Interactive CLI chat for the Parallel Agent")
+    parser = argparse.ArgumentParser(description="Interactive CLI chat for the Hierarchical Agent")
     parser.add_argument("--memory", type=str, default=None, help="Initial memory text to provide to the agent each turn")
     args = parser.parse_args(argv)
     # Preload extensions and schema to reduce per-turn latency

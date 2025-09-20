@@ -27,7 +27,7 @@ TESTS = [
 TOOL_NAME = "GeneralByte"
 # Use real extensions by default
 _default_tool_root = os.getenv("TESTS_TOOL_ROOT") or os.path.join(REPO_ROOT, "extensions")
-_default_agent_path = os.getenv("TESTS_AGENT_PATH") or os.path.join(REPO_ROOT, "core", "agent", "parallel_agent.py")
+_default_agent_path = os.getenv("TESTS_AGENT_PATH") or os.path.join(REPO_ROOT, "core", "agent", "hierarchical.py")
 DEFAULT_TOOL_ROOT = _default_tool_root
 DEFAULT_AGENT_PATH = _default_agent_path
 

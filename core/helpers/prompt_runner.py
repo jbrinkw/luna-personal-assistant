@@ -20,7 +20,7 @@ def run_prompts(prompts: List[str], tool_root: Optional[str] = None) -> int:
     if not isinstance(prompts, list) or not all(isinstance(p, str) for p in prompts):
         raise ValueError("prompts must be a list of strings")
 
-    active_agent_rel = os.getenv("ACTIVE_AGENT_PATH", "core/agent/parallel_agent.py")
+    active_agent_rel = os.getenv("ACTIVE_AGENT_PATH", "core/agent/hierarchical.py")
     repo = _repo_root()
     agent_path = (repo / active_agent_rel).resolve()
     if not agent_path.exists():
