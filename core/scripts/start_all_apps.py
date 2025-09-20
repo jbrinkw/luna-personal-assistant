@@ -114,6 +114,8 @@ def main() -> int:
     coach_api_port = os.getenv("COACH_API_PORT", "3001")  # API is not a UI; keep existing port
     coach_ui_port = "8031"
     hub_port = "8032"
+    am_ui_port = "8033"
+    am_api_port = os.getenv("AM_API_PORT", "3051")
     openai_api_port = os.getenv("OPENAI_API_PORT", "8010")
 
     # Define app directories
@@ -121,6 +123,8 @@ def main() -> int:
     openai_dir = root / "core" / "agent"
     coach_api_dir = root / "extensions" / "coachbyte" / "code" / "node"
     coach_ui_dir = root / "extensions" / "coachbyte" / "ui"
+    am_ui_dir = root / "extensions" / "automation_memory" / "ui"
+    am_api_dir = root / "extensions" / "automation_memory" / "backend"
     hub_dir = root / "core" / "hub" / "ui_hub"
 
     # Expose links for hub based on availability
@@ -129,6 +133,8 @@ def main() -> int:
         agent_links.append(f"ChefByte:http://localhost:{chef_port}")
     if coach_ui_dir.exists():
         agent_links.append(f"CoachByte:http://localhost:{coach_ui_port}")
+    if am_ui_dir.exists():
+        agent_links.append(f"AutomationMemory:http://localhost:{am_ui_port}")
     os.environ["AGENT_LINKS"] = ",".join(agent_links)
 
     procs: List[ManagedProc] = []
@@ -161,7 +167,7 @@ def main() -> int:
                     sys.executable,
                     "-m",
                     "uvicorn",
-                    "HaVa_server:app",
+                    "core.helpers.auto_open_ai_api:app",
                     "--host",
                     "0.0.0.0",
                     "--port",
@@ -212,6 +218,42 @@ def main() -> int:
             procs.append(spawn(["npx", "--yes", "vite", "--host", "0.0.0.0", "--port", str(coach_ui_port)], coach_ui_dir, env=env_ui, label="coachbyte_ui"))
     else:
         print(f"[skip] CoachByte UI directory not found: {coach_ui_dir}")
+
+    # Automation & Memory API (Node + SQLite)
+    if am_api_dir.exists():
+        try:
+            nm = am_api_dir / "node_modules"
+            if not nm.exists():
+                print(f"[deps] Installing Node deps for automation_memory_api in {am_api_dir}...")
+                install_cmd = ["npm", "ci"] if (am_api_dir / "package-lock.json").exists() else ["npm", "install"]
+                subprocess.run(install_cmd + ["--silent", "--no-audit", "--fund=false"], cwd=str(am_api_dir), check=False)
+        except Exception as e:
+            print(f"[deps] Failed to ensure deps for automation_memory_api: {e}")
+        env_am_api = os.environ.copy()
+        env_am_api["AM_API_PORT"] = str(am_api_port)
+        procs.append(spawn(["node", "server.js"], am_api_dir, env=env_am_api, label="automation_memory_api"))
+    else:
+        print(f"[skip] AutomationMemory API directory not found: {am_api_dir}")
+
+    # Automation & Memory UI (Vite)
+    if am_ui_dir.exists():
+        try:
+            nm = am_ui_dir / "node_modules"
+            if not nm.exists():
+                print(f"[deps] Installing Node deps for automation_memory_ui in {am_ui_dir}...")
+                install_cmd = ["npm", "ci"] if (am_ui_dir / "package-lock.json").exists() else ["npm", "install"]
+                subprocess.run(install_cmd + ["--silent", "--no-audit", "--fund=false"], cwd=str(am_ui_dir), check=False)
+        except Exception as e:
+            print(f"[deps] Failed to ensure deps for automation_memory_ui: {e}")
+        env_am_ui = os.environ.copy()
+        env_am_ui["VITE_AM_API_PORT"] = str(am_api_port)
+        vite_bin2 = am_ui_dir / "node_modules" / "vite" / "bin" / "vite.js"
+        if vite_bin2.exists():
+            procs.append(spawn(["node", str(vite_bin2), "--host", "0.0.0.0", "--port", str(am_ui_port)], am_ui_dir, env=env_am_ui, label="automation_memory_ui"))
+        else:
+            procs.append(spawn(["npx", "--yes", "vite", "--host", "0.0.0.0", "--port", str(am_ui_port)], am_ui_dir, env=env_am_ui, label="automation_memory_ui"))
+    else:
+        print(f"[skip] AutomationMemory UI directory not found: {am_ui_dir}")
 
     # Hub (FastAPI)
     if hub_dir.exists():

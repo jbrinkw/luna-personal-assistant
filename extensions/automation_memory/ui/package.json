@@ -1,0 +1,32 @@
+{
+  "name": "automation-memory-ui",
+  "version": "1.0.0",
+  "description": "Automation & Memory MVP UI",
+  "main": "server.js",
+  "scripts": {
+    "dev": "vite",
+    "start": "node server.js",
+    "start-backend": "node server.js",
+    "load-sample": "python load_sample_data.py",
+    "dev-all": "concurrently \"npm run start-backend\" \"npm run dev\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "date-fns": "^4.1.0",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
+    "pg": "^8.16.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-table": "^7.8.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.6.0",
+    "concurrently": "^9.2.0",
+    "vite": "^7.0.4"
+  }
+}

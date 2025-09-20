@@ -167,7 +167,9 @@ def main() -> None:
     if len(sys.argv) > 1:
         base_dir = Path(sys.argv[1])
     else:
-        base_dir = Path("Obsidian Vault")
+        # Use absolute path relative to this script's location
+        script_dir = Path(__file__).parent
+        base_dir = script_dir / "Obsidian Vault"
     if not base_dir.exists():
         print(f"Base directory not found: {base_dir}", file=sys.stderr)
         sys.exit(1)

@@ -25,6 +25,7 @@ from core.helpers.light_schema_gen import discover_extensions, build_light_schem
 from core.helpers.llm_selector import get_chat_model  # noqa: E402
 from langchain_core.callbacks.base import BaseCallbackHandler  # noqa: E402
 from pydantic import BaseModel, Field, ValidationError, create_model  # noqa: E402
+from core.helpers.automation_memory import fetch_automation_memories_text  # noqa: E402
 
 # Declared model names (supported/used by the agent)
 MODEL_GPT_41_MINI = "gpt-4.1-mini"
@@ -537,6 +538,18 @@ async def _respond_directly(user_prompt: str, chat_history: Optional[str], memor
 
 async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory: Optional[str] = None, tool_root: Optional[str] = None) -> AgentResult:
 	# Use preloaded extensions if available
+	# Pull Automation Memory and combine with provided memory for all LLM calls
+	try:
+		auto_mem = fetch_automation_memories_text()
+	except Exception:
+		auto_mem = ""
+	if isinstance(memory, str) and memory.strip():
+		if isinstance(auto_mem, str) and auto_mem.strip():
+			combined_memory = f"{memory.strip()}\n\n{auto_mem.strip()}"
+		else:
+			combined_memory = memory.strip()
+	else:
+		combined_memory = auto_mem.strip() if isinstance(auto_mem, str) else ""
 	exts = _get_extensions(tool_root)
 	if not exts:
 		return AgentResult(
@@ -549,7 +562,7 @@ async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory
 		)
 
 	# Router: segment intents (measure only LLM call duration inside _route)
-	router_res, router_secs = await _route(user_prompt, chat_history, memory, exts, tool_root=tool_root)
+	router_res, router_secs = await _route(user_prompt, chat_history, combined_memory, exts, tool_root=tool_root)
 	if not router_res.targets:
 		# No targets — respond directly using router-provided direct_text if available
 		if isinstance(router_res.direct_text, str) and router_res.direct_text.strip():
@@ -558,7 +571,7 @@ async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory
 		else:
 			# Fallback to an LLM direct response if no text was extractable
 			t_direct0 = time.perf_counter()
-			final_direct = await _respond_directly(user_prompt, chat_history, memory)
+			final_direct = await _respond_directly(user_prompt, chat_history, combined_memory)
 			direct_secs = time.perf_counter() - t_direct0
 		timings: List[Timing] = [Timing(name="router", seconds=router_secs), Timing(name="direct", seconds=direct_secs)]
 		# Total time as sum of parts
@@ -577,7 +590,7 @@ async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory
 
 	# Run domain agents in parallel
 	tasks = [
-		asyncio.create_task(_run_domain(t.extension, t.intent, user_prompt, chat_history, memory)) for t in router_res.targets
+		asyncio.create_task(_run_domain(t.extension, t.intent, user_prompt, chat_history, combined_memory)) for t in router_res.targets
 	]
 	results: List[DomainResult] = []
 	try:
@@ -598,7 +611,7 @@ async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory
 
 	# Synthesizer: one-shot
 	t_synth0 = time.perf_counter()
-	final = await _synthesize(user_prompt, chat_history, memory, results)
+	final = await _synthesize(user_prompt, chat_history, combined_memory, results)
 	synth_secs = time.perf_counter() - t_synth0
 
 	# Assemble timings
