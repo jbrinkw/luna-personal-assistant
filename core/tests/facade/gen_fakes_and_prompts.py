@@ -88,7 +88,7 @@ def _generate_prompts_module(ext_name: str, real_mod, out_path: str):
 	content = (
 		"import sys\nimport os\n\nPROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir))\nif PROJECT_ROOT not in sys.path:\n\tsys.path.insert(0, PROJECT_ROOT)\n\nTESTS = "
 		+ repr(tests)
-		+ f"\nTOOL_NAME = \"{ext_name}\"\nDEFAULT_TOOL_ROOT = os.getenv(\"TESTS_TOOL_ROOT\", \"core/tests/fakes\")\nDEFAULT_AGENT_PATH = os.getenv(\"TESTS_AGENT_PATH\", \"core/agent/parallel_agent.py\")\n\nif __name__ == \"__main__\":\n\tfrom core.tests.runner import run_tests\n\trun_tests(agent_path=DEFAULT_AGENT_PATH, tool_root=DEFAULT_TOOL_ROOT, tests=TESTS, tool_name=TOOL_NAME)\n"
+		+ f"\nTOOL_NAME = \"{ext_name}\"\nDEFAULT_TOOL_ROOT = os.getenv(\"TESTS_TOOL_ROOT\", \"core/tests/fakes\")\nDEFAULT_AGENT_PATH = os.getenv(\"TESTS_AGENT_PATH\", \"core/agent/hierarchical.py\")\n\nif __name__ == \"__main__\":\n\tfrom core.tests.runner import run_tests\n\trun_tests(agent_path=DEFAULT_AGENT_PATH, tool_root=DEFAULT_TOOL_ROOT, tests=TESTS, tool_name=TOOL_NAME)\n"
 	)
 	with open(out_path, "w", encoding="utf-8") as f:
 		f.write(content)

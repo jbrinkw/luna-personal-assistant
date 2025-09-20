@@ -23,8 +23,8 @@ try:
 except Exception:
     pass
 
-# Resolve active agent module from env path (defaults to parallel_agent)
-ACTIVE_AGENT_PATH = os.getenv("ACTIVE_AGENT_PATH", "core/agent/parallel_agent.py")
+# Resolve active agent module from env path (defaults to hierarchical)
+ACTIVE_AGENT_PATH = os.getenv("ACTIVE_AGENT_PATH", "core/agent/hierarchical.py")
 
 def _import_agent_from_path(path: str):
     name = os.path.splitext(os.path.basename(path))[0]
@@ -38,8 +38,8 @@ def _import_agent_from_path(path: str):
         spec.loader.exec_module(mod)  # type: ignore[attr-defined]
         return mod
     except Exception:
-        # Fallback to built-in parallel agent
-        from core.agent import parallel_agent as fallback
+        # Fallback to built-in hierarchical agent
+        from core.agent import hierarchical as fallback
 
         return fallback
 
@@ -53,7 +53,7 @@ DEBUG = True
 API_KEY_REQUIRED = os.getenv("OPENAI_COMPAT_API_KEY")  # set to require Bearer
 DEFAULT_MODEL_ID = os.getenv("OPENAI_COMPAT_MODEL_ID", "luna-hava")
 
-app = FastAPI(title="HaVa OpenAI-compatible Chat API (Luna Parallel Agent)")
+app = FastAPI(title="HaVa OpenAI-compatible Chat API (Luna Hierarchical Agent)")
 
 
 # ---- Schemas ----

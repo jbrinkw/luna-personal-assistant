@@ -22,7 +22,7 @@
 ### Where it comes from
 - Built at runtime from the code under `extensions/`.
 - Implemented in `core/helpers/light_schema_gen.py` (`discover_extensions`, `build_light_schema_for_extension`, `build_all_light_schema`).
-- Preloaded/cached by `core/agent/parallel_agent.py` via `initialize_runtime(...)` and `_get_light_schema(...)`.
+- Preloaded/cached by `core/agent/hierarchical.py` via `initialize_runtime(...)` and `_get_light_schema(...)`.
 
 ### How to interface with it
 - **Inspect in a terminal**
@@ -40,7 +40,7 @@ print(schema_text)
 
 - **Runtime preload (recommended for the agent runloop)**
 ```python
-from core.agent.parallel_agent import initialize_runtime
+from core.agent.hierarchical import initialize_runtime
 
 initialize_runtime(tool_root=None)  # or a custom path containing *_tool.py files
 ```

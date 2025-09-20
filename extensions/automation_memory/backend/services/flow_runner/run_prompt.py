@@ -9,7 +9,7 @@ def main(argv):
         print("usage: run_prompt.py <prompt>")
         return 1
     prompt = argv[0]
-    active_agent = os.getenv('ACTIVE_AGENT_PATH', 'core/agent/parallel_agent.py')
+    active_agent = os.getenv('ACTIVE_AGENT_PATH', 'core/agent/hierarchical.py')
     # Ensure absolute path for repo root
     repo_root = Path(__file__).resolve().parents[5]
     agent_path = (repo_root / active_agent).resolve()

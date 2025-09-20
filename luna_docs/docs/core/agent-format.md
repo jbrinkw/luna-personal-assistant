@@ -126,7 +126,7 @@ Rules:
 - Set `ACTIVE_AGENT_PATH` in your environment to point to any agent module path (relative to repo root). Example:
 
 ```bash
-ACTIVE_AGENT_PATH=core/agent/parallel_agent.py
+ACTIVE_AGENT_PATH=core/agent/hierarchical.py
 ```
 
 The CLI/server load the active agent from this path and will still work with agents that return additional fields beyond the minimum spec.

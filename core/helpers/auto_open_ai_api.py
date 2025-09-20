@@ -31,7 +31,7 @@ DEBUG = os.getenv("OPENAI_COMPAT_DEBUG", "true").lower() in ("1", "true", "yes",
 # No auth per user request
 
 # Default selected agent (model) if request.model is omitted
-DEFAULT_AGENT = os.getenv("OPENAI_DEFAULT_AGENT", "parallel_agent")
+DEFAULT_AGENT = os.getenv("OPENAI_DEFAULT_AGENT", "hierarchical")
 
 # Discovery config
 # Comma-separated globs, resolved relative to PROJECT_ROOT
