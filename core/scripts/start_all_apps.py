@@ -108,13 +108,13 @@ def terminate(p: subprocess.Popen) -> None:
 def main() -> int:
     root = repo_root()
 
-    # Ports and environment (hardcoded UI ports)
+    # Ports and environment (configurable via env vars)
     # UI ports start at 8030 and increment per app
-    chef_port = "8030"
+    chef_port = os.getenv("CHEF_UI_PORT", "8030")
     coach_api_port = os.getenv("COACH_API_PORT", "3001")  # API is not a UI; keep existing port
-    coach_ui_port = "8031"
-    hub_port = "8032"
-    am_ui_port = "8033"
+    coach_ui_port = os.getenv("COACH_UI_PORT", "8031")
+    hub_port = os.getenv("HUB_PORT", "8032")
+    am_ui_port = os.getenv("AM_UI_PORT", "8033")
     am_api_port = os.getenv("AM_API_PORT", "3051")
     openai_api_port = os.getenv("OPENAI_API_PORT", "8010")
 
