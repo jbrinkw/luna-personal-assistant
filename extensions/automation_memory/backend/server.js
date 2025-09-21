@@ -7,6 +7,8 @@ require('dotenv').config();
 const db = require('./db/index');
 const scheduler = require('./scheduler/index');
 const { spawn } = require('child_process');
+const PY_BIN = process.env.PYTHON_BIN || process.env.PYTHON || 'python3';
+const REPO_ROOT = path.resolve(__dirname, '../../..');
 
 const app = express();
 app.use(cors());
@@ -25,7 +27,7 @@ Promise.resolve(db.init())
 function regenTools() {
   try {
     const script = path.resolve(__dirname, '../autogen_tools.py');
-    const py = spawn('python', [script], { cwd: path.resolve(__dirname, '../../..') });
+    const py = spawn(PY_BIN, [script], { cwd: REPO_ROOT, env: process.env });
     py.on('error', (e) => console.error('[autogen] spawn error', e));
   } catch (e) {
     console.error('[autogen] error', e);
@@ -58,13 +60,34 @@ app.post('/api/task_flows/:id/run', async (req, res) => {
     const flow = await db.getFlow(id);
     if (!flow) return res.status(404).json({ error: 'not found' });
     const runner = path.resolve(__dirname, 'services/flow_runner/run_flow.py');
-    const args = ['python', runner, String(flow.call_name || ''), JSON.stringify(flow.prompts || [])];
-    const proc = spawn(args[0], args.slice(1), { cwd: path.resolve(__dirname, '../../..') });
+    const childEnv = { ...process.env };
+    // Ensure planner model is discoverable even if only defaults are set
+    if (!childEnv.MONO_PT_PLANNER_MODEL) {
+      if (childEnv.REACT_MODEL) childEnv.MONO_PT_PLANNER_MODEL = childEnv.REACT_MODEL;
+      else if (childEnv.LLM_DEFAULT_MODEL) childEnv.MONO_PT_PLANNER_MODEL = childEnv.LLM_DEFAULT_MODEL;
+    }
+    // Ensure Python can import the repo's 'core' package
+    childEnv.PYTHONPATH = (childEnv.PYTHONPATH ? childEnv.PYTHONPATH + require('path').delimiter : '') + REPO_ROOT;
+    // Debug context
+    try {
+      console.log(`[runner] starting flow id=${id} name="${flow.call_name}" py=${PY_BIN}`);
+      console.log(`[runner] cwd=${REPO_ROOT}`);
+      console.log(`[runner] env: HA_URL=${childEnv.HA_URL ? 'set' : 'unset'} HA_TOKEN=${childEnv.HA_TOKEN ? 'set' : 'unset'} HA_REMOTE_ENTITY_ID=${childEnv.HA_REMOTE_ENTITY_ID || '(default)'} PYTHONPATH_has_repo=${(childEnv.PYTHONPATH || '').includes(REPO_ROOT)}`);
+    } catch (_) {}
+
+    const args = [runner, String(flow.call_name || ''), JSON.stringify(flow.prompts || [])];
+    const proc = spawn(PY_BIN, args, { cwd: REPO_ROOT, env: childEnv });
     let out = '';
     let err = '';
-    proc.stdout.on('data', (d) => { try { out += String(d); } catch (_) {} });
-    proc.stderr.on('data', (d) => { try { err += String(d); } catch (_) {} });
+    proc.stdout.on('data', (d) => {
+      try { const s = String(d); out += s; process.stdout.write(`[runner ${id} out] ` + s); } catch (_) {}
+    });
+    proc.stderr.on('data', (d) => {
+      try { const s = String(d); err += s; process.stdout.write(`[runner ${id} err] ` + s); } catch (_) {}
+    });
+    proc.on('error', (e) => { try { console.error(`[runner ${id}] spawn error:`, e); } catch (_) {} });
     proc.on('close', (code) => {
+      try { console.log(`[runner ${id}] exited code=${code}`); } catch (_) {}
       if (code === 0) {
         res.json({ ok: true, status: 'completed', id, output: (out || '').trim() });
       } else {

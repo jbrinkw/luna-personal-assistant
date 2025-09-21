@@ -385,7 +385,7 @@ async def chat_completions(
 if __name__ == "__main__":
     import uvicorn
     host = os.environ.get("HOST", "0.0.0.0")
-    port = int(os.environ.get("PORT", "8069"))
+    port = int(os.environ.get("OPENAI_API_PORT", "8069"))
     uvicorn.run(app, host=host, port=port, reload=False)
 
 

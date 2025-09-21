@@ -35,15 +35,19 @@ ALLOWED_DOMAINS: Tuple[str, ...] = (
 SYSTEM_PROMPT = """
 You are an assistant with tools to control a local Home Assistant instance.
 
-Your job is to translate natural-language requests into precise tool calls
-to query device status or perform actions. Typical requests include things like
-turning entities on or off, checking an entity's state, or sending TV remote
-intents (e.g., "open spotify on my tv"). These tools operate over the Home
-Assistant HTTP API and expect HA_URL and HA_TOKEN environment variables to be
-set. Supported domains include light, switch, fan, and media_player.
+Translate natural-language requests into tool calls. Typical requests include
+turning entities on/off, checking an entity's state, or sending TV remote
+intents (e.g., launch an app, press HOME, PLAY, etc.). These tools operate over
+the Home Assistant HTTP API and expect HA_URL and HA_TOKEN environment variables
+to be set. Supported domains include light, switch, fan, and media_player.
 
-if the user asks you to toggle something you will first have to get entity status and
-make the correct change. prefer to use friendly names instead of id
+When controlling the TV remote, provide a concise button/app token to the tool
+(e.g., "home", "play", "spotify", "open netflix"). Do NOT add device qualifiers
+like "on my tv" to the button value; the tool knows the target remote via
+HA_REMOTE_ENTITY_ID (default: remote.living_room_tv).
+
+If the user asks to toggle something, first get the entity status and then make
+the correct change. Prefer friendly names over raw entity ids when possible.
 
 Use these functions when appropriate:
 - HA_GET_devices() to list devices
@@ -330,17 +334,38 @@ def _parse_tv_remote_intent(button: str) -> Tuple[str, Dict[str, Any], str]:
 
 
 def HA_ACTION_tv_remote(button: str) -> str:
-    """Send a TV remote action by name (single string).
-    Example Prompt: "open spotify on my tv"
-    Example Response: {"success": true, "message": "Sent 'open spotify' to remote.living_room_tv"}
-    Example Args: {"button": "string[action or app name]"}
-    Examples: 'up', 'down', 'left', 'right', 'ok', 'back', 'home',
-    'play', 'pause', 'stop', 'next', 'previous', 'rewind', 'fast forward',
-    'mute', 'volume up', 'volume down', 'youtube', 'netflix', 'spotify', 'disney+'.
+    """Send a TV remote action or launch an app.
 
-    Also accepts raw activity strings (e.g., 'https://www.youtube.com', 'com.spotify.tv.android')
-    and raw command codes (e.g., 'DPAD_UP'). Uses HA_REMOTE_ENTITY_ID if set, otherwise
-    defaults to 'remote.living_room_tv'.
+    Required env: HA_URL, HA_TOKEN. Target remote entity is HA_REMOTE_ENTITY_ID
+    if set, else defaults to 'remote.living_room_tv'.
+
+    Args:
+      - button: a concise action/app token. Avoid device qualifiers like
+        "on my tv"; the tool already knows the target remote. Accepted forms:
+        - Navigation/controls: 'up', 'down', 'left', 'right', 'ok', 'back',
+          'home', 'play', 'pause', 'stop', 'next', 'previous', 'rewind',
+          'fast forward', 'mute', 'volume up', 'volume down'
+        - Apps (mapped automatically): 'youtube', 'netflix', 'spotify', 'disney+'
+        - Open/launch phrasing also works: 'open youtube', 'open spotify', etc.
+        - Raw activity strings: 'https://www.youtube.com', 'com.spotify.tv.android'
+        - Raw command codes: 'DPAD_UP', 'MEDIA_PLAY_PAUSE', etc.
+
+    Behavior:
+      - App tokens or 'open <app>' → remote.turn_on with payload {activity}
+        Examples:
+          - button='spotify' → activity='com.spotify.tv.android'
+          - button='open youtube' → activity='https://www.youtube.com'
+      - Control tokens → remote.send_command with payload {command}
+        Examples:
+          - button='home' → command='HOME'
+          - button='play' → command='MEDIA_PLAY_PAUSE'
+
+    Returns: OperationResult JSON string with {success: bool, message: str}
+
+    Examples:
+      - {"button": "home"}
+      - {"button": "open netflix"}
+      - {"button": "spotify"}
     """
     err = _require_token()
     if err:

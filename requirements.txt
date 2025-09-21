@@ -1,0 +1,19 @@
+# Core web
+fastapi>=0.112,<1
+uvicorn[standard]>=0.30,<1
+pydantic>=2.8,<3
+python-dotenv>=1.0,<2
+
+# LLM tooling
+langchain-core>=0.2,<1
+langgraph>=0.2,<1
+langchain-openai>=0.2,<1
+langchain-google-genai>=2,<3
+
+# Databases
+psycopg2-binary>=2.9,<3
+
+# Utilities
+starlette>=0.37,<1
+
+

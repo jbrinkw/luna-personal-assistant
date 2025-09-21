@@ -116,7 +116,8 @@ def main() -> int:
     hub_port = os.getenv("HUB_PORT", "8032")
     am_ui_port = os.getenv("AM_UI_PORT", "8033")
     am_api_port = os.getenv("AM_API_PORT", "3051")
-    openai_api_port = os.getenv("OPENAI_API_PORT", "8010")
+    openai_api_port = os.getenv("OPENAI_API_PORT", "8069")
+    grocy_wiz_port = os.getenv("GROCY_IO_WIZ_PORT", "3100")
 
     # Define app directories
     chef_dir = root / "extensions" / "chefbyte" / "ui" / "chefbyte_webapp"
@@ -126,6 +127,7 @@ def main() -> int:
     am_ui_dir = root / "extensions" / "automation_memory" / "ui"
     am_api_dir = root / "extensions" / "automation_memory" / "backend"
     hub_dir = root / "core" / "hub" / "ui_hub"
+    grocy_web_dir = root / "extensions" / "grocy" / "web"
 
     # Expose links for hub based on availability
     agent_links = []
@@ -135,6 +137,11 @@ def main() -> int:
         agent_links.append(f"CoachByte:http://localhost:{coach_ui_port}")
     if am_ui_dir.exists():
         agent_links.append(f"AutomationMemory:http://localhost:{am_ui_port}")
+    # Expose OpenAI-compatible API link if agent dir exists
+    if openai_dir.exists():
+        agent_links.append(f"OpenAI-API:http://localhost:{openai_api_port}")
+    if grocy_web_dir.exists():
+        agent_links.append(f"GrocyWizard:http://localhost:{grocy_wiz_port}")
     os.environ["AGENT_LINKS"] = ",".join(agent_links)
 
     procs: List[ManagedProc] = []
@@ -173,7 +180,7 @@ def main() -> int:
                     "--port",
                     str(openai_api_port),
                     "--log-level",
-                    "warning",
+                    "info",
                 ],
                 openai_dir,
                 env=env_py,
@@ -254,6 +261,22 @@ def main() -> int:
             procs.append(spawn(["npx", "--yes", "vite", "--host", "0.0.0.0", "--port", str(am_ui_port)], am_ui_dir, env=env_am_ui, label="automation_memory_ui"))
     else:
         print(f"[skip] AutomationMemory UI directory not found: {am_ui_dir}")
+
+    # Grocy Wizard (Express)
+    if grocy_web_dir.exists():
+        try:
+            nm = grocy_web_dir / "node_modules"
+            if not nm.exists():
+                print(f"[deps] Installing Node deps for grocy_wizard in {grocy_web_dir}...")
+                install_cmd = ["npm", "ci"] if (grocy_web_dir / "package-lock.json").exists() else ["npm", "install"]
+                subprocess.run(install_cmd + ["--silent", "--no-audit", "--fund=false"], cwd=str(grocy_web_dir), check=False)
+        except Exception as e:
+            print(f"[deps] Failed to ensure deps for grocy_wizard: {e}")
+        env_grocy = os.environ.copy()
+        env_grocy["GROCY_IO_WIZ_PORT"] = str(grocy_wiz_port)
+        procs.append(spawn(["node", "server.js"], grocy_web_dir, env=env_grocy, label="grocy_wizard"))
+    else:
+        print(f"[skip] Grocy Wizard directory not found: {grocy_web_dir}")
 
     # Hub (FastAPI)
     if hub_dir.exists():

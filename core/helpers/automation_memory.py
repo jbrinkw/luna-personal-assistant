@@ -135,3 +135,7 @@ __all__ = [
 ]
 
 
+
+if __name__ == "__main__":
+    print(fetch_automation_memories_text())
+
