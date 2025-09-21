@@ -1,0 +1,302 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Grocy Wizard (MVP)</title>
+    <style>
+      body { font-family: system-ui, Arial, sans-serif; margin: 24px; }
+      .row { display: flex; gap: 8px; align-items: center; }
+      .btn { padding: 8px 12px; border: 1px solid #ccc; background: #f7f7f7; cursor: pointer; }
+      .btn.active { background: #222; color: #fff; border-color: #222; }
+      #logs { white-space: pre-wrap; background: #f9f9f9; padding: 12px; border: 1px solid #eee; max-height: 300px; overflow: auto; }
+      input[type="text"] { padding: 8px; width: 280px; }
+      .status { margin-top: 12px; }
+    </style>
+  </head>
+  <body>
+    <h1>Grocy Wizard (MVP)</h1>
+    <div class="row">
+      <input id="barcode" type="text" placeholder="Scan or type barcode and press Enter" />
+      <button id="btnAdd" class="btn active">Add</button>
+      <button id="btnRemove" class="btn">Remove</button>
+      <button id="btnGo" class="btn">Submit</button>
+    </div>
+    <div class="status">
+      <div id="statusText"></div>
+    </div>
+    <h3 id="recentHeader">Recent new items</h3>
+    <div id="recent"></div>
+    <h3>Logs</h3>
+    <div id="logs"></div>
+    <h3>Modification logs</h3>
+    <div id="modlogs" style="white-space: pre-wrap; background:#f9f9f9; padding:12px; border:1px solid #eee; max-height:220px; overflow:auto;"></div>
+
+    <script>
+      const barcodeInput = document.getElementById('barcode');
+      const btnAdd = document.getElementById('btnAdd');
+      const btnRemove = document.getElementById('btnRemove');
+      const btnGo = document.getElementById('btnGo');
+      const statusText = document.getElementById('statusText');
+      const logsEl = document.getElementById('logs');
+      const recentEl = document.getElementById('recent');
+      const recentHeader = document.getElementById('recentHeader');
+      const modlogsEl = document.getElementById('modlogs');
+
+      let op = 'add';
+      let recentMax = 10;
+
+      // Helper: detect text-like inputs
+      function isTextInputEl(el) {
+        return !!(el && el.tagName === 'INPUT' && ['text', 'number', 'search', 'tel', 'email', 'password', 'url'].includes(el.type));
+      }
+
+      // Keep focus on the barcode input unless another text box is actively focused
+      function focusBarcodeIfAppropriate() {
+        try {
+          const active = document.activeElement;
+          if (!isTextInputEl(active) || active === barcodeInput) {
+            barcodeInput.focus();
+          }
+        } catch (_) {}
+      }
+
+      // Global listeners to maintain focus behavior
+      document.addEventListener('focusout', () => {
+        // Defer so the next focused element is available in document.activeElement
+        setTimeout(focusBarcodeIfAppropriate, 0);
+      });
+      document.addEventListener('click', (e) => {
+        if (!isTextInputEl(e.target)) focusBarcodeIfAppropriate();
+      });
+
+      function setOp(newOp) {
+        op = newOp;
+        if (op === 'add') {
+          btnAdd.classList.add('active');
+          btnRemove.classList.remove('active');
+        } else {
+          btnRemove.classList.add('active');
+          btnAdd.classList.remove('active');
+        }
+      }
+
+      btnAdd.addEventListener('click', () => setOp('add'));
+      btnRemove.addEventListener('click', () => setOp('remove'));
+      btnGo.addEventListener('click', submit);
+      barcodeInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          submit();
+        }
+      });
+
+      async function submit() {
+        const barcode = barcodeInput.value.trim();
+        if (!barcode) {
+          statusText.textContent = 'Enter a barcode';
+          return;
+        }
+        statusText.textContent = 'Submitting...';
+        logsEl.textContent = '';
+        try {
+          const res = await fetch(`/api/scan/${op}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ barcode })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data && data.error || 'Request failed');
+          statusText.textContent = `Queued job ${data.jobId}`;
+          // Clear and refocus after successful submit
+          barcodeInput.value = '';
+          barcodeInput.focus();
+          pollJob(data.jobId);
+          refreshRecent();
+        } catch (err) {
+          statusText.textContent = 'Error: ' + err.message;
+        }
+      }
+
+      async function pollJob(jobId) {
+        let done = false;
+        while (!done) {
+          await new Promise(r => setTimeout(r, 800));
+          const res = await fetch(`/api/jobs/${jobId}`);
+          const data = await res.json();
+          if (!res.ok) {
+            statusText.textContent = 'Job error: ' + (data && data.error);
+            return;
+          }
+          logsEl.textContent = (data.logs || []).join('\n');
+          if (data.status === 'done') {
+            done = true;
+            statusText.textContent = (data.result && data.result.status === 'ok')
+              ? 'Success'
+              : 'Failed';
+            // Append final JSON result at the bottom of logs
+            if (data.result) {
+              logsEl.textContent += '\n\n[result] ' + JSON.stringify(data.result);
+            }
+            // Refresh recent list after job completion
+            try { await refreshRecent(); await refreshModLogs(); } catch (e) {}
+          }
+        }
+      }
+
+      async function refreshRecent() {
+        try {
+          const res = await fetch('/api/recent-new-items');
+          const items = await res.json();
+          recentEl.innerHTML = '';
+          items.forEach((it) => {
+            const row = document.createElement('div');
+            row.style.display = 'grid';
+            row.style.gridTemplateColumns = '2fr 100px 200px';
+            row.style.gap = '12px';
+            row.style.alignItems = 'center';
+            row.style.margin = '6px 0';
+            row.style.justifyContent = 'start';
+
+            // Name editor
+            const nameInput = document.createElement('input');
+            nameInput.type = 'text';
+            nameInput.value = it.name || '';
+            nameInput.placeholder = 'Name';
+            // Inline save on blur (not Enter). After blur, focus returns to barcode via global handler
+            nameInput.addEventListener('blur', async () => {
+              if ((it.name || '') !== nameInput.value) {
+                await saveInline(it.product_id, { name: nameInput.value });
+                it.name = nameInput.value;
+                await refreshRecent();
+                await refreshModLogs();
+              }
+            });
+
+            // Best-before days editor (int)
+            const daysInput = document.createElement('input');
+            daysInput.type = 'number';
+            daysInput.min = '0';
+            daysInput.placeholder = 'days';
+            // Prefill days from current date if available
+            if (it.best_before_date) {
+              const days = daysFromNowLocal(it.best_before_date.slice(0, 10));
+              if (days != null) daysInput.value = String(days);
+            }
+            // Inline save on blur (not change or Enter). After blur, focus returns to barcode via global handler
+            daysInput.addEventListener('blur', async () => {
+              const val = Number(daysInput.value);
+              if (Number.isFinite(val)) {
+                await saveInline(it.product_id, { best_before_days: val });
+                // Update local preview date
+                it.best_before_date = dateStringFromDaysLocal(val);
+                await refreshRecent();
+                await refreshModLogs();
+              }
+            });
+
+            // Location radios
+            const loc = document.createElement('div');
+            ['fridge', 'freezer', 'pantry'].forEach((label) => {
+              const id = `loc_${it.product_id}_${label}`;
+              const r = document.createElement('input');
+              r.type = 'radio';
+              r.name = `loc_${it.product_id}`;
+              r.id = id;
+              r.value = label;
+              if ((it.location_label || '').toLowerCase() === label) r.checked = true;
+              const lab = document.createElement('label');
+              lab.htmlFor = id;
+              lab.textContent = label;
+              loc.appendChild(r);
+              loc.appendChild(lab);
+              loc.appendChild(document.createTextNode(' '));
+              // Freezer sets expiry to 180 days when selected
+              r.addEventListener('change', async () => {
+                await saveInline(it.product_id, {
+                  location_label: label,
+                  ...(label === 'freezer' ? { best_before_days: 180 } : {})
+                });
+                // Update UI by refetching the recent list so product_id updates after recreate
+                await refreshRecent();
+                await refreshModLogs();
+              });
+            });
+
+            row.appendChild(nameInput);
+            row.appendChild(daysInput);
+            row.appendChild(loc);
+            recentEl.appendChild(row);
+          });
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      async function saveInline(productId, payload) {
+        const res = await fetch(`/api/recent-new-items/${productId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          statusText.textContent = 'Update error: ' + (data && data.error || res.statusText);
+          throw new Error(data && data.error || res.statusText);
+        } else {
+          statusText.textContent = 'Updated';
+          setTimeout(() => { if (statusText.textContent === 'Updated') statusText.textContent = ''; }, 1500);
+        }
+      }
+
+      function dateStringFromDaysLocal(days) {
+        const d = new Date();
+        d.setDate(d.getDate() + Number(days || 0));
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+      }
+
+      function daysFromNowLocal(dateStr) {
+        try {
+          const now = new Date();
+          const t = new Date(dateStr);
+          const ms = t.getTime() - now.getTime();
+          const days = Math.floor(ms / (1000 * 60 * 60 * 24));
+          return days >= 0 ? days : 0;
+        } catch { return null; }
+      }
+
+      async function refreshModLogs() {
+        try {
+          const res = await fetch('/api/mod-logs');
+          const arr = await res.json();
+          modlogsEl.textContent = (arr || []).map((x) => JSON.stringify(x)).join('\n');
+        } catch (e) {
+          modlogsEl.textContent = '';
+        }
+      }
+
+      async function loadConfig() {
+        try {
+          const res = await fetch('/api/config');
+          const cfg = await res.json();
+          if (cfg && Number.isFinite(Number(cfg.recentNewItemsMax))) {
+            recentMax = Number(cfg.recentNewItemsMax);
+          }
+        } catch (e) {}
+        try {
+          if (recentHeader) recentHeader.textContent = `Recent new items (last ${recentMax})`;
+        } catch (e) {}
+      }
+
+      // Initial load
+      loadConfig();
+      refreshRecent();
+      try { barcodeInput.focus(); } catch (_) {}
+    </script>
+  </body>
+  </html>
+
+

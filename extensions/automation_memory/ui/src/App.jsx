@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 function SectionTab({ label, active, onClick }) {
   const base = {
@@ -63,6 +63,31 @@ export default function App() {
   const [memories, setMemories] = useState([]);
   const [queued, setQueued] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [notice, setNotice] = useState(null);
+  const noticeTimer = useRef(null);
+
+  const showNotice = (text, type = 'info') => {
+    if (noticeTimer.current) {
+      clearTimeout(noticeTimer.current);
+    }
+    setNotice({ text, type });
+    noticeTimer.current = setTimeout(() => setNotice(null), 4000);
+  };
+
+  const readError = async (res) => {
+    try {
+      const text = await res.text();
+      try {
+        const j = JSON.parse(text);
+        const msg = (j && (j.error || j.message || j.detail || j.status)) || '';
+        return msg || text || (res.statusText || 'Unknown error');
+      } catch (_) {
+        return text || (res.statusText || 'Unknown error');
+      }
+    } catch (_) {
+      try { return res.statusText || 'Unknown error'; } catch { return 'Unknown error'; }
+    }
+  };
 
   const loadAll = async () => {
     setLoading(true);
@@ -86,31 +111,88 @@ export default function App() {
 
   useEffect(() => { loadAll(); }, []);
 
+  useEffect(() => {
+    return () => {
+      if (noticeTimer.current) {
+        clearTimeout(noticeTimer.current);
+      }
+    };
+  }, []);
+
   // CRUD helpers
   const createFlow = async () => {
-    // optimistic append
     const temp = { id: Math.random(), call_name: 'new_flow', prompts: ['step 1'], _temp: true };
     setFlows(prev => [temp, ...prev]);
-    const res = await fetch('/api/task_flows', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ call_name: temp.call_name, prompts: temp.prompts }) });
-    if (res.ok) {
-      const { id } = await res.json();
-      setFlows(prev => prev.map(f => f === temp ? { ...temp, id, _temp: false } : f));
-    } else {
+    try {
+      const res = await fetch('/api/task_flows', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ call_name: temp.call_name, prompts: temp.prompts }) });
+      if (res.ok) {
+        const { id } = await res.json();
+        setFlows(prev => prev.map(f => f === temp ? { ...temp, id, _temp: false } : f));
+        showNotice(`Created "${temp.call_name}"`, 'success');
+      } else {
+        setFlows(prev => prev.filter(f => f !== temp));
+        const err = await readError(res);
+        showNotice(`Failed to create "${temp.call_name}": ${err}`,'error');
+      }
+    } catch (e) {
       setFlows(prev => prev.filter(f => f !== temp));
+      showNotice(`Failed to create "${temp.call_name}": ` + (e && e.message ? e.message : String(e)), 'error');
     }
   };
   const updateFlow = async (id, payload) => {
     setFlows(prev => prev.map(f => f.id === id ? { ...f, ...payload } : f));
-    await fetch(`/api/task_flows/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    try {
+      const res = await fetch(`/api/task_flows/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      if (res.ok) {
+        const name = (payload && typeof payload.call_name === 'string')
+          ? payload.call_name
+          : (flows.find(f => f.id === id)?.call_name || 'flow');
+        showNotice(`Updated "${name}"`, 'success');
+      } else {
+        const name = (payload && typeof payload.call_name === 'string')
+          ? payload.call_name
+          : (flows.find(f => f.id === id)?.call_name || 'flow');
+        const err = await readError(res);
+        showNotice(`Update failed for "${name}": ${err}`, 'error');
+      }
+    } catch (e) {
+      const name = (payload && typeof payload.call_name === 'string')
+        ? payload.call_name
+        : (flows.find(f => f.id === id)?.call_name || 'flow');
+      showNotice(`Update failed for "${name}": ` + (e && e.message ? e.message : String(e)), 'error');
+    }
   };
   const deleteFlow = async (id) => {
     const prev = flows;
+    const name = (prev.find(f => f.id === id)?.call_name) || 'flow';
     setFlows(flows.filter(f => f.id !== id));
-    const res = await fetch(`/api/task_flows/${id}`, { method: 'DELETE' });
-    if (!res.ok) setFlows(prev); // rollback on error
+    try {
+      const res = await fetch(`/api/task_flows/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        setFlows(prev);
+        const err = await readError(res);
+        showNotice(`Delete failed for "${name}": ${err}`, 'error');
+      } else {
+        showNotice(`Deleted "${name}"`, 'success');
+      }
+    } catch (e) {
+      setFlows(prev);
+      showNotice(`Delete failed for "${name}": ` + (e && e.message ? e.message : String(e)), 'error');
+    }
   };
   const runFlow = async (id) => {
-    await fetch(`/api/task_flows/${id}/run`, { method: 'POST' });
+    const name = (flows.find(f => f.id === id)?.call_name) || 'flow';
+    try {
+      const res = await fetch(`/api/task_flows/${id}/run`, { method: 'POST' });
+      if (res.ok) {
+        showNotice(`Started "${name}"`, 'success');
+      } else {
+        const err = await readError(res);
+        showNotice(`Run failed for "${name}": ${err}`, 'error');
+      }
+    } catch (e) {
+      showNotice(`Run failed for "${name}": ` + (e && e.message ? e.message : String(e)), 'error');
+    }
   };
 
   const createSchedule = async () => {
@@ -194,6 +276,23 @@ export default function App() {
 
       {tab === 'flows' && (
         <div>
+          {notice && (
+            <div style={{
+              padding: '8px 12px',
+              border: '1px solid',
+              borderColor: notice.type === 'error' ? '#f5c2c7' : (notice.type === 'success' ? '#a3d9a5' : '#b6d4fe'),
+              background: notice.type === 'error' ? '#f8d7da' : (notice.type === 'success' ? '#d1e7dd' : '#e7f1ff'),
+              color: notice.type === 'error' ? '#842029' : (notice.type === 'success' ? '#0f5132' : '#084298'),
+              borderRadius: 6,
+              marginBottom: 8,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <span>{notice.text}</span>
+              <button onClick={() => setNotice(null)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</button>
+            </div>
+          )}
           <div style={{ marginBottom: 8 }}>
             <button onClick={createFlow}>New Task Flow</button>
           </div>

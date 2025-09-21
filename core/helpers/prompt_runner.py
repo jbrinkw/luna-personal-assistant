@@ -33,7 +33,15 @@ def run_prompts(prompts: List[str], tool_root: Optional[str] = None) -> int:
     # For now, we invoke per prompt; the agent code already aggregates context across turns
     # when run in the same process. A more advanced version could use an IPC protocol.
     env = os.environ.copy()
-    for prompt in prompts:
+    # Ensure repo root is importable by agent subprocess
+    try:
+        existing = env.get("PYTHONPATH", "")
+        sep = os.pathsep if existing else ""
+        env["PYTHONPATH"] = f"{existing}{sep}{str(repo)}"
+    except Exception:
+        pass
+    total = len(prompts)
+    for idx, prompt in enumerate(prompts, start=1):
         proc = subprocess.run(
             [sys.executable, str(agent_path), "-p", str(prompt), "-r", str(tool_root_path)],
             cwd=str(repo),
@@ -42,8 +50,22 @@ def run_prompts(prompts: List[str], tool_root: Optional[str] = None) -> int:
             timeout=float(env.get("PROMPT_RUNNER_STEP_TIMEOUT_SECS", "120") or 120),
             env=env,
         )
+        # Echo outputs for observability, even on success
+        try:
+            sys.stdout.write(f"[prompt_runner] step {idx}/{total} prompt: {prompt!r}\n")
+        except Exception:
+            pass
+        try:
+            if proc.stdout:
+                sys.stdout.write(proc.stdout if proc.stdout.endswith("\n") else proc.stdout + "\n")
+        except Exception:
+            pass
+        try:
+            if proc.stderr:
+                sys.stdout.write(proc.stderr if proc.stderr.endswith("\n") else proc.stderr + "\n")
+        except Exception:
+            pass
         if proc.returncode != 0:
-            # Bubble up failure on first error
             return proc.returncode
     return 0
 
