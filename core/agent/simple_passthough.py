@@ -338,7 +338,7 @@ async def _execute_planned_calls(calls: List[PlannedToolCall]) -> Tuple[List[Too
     return results, paired
 
 
-async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory: Optional[str] = None, tool_root: Optional[str] = None) -> AgentResult:
+async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory: Optional[str] = None, tool_root: Optional[str] = None, llm: Optional[str] = None) -> AgentResult:
     # Prepare tools once
     if not TOOL_RUNNERS or isinstance(tool_root, str):
         initialize_runtime(tool_root=tool_root)
@@ -346,10 +346,13 @@ async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory
         msg = "No tools discovered. Ensure files matching *_tool.py exist under extensions/."
         return AgentResult(final=msg, results=[], timings=[], content=msg, response_time_secs=0.0, traces=[])
 
-    # Planner model
-    planner_model_name = _get_env("MONO_PT_PLANNER_MODEL", _get_env("REACT_MODEL", "gpt-4.1")) or "gpt-4.1"
+    # Planner model: use tier if provided; otherwise env-based model
     tracer = LLMRunTracer("planner")
-    model = get_chat_model(role="domain", model=planner_model_name, callbacks=[tracer], temperature=0.0)
+    if isinstance(llm, str) and llm.strip() in {"low", "med", "high"}:
+        model = get_chat_model(role="domain", tier=llm.strip(), callbacks=[tracer], temperature=0.0)
+    else:
+        planner_model_name = _get_env("MONO_PT_PLANNER_MODEL", _get_env("REACT_MODEL", "gpt-4.1")) or "gpt-4.1"
+        model = get_chat_model(role="domain", model=planner_model_name, callbacks=[tracer], temperature=0.0)
 
     # Clear traces per run
     del RUN_TRACES[:]

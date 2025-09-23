@@ -174,7 +174,7 @@ class LLMRunTracer(BaseCallbackHandler):
             pass
 
 
-async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory: Optional[str] = None, tool_root: Optional[str] = None) -> AgentResult:
+async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory: Optional[str] = None, tool_root: Optional[str] = None, llm: Optional[str] = None) -> AgentResult:
     # Discover/warm tools if not already done or if tool_root differs
     if not PRELOADED_TOOLS or isinstance(tool_root, str):
         initialize_runtime(tool_root=tool_root)
@@ -186,7 +186,12 @@ async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory
     # Build a simple ReAct agent with all tools
     try:
         from langgraph.prebuilt import create_react_agent
-        model = get_chat_model(role="domain", model=_get_env("REACT_MODEL", "gpt-4.1"), callbacks=[LLMRunTracer("react")], temperature=0.0)
+        # Use tier if provided; else fall back to env model
+        model = (
+            get_chat_model(role="domain", tier=llm, callbacks=[LLMRunTracer("react")], temperature=0.0)
+            if isinstance(llm, str) and llm.strip() in {"low", "med", "high"}
+            else get_chat_model(role="domain", model=_get_env("REACT_MODEL", "gpt-4.1"), callbacks=[LLMRunTracer("react")], temperature=0.0)
+        )
         agent = create_react_agent(model, tools=tools)
     except Exception as e:
         msg = f"Error building ReAct agent: {str(e)}"

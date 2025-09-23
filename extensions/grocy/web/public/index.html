@@ -25,7 +25,7 @@
     <div class="status">
       <div id="statusText"></div>
     </div>
-    <h3 id="recentHeader">Recent new items</h3>
+    <h3>Recent new items (last 3)</h3>
     <div id="recent"></div>
     <h3>Logs</h3>
     <div id="logs"></div>
@@ -40,35 +40,9 @@
       const statusText = document.getElementById('statusText');
       const logsEl = document.getElementById('logs');
       const recentEl = document.getElementById('recent');
-      const recentHeader = document.getElementById('recentHeader');
       const modlogsEl = document.getElementById('modlogs');
 
       let op = 'add';
-      let recentMax = 10;
-
-      // Helper: detect text-like inputs
-      function isTextInputEl(el) {
-        return !!(el && el.tagName === 'INPUT' && ['text', 'number', 'search', 'tel', 'email', 'password', 'url'].includes(el.type));
-      }
-
-      // Keep focus on the barcode input unless another text box is actively focused
-      function focusBarcodeIfAppropriate() {
-        try {
-          const active = document.activeElement;
-          if (!isTextInputEl(active) || active === barcodeInput) {
-            barcodeInput.focus();
-          }
-        } catch (_) {}
-      }
-
-      // Global listeners to maintain focus behavior
-      document.addEventListener('focusout', () => {
-        // Defer so the next focused element is available in document.activeElement
-        setTimeout(focusBarcodeIfAppropriate, 0);
-      });
-      document.addEventListener('click', (e) => {
-        if (!isTextInputEl(e.target)) focusBarcodeIfAppropriate();
-      });
 
       function setOp(newOp) {
         op = newOp;
@@ -163,7 +137,7 @@
             nameInput.type = 'text';
             nameInput.value = it.name || '';
             nameInput.placeholder = 'Name';
-            // Inline save on blur (not Enter). After blur, focus returns to barcode via global handler
+            // Inline save on blur (not Enter)
             nameInput.addEventListener('blur', async () => {
               if ((it.name || '') !== nameInput.value) {
                 await saveInline(it.product_id, { name: nameInput.value });
@@ -183,7 +157,7 @@
               const days = daysFromNowLocal(it.best_before_date.slice(0, 10));
               if (days != null) daysInput.value = String(days);
             }
-            // Inline save on blur (not change or Enter). After blur, focus returns to barcode via global handler
+            // Inline save on blur (not change or Enter)
             daysInput.addEventListener('blur', async () => {
               const val = Number(daysInput.value);
               if (Number.isFinite(val)) {
@@ -278,23 +252,8 @@
         }
       }
 
-      async function loadConfig() {
-        try {
-          const res = await fetch('/api/config');
-          const cfg = await res.json();
-          if (cfg && Number.isFinite(Number(cfg.recentNewItemsMax))) {
-            recentMax = Number(cfg.recentNewItemsMax);
-          }
-        } catch (e) {}
-        try {
-          if (recentHeader) recentHeader.textContent = `Recent new items (last ${recentMax})`;
-        } catch (e) {}
-      }
-
-      // Initial load
-      loadConfig();
+      // Initial load of recent list on page ready
       refreshRecent();
-      try { barcodeInput.focus(); } catch (_) {}
     </script>
   </body>
   </html>

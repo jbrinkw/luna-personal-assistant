@@ -31,7 +31,8 @@ DEBUG = os.getenv("OPENAI_COMPAT_DEBUG", "true").lower() in ("1", "true", "yes",
 # No auth per user request
 
 # Default selected agent (model) if request.model is omitted
-DEFAULT_AGENT = os.getenv("OPENAI_DEFAULT_AGENT", "hierarchical")
+# Require a suffixed default (e.g., simple-med). Fallback remains for backward compatibility.
+DEFAULT_AGENT = os.getenv("OPENAI_DEFAULT_AGENT", "simple-med")
 
 # Discovery config
 # Comma-separated globs, resolved relative to PROJECT_ROOT
@@ -143,7 +144,7 @@ async def _sse_gen(final_text: str, model_id: str) -> AsyncGenerator[str, None]:
     yield "data: [DONE]\n\n"
 
 
-async def _sse_token_stream(mod: ModuleType, user_prompt: str, chat_history: Optional[str], memory: Optional[str], model_id: str) -> AsyncGenerator[str, None]:
+async def _sse_token_stream(mod: ModuleType, user_prompt: str, chat_history: Optional[str], memory: Optional[str], model_id: str, tier: Optional[str] = None) -> AsyncGenerator[str, None]:
     """Stream token-by-token SSE compatible with OpenAI Chat Completions.
 
     Requires the module to expose `run_agent_stream` as an async generator yielding strings.
@@ -167,20 +168,36 @@ async def _sse_token_stream(mod: ModuleType, user_prompt: str, chat_history: Opt
         agen = getattr(mod, "run_agent_stream", None)
         if agen is None:
             raise RuntimeError("run_agent_stream not available")
-        async for token in agen(user_prompt, chat_history=chat_history or None, memory=memory):
-            if not isinstance(token, str) or token == "":
-                continue
-            yielded_any = True
-            chunk = {
-                "id": cid,
-                "object": "chat.completion.chunk",
-                "created": created,
-                "model": model_id,
-                "choices": [
-                    {"index": 0, "delta": {"content": token}, "finish_reason": None}
-                ],
-            }
-            yield f"data: {json.dumps(chunk)}\n\n"
+        if isinstance(tier, str) and tier in {"low", "med", "high"}:
+            async for token in agen(user_prompt, chat_history=chat_history or None, memory=memory, llm=tier):
+                if not isinstance(token, str) or token == "":
+                    continue
+                yielded_any = True
+                chunk = {
+                    "id": cid,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": model_id,
+                    "choices": [
+                        {"index": 0, "delta": {"content": token}, "finish_reason": None}
+                    ],
+                }
+                yield f"data: {json.dumps(chunk)}\n\n"
+        else:
+            async for token in agen(user_prompt, chat_history=chat_history or None, memory=memory):
+                if not isinstance(token, str) or token == "":
+                    continue
+                yielded_any = True
+                chunk = {
+                    "id": cid,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": model_id,
+                    "choices": [
+                        {"index": 0, "delta": {"content": token}, "finish_reason": None}
+                    ],
+                }
+                yield f"data: {json.dumps(chunk)}\n\n"
     except Exception:
         yielded_any = False if not yielded_any else yielded_any
 
@@ -240,9 +257,12 @@ def _discover_agents() -> Dict[str, ModuleType]:
                 continue
             if not _is_async_run_agent(mod):
                 continue
-            model_id = os.path.splitext(base)[0]
-            found[model_id] = mod
-            AGENT_PATHS[model_id] = os.path.relpath(file_path, PROJECT_ROOT)
+            base_id = os.path.splitext(base)[0]
+            # Register only suffixed variants for clarity and deterministic tiering
+            for tier in ("low", "med", "high"):
+                model_id = f"{base_id}-{tier}"
+                found[model_id] = mod
+                AGENT_PATHS[model_id] = os.path.relpath(file_path, PROJECT_ROOT)
     return found
 
 
@@ -332,6 +352,13 @@ async def chat_completions(
     chat_history, user_prompt = _split_history_and_prompt(body.messages)
     memory = _extract_memory(body.messages, memory_header)
 
+    # Parse tier from suffixed model_id (expects '-low', '-med', '-high')
+    tier: Optional[str] = None
+    if "-" in model_id:
+        tail = model_id.rsplit("-", 1)[-1]
+        if tail in {"low", "med", "high"}:
+            tier = tail
+
     # Streaming path with token-by-token support when available
     if body.stream:
         headers = {
@@ -342,7 +369,7 @@ async def chat_completions(
             # Prefer token streaming if the agent provides run_agent_stream
             if hasattr(mod, "run_agent_stream"):
                 return StreamingResponse(
-                    _sse_token_stream(mod, user_prompt, chat_history or None, memory, model_id),
+                    _sse_token_stream(mod, user_prompt, chat_history or None, memory, model_id, tier=tier),
                     media_type="text/event-stream",
                     headers=headers,
                 )
@@ -352,7 +379,10 @@ async def chat_completions(
 
         # Fallback: compute final text once and stream in a single chunk
         try:
-            result_fallback = await mod.run_agent(user_prompt, chat_history=chat_history or None, memory=memory)  # type: ignore[attr-defined]
+            if tier is None:
+                result_fallback = await mod.run_agent(user_prompt, chat_history=chat_history or None, memory=memory)  # type: ignore[attr-defined]
+            else:
+                result_fallback = await mod.run_agent(user_prompt, chat_history=chat_history or None, memory=memory, llm=tier)  # type: ignore[attr-defined]
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"agent error: {exc}") from exc
         final_text_fallback: str = str(getattr(result_fallback, "final", result_fallback))
@@ -361,7 +391,10 @@ async def chat_completions(
     # Non-streaming path
     try:
         t0 = time.perf_counter()
-        result = await mod.run_agent(user_prompt, chat_history=chat_history or None, memory=memory)  # type: ignore[attr-defined]
+        if tier is None:
+            result = await mod.run_agent(user_prompt, chat_history=chat_history or None, memory=memory)  # type: ignore[attr-defined]
+        else:
+            result = await mod.run_agent(user_prompt, chat_history=chat_history or None, memory=memory, llm=tier)  # type: ignore[attr-defined]
         elapsed = round(time.perf_counter() - t0, 3)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"agent error: {exc}") from exc
