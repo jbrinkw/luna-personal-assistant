@@ -1,8 +1,8 @@
 /* eslint-disable */
 const express = require('express');
 const path = require('path');
-// Load environment variables from repo root .env only
-try { require('dotenv').config({ path: path.join(__dirname, '..', '..', '..', '.env') }); } catch (_) {}
+// Load environment variables from .env file in project root
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const { spawn } = require('child_process');
 
 const app = express();
@@ -15,9 +15,6 @@ console.log('GROCY_BASE_URL:', process.env.GROCY_BASE_URL ? 'SET' : 'NOT SET');
 console.log('GROCY_API_KEY:', process.env.GROCY_API_KEY ? 'SET' : 'NOT SET');
 console.log('OPENAI_API_KEY:', process.env.OPENAI_API_KEY ? 'SET' : 'NOT SET');
 
-// Configurable cap for how many recent items to keep/display (default 10)
-const RECENT_ITEMS_MAX = Number(process.env.GROCY_RECENT_ITEMS_MAX || 10);
-
 // In-memory queue and job store (MVP)
 const jobStore = new Map(); // jobId -> { id, status, op, barcode, logs: [], result }
 let nextJobId = 1;
@@ -26,7 +23,7 @@ let nextJobId = 1;
 const queue = [];
 let isWorking = false;
 
-// Recent newly created items (capped by RECENT_ITEMS_MAX)
+// Recent newly created items (max 3)
 const recentNewItems = []; // [{ product_id, name, barcode, best_before_date, location_id, location_label, booking_id }]
 // Modification logs (last 50)
 const modificationLogs = [];
@@ -117,15 +114,8 @@ function pumpQueue() {
 }
 
 async function runLocalProcessor(job) {
-  let run;
   try {
-    ({ run } = require('./processor'));
-  } catch (e) {
-    // If JS processor module is not available, fall back to Python
-    return await runPythonJob(job);
-  }
-
-  try {
+    const { run } = require('./processor');
     const result = await run(job.op, job.barcode);
     // attach logs from processor (if any)
     try { const logs = (run && run.lastLogs) || []; logs.forEach((l) => job.logs.push(l)); } catch {}
@@ -162,7 +152,7 @@ async function runLocalProcessor(job) {
               await ensureLocationMap();
               const location_label = aiLocationLabel || (locationIdToLabel && locationIdToLabel[location_id]) || undefined;
               recentNewItems.unshift({ product_id, name, barcode: job.barcode, best_before_date, location_id, location_label, booking_id });
-              while (recentNewItems.length > RECENT_ITEMS_MAX) recentNewItems.pop();
+              while (recentNewItems.length > 3) recentNewItems.pop();
             };
             postTasks.push(pushItem().catch(() => {}));
           }
@@ -179,7 +169,7 @@ async function runLocalProcessor(job) {
                 location_label: null,
                 booking_id: null,
               });
-              while (recentNewItems.length > RECENT_ITEMS_MAX) recentNewItems.pop();
+              while (recentNewItems.length > 3) recentNewItems.pop();
             })
           );
         }
@@ -190,10 +180,8 @@ async function runLocalProcessor(job) {
     await Promise.allSettled(postTasks);
     job.status = 'done';
   } catch (e) {
-    // Surface JS processor errors directly instead of falling back to Python
-    job.logs.push(`[error] ${String(e && e.message || e)}`);
-    job.result = { status: 'error', message: String(e && e.message || e), barcode: job.barcode, operation: job.op };
-    job.status = 'done';
+    // Fallback to Python runner if local processor is unavailable
+    await runPythonJob(job);
   }
 }
 
@@ -263,7 +251,7 @@ function runPythonJob(job) {
                 await ensureLocationMap();
                 const location_label = aiLocationLabel || (locationIdToLabel && locationIdToLabel[location_id]) || undefined;
                 recentNewItems.unshift({ product_id, name, barcode: job.barcode, best_before_date, location_id, location_label, booking_id });
-                while (recentNewItems.length > RECENT_ITEMS_MAX) recentNewItems.pop();
+                while (recentNewItems.length > 3) recentNewItems.pop();
               };
               postTasks.push(pushItem().catch(() => {}));
             }
@@ -280,7 +268,7 @@ function runPythonJob(job) {
                   location_label: null,
                   booking_id: null,
                 });
-                while (recentNewItems.length > RECENT_ITEMS_MAX) recentNewItems.pop();
+                while (recentNewItems.length > 3) recentNewItems.pop();
               })
             );
           }
@@ -348,11 +336,6 @@ app.get('/api/recent-new-items', async (req, res) => {
     location_label: it.location_label || (locationIdToLabel && locationIdToLabel[it.location_id]) || null,
     booking_id: it.booking_id,
   })));
-});
-
-// Public read-only config for the UI
-app.get('/api/config', (req, res) => {
-  res.json({ recentNewItemsMax: RECENT_ITEMS_MAX });
 });
 
 // Recent modification logs

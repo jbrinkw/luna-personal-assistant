@@ -476,7 +476,7 @@ def initialize_runtime(tool_root: Optional[str] = None) -> None:
     PRELOADED_TOOLS = _build_tools()
 
 
-async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory: Optional[str] = None, tool_root: Optional[str] = None) -> AgentResult:
+async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory: Optional[str] = None, tool_root: Optional[str] = None, llm: Optional[str] = None) -> AgentResult:
     # Discover/warm tools (no external discovery; we assemble a filtered set)
     if not PRELOADED_TOOLS:
         initialize_runtime()
@@ -488,7 +488,12 @@ async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory
     # Build a ReAct agent with our filtered tools
     try:
         from langgraph.prebuilt import create_react_agent
-        model = get_chat_model(role="domain", model=_get_env("REACT_MODEL", "gpt-4.1"), callbacks=[LLMRunTracer("react")], temperature=0.0)
+        # Use tier if provided; else fall back to env model
+        model = (
+            get_chat_model(role="domain", tier=(llm.strip() if isinstance(llm, str) else None), callbacks=[LLMRunTracer("react")], temperature=0.0)
+            if isinstance(llm, str) and llm.strip() in {"low", "med", "high"}
+            else get_chat_model(role="domain", model=_get_env("REACT_MODEL", "gpt-4.1"), callbacks=[LLMRunTracer("react")], temperature=0.0)
+        )
         # Clear traces for this run
         del RUN_TRACES[:]
         hierarchy = _build_project_hierarchy_bulleted_list()
@@ -569,7 +574,7 @@ async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory
     )
 
 
-async def run_agent_stream(user_prompt: str, chat_history: Optional[str] = None, memory: Optional[str] = None, tool_root: Optional[str] = None):
+async def run_agent_stream(user_prompt: str, chat_history: Optional[str] = None, memory: Optional[str] = None, tool_root: Optional[str] = None, llm: Optional[str] = None):
     """Yield incremental text chunks while the agent generates a response.
 
     Fallback: if streaming is unavailable, yields the final response once.
@@ -585,7 +590,11 @@ async def run_agent_stream(user_prompt: str, chat_history: Optional[str] = None,
     # Build agent (same config as run_agent)
     try:
         from langgraph.prebuilt import create_react_agent
-        model = get_chat_model(role="domain", model=_get_env("REACT_MODEL", "gpt-4.1"), callbacks=[LLMRunTracer("react")], temperature=0.0)
+        model = (
+            get_chat_model(role="domain", tier=(llm.strip() if isinstance(llm, str) else None), callbacks=[LLMRunTracer("react")], temperature=0.0)
+            if isinstance(llm, str) and llm.strip() in {"low", "med", "high"}
+            else get_chat_model(role="domain", model=_get_env("REACT_MODEL", "gpt-4.1"), callbacks=[LLMRunTracer("react")], temperature=0.0)
+        )
         # Keep streaming prompt consistent and with hierarchy first
         hierarchy = _build_project_hierarchy_bulleted_list()
         core_instructions = (
@@ -615,7 +624,7 @@ async def run_agent_stream(user_prompt: str, chat_history: Optional[str] = None,
         agent = create_react_agent(model, tools=tools, prompt=final_prompt)
     except Exception:
         # If building agent fails, just yield non-streaming result from run_agent
-        res = await run_agent(user_prompt, chat_history=chat_history, memory=memory, tool_root=tool_root)
+        res = await run_agent(user_prompt, chat_history=chat_history, memory=memory, tool_root=tool_root, llm=llm)
         yield res.final
         return
 
@@ -652,7 +661,7 @@ async def run_agent_stream(user_prompt: str, chat_history: Optional[str] = None,
 
     if not yielded_any:
         # Fallback to non-streaming execution
-        res = await run_agent(user_prompt, chat_history=chat_history, memory=memory, tool_root=tool_root)
+        res = await run_agent(user_prompt, chat_history=chat_history, memory=memory, tool_root=tool_root, llm=llm)
         yield res.final
         return
 
