@@ -1,8 +1,8 @@
 /* eslint-disable */
 const express = require('express');
 const path = require('path');
-// Load environment variables from .env file in project root
-require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+// Load environment variables from repo root .env (two levels up from this file)
+require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
 const { spawn } = require('child_process');
 
 const app = express();
@@ -31,6 +31,8 @@ const modificationLogs = [];
 // Location discovery/cache
 let locationMap = null; // { label->id }
 let locationIdToLabel = null; // { id->label }
+// Userfield key cache
+let userfieldKeyCache = null; // { label -> key }
 
 async function ensureLocationMap() {
   if (locationMap && locationIdToLabel) return;
@@ -83,6 +85,164 @@ async function grocyFetch(method, path_, body) {
   const text = await res.text();
   if (!res.ok) throw new Error(`${res.status} ${res.statusText} - ${text}`);
   try { return JSON.parse(text); } catch { return text; }
+}
+
+function extractId(obj) {
+  try {
+    if (obj == null) return null;
+    if (typeof obj === 'number') return obj;
+    if (typeof obj === 'string' && /^\d+$/.test(obj)) return Number(obj);
+    const keys = ['created_object_id', 'id', 'last_inserted_id', 'last_inserted_row_id', 'rowid', 'row_id'];
+    for (const k of keys) {
+      const v = obj && obj[k];
+      if (typeof v === 'number') return v;
+      if (typeof v === 'string' && /^\d+$/.test(v)) return Number(v);
+    }
+  } catch (_) {}
+  return null;
+}
+
+async function resolveServingsQuId() {
+  try {
+    const res = await grocyFetch('GET', '/objects/quantity_units');
+    const rows = Array.isArray(res) ? res : (res && res.data) || [];
+    let firstId = null;
+    for (const r of rows) {
+      const id = Number(r && r.id);
+      const name = String(r && r.name || '').toLowerCase();
+      if (!Number.isFinite(id)) continue;
+      if (firstId == null) firstId = id;
+      if (['serving','servings','portion','portions'].some(w => name.includes(w))) return id;
+    }
+    // Create a Serving unit if none found
+    const created = await grocyFetch('POST', '/objects/quantity_units', { name: 'Serving', name_plural: 'Servings' });
+    const cid = extractId(created);
+    return Number.isFinite(cid) ? Number(cid) : (Number.isFinite(firstId) ? Number(firstId) : null);
+  } catch (_) {
+    return null;
+  }
+}
+
+async function getProduct(pid) {
+  try { return await grocyFetch('GET', `/objects/products/${Number(pid)}`); } catch { return null; }
+}
+
+async function findProductConversionId(pid, fromQuId, toQuId) {
+  try {
+    const data = await grocyFetch('GET', '/objects/quantity_unit_conversions');
+    const rows = Array.isArray(data) ? data : (data && data.data) || [];
+    for (const r of rows) {
+      if (Number(r && r.product_id) === Number(pid) && Number(r && r.from_qu_id) === Number(fromQuId) && Number(r && r.to_qu_id) === Number(toQuId)) {
+        const id = Number(r && r.id);
+        if (Number.isFinite(id)) return id;
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+
+async function createOrUpdateConversion(pid, fromQuId, toQuId, factor) {
+  const payload = { product_id: Number(pid), from_qu_id: Number(fromQuId), to_qu_id: Number(toQuId), factor: Number(factor) };
+  const existingId = await findProductConversionId(pid, fromQuId, toQuId);
+  if (Number.isFinite(existingId)) {
+    return await grocyFetch('PUT', `/objects/quantity_unit_conversions/${existingId}`, payload);
+  }
+  try {
+    return await grocyFetch('POST', '/objects/quantity_unit_conversions', payload);
+  } catch (e) {
+    // try update if already exists
+    const id = await findProductConversionId(pid, fromQuId, toQuId);
+    if (Number.isFinite(id)) return await grocyFetch('PUT', `/objects/quantity_unit_conversions/${id}`, payload);
+    throw e;
+  }
+}
+
+async function ensureProductServingsConversion(pid, factor) {
+  const prod = await getProduct(pid);
+  if (!prod) return;
+  const fromQuId = Number(prod && prod.qu_id_stock);
+  if (!Number.isFinite(fromQuId)) return;
+  const toQuId = await resolveServingsQuId();
+  if (!Number.isFinite(toQuId)) return;
+  const f = Number(factor);
+  if (!Number.isFinite(f) || f <= 0) return;
+  try { await createOrUpdateConversion(pid, fromQuId, toQuId, f); } catch (_) {}
+}
+
+async function mapUserfieldKeys() {
+  if (userfieldKeyCache) return userfieldKeyCache;
+  try {
+    const defs = await grocyFetch('GET', '/objects/userfields');
+    const rows = Array.isArray(defs) ? defs : (defs && defs.data) || [];
+    const desired = {
+      'Calories per Serving': ['Calories per Serving','Calories_Per_Serving'],
+      'Carbs': ['Carbs'],
+      'Fats': ['Fats'],
+      'Number of Servings': ['Number of Servings','num_servings'],
+      'Protein': ['Protein'],
+      'Serving Weight (g)': ['Serving Weight (g)','Serving_Weight'],
+    };
+    const map = {};
+    rows.forEach((r) => {
+      if ((r && String((r.entity||r.object_name)||'').toLowerCase()) !== 'products') return;
+      const name = String(r && r.name || '');
+      const caption = String(r && r.caption || '');
+      Object.keys(desired).forEach((label) => {
+        if (map[label]) return;
+        const aliases = desired[label];
+        if (aliases.includes(name) || aliases.includes(caption)) map[label] = name;
+      });
+    });
+    userfieldKeyCache = map;
+    return map;
+  } catch (_) {
+    userfieldKeyCache = {};
+    return userfieldKeyCache;
+  }
+}
+
+async function getServingsKey() {
+  const map = await mapUserfieldKeys();
+  return map && map['Number of Servings'];
+}
+
+async function updateProductEnergyFromUserfields(pid) {
+  try {
+    const pidNum = Number(pid);
+    if (!Number.isFinite(pidNum)) return;
+    const ufMap = await mapUserfieldKeys();
+    const cpsKey = ufMap && ufMap['Calories per Serving'];
+    const nservKey = ufMap && ufMap['Number of Servings'];
+    if (!cpsKey || !nservKey) return;
+    const ufs = await grocyFetch('GET', `/userfields/products/${pidNum}`);
+    const cps = Number(ufs && ufs[cpsKey]);
+    const nserv = Number(ufs && ufs[nservKey]);
+    if (!Number.isFinite(cps) || cps <= 0 || !Number.isFinite(nserv) || nserv <= 0) return;
+    const total = Math.round(cps * nserv);
+    const candidates = ['calories', 'energy', 'energy_kcal'];
+    for (const field of candidates) {
+      try {
+        const payload = {}; payload[field] = Number(total);
+        await grocyFetch('PUT', `/objects/products/${pidNum}`, payload);
+        return;
+      } catch (_) { /* try next field name */ }
+    }
+  } catch (_) {
+    // ignore and do not block the caller
+  }
+}
+
+async function getProductSummaryByBarcode(barcode) {
+  try {
+    const byb = await grocyFetch('GET', `/stock/products/by-barcode/${encodeURIComponent(barcode)}`);
+    if (!byb || !byb.product || !byb.product.id) return { exists: false };
+    const product_id = Number(byb.product.id);
+    const name = String(byb.product.name || '').trim();
+    // Intentionally omit 'servings' to avoid prefill on the client
+    return { exists: true, product_id, name };
+  } catch (_) {
+    return { exists: false };
+  }
 }
 
 function enqueueJob(op, barcode) {
@@ -324,6 +484,53 @@ app.get('/api/jobs/:id', (req, res) => {
   res.json({ id: job.id, status: job.status, logs: minimalLogs, result: job.result });
 });
 
+// Product summary by barcode (id, name)
+app.get('/api/products/summary/by-barcode/:barcode', async (req, res) => {
+  try {
+    const barcode = String(req.params.barcode || '').trim();
+    if (!barcode) return res.status(400).json({ error: 'barcode required' });
+    const summary = await getProductSummaryByBarcode(barcode);
+    res.json(summary);
+  } catch (e) {
+    res.status(400).json({ error: String(e && e.message || e) });
+  }
+});
+
+// Get/Set Number of Servings userfield
+app.get('/api/products/:productId/servings', async (req, res) => {
+  try {
+    const pid = Number(req.params.productId);
+    if (!Number.isFinite(pid)) return res.status(400).json({ error: 'invalid productId' });
+    const key = await getServingsKey();
+    if (!key) return res.json({ servings: null });
+    const ufs = await grocyFetch('GET', `/userfields/products/${pid}`);
+    const num = Number(ufs && ufs[key]);
+    res.json({ servings: Number.isFinite(num) ? num : null });
+  } catch (e) {
+    res.status(400).json({ error: String(e && e.message || e) });
+  }
+});
+
+app.put('/api/products/:productId/servings', async (req, res) => {
+  try {
+    const pid = Number(req.params.productId);
+    if (!Number.isFinite(pid)) return res.status(400).json({ error: 'invalid productId' });
+    const key = await getServingsKey();
+    if (!key) return res.status(400).json({ error: 'Number of Servings userfield not found' });
+    const val = Number(req.body && req.body.servings);
+    if (!Number.isFinite(val) || val < 0) return res.status(400).json({ error: 'invalid servings' });
+    const payload = {}; payload[key] = val;
+    await grocyFetch('PUT', `/userfields/products/${pid}`, payload);
+    // Keep product conversion in sync: 1 stock unit = <servings> servings
+    try { await ensureProductServingsConversion(pid, val); } catch (_) {}
+  // Update built-in energy/calories from userfields (calories_per_serving * num_servings)
+  try { await updateProductEnergyFromUserfields(pid); } catch (_) {}
+    res.json({ status: 'ok' });
+  } catch (e) {
+    res.status(400).json({ error: String(e && e.message || e) });
+  }
+});
+
 // Recent new items
 app.get('/api/recent-new-items', async (req, res) => {
   await ensureLocationMap();
@@ -341,6 +548,26 @@ app.get('/api/recent-new-items', async (req, res) => {
 // Recent modification logs
 app.get('/api/mod-logs', (req, res) => {
   res.json(modificationLogs);
+});
+
+// Shopping list: add product by product_id and amount
+app.post('/api/shopping/add', async (req, res) => {
+  try {
+    const pid = Number(req.body && req.body.product_id);
+    const amount = Number(req.body && req.body.amount);
+    const bodyListId = Number(req.body && req.body.shopping_list_id);
+    const envListId = Number(process.env.GROCY_SHOPPING_LIST_ID);
+    const listId = Number.isFinite(bodyListId) && bodyListId > 0
+      ? bodyListId
+      : (Number.isFinite(envListId) && envListId > 0 ? envListId : 1);
+    if (!Number.isFinite(pid) || pid <= 0) return res.status(400).json({ error: 'invalid product_id' });
+    const amt = Number.isFinite(amount) && amount > 0 ? amount : 1;
+    const payload = { product_id: pid, amount: amt, shopping_list_id: listId };
+    await grocyFetch('POST', '/stock/shoppinglist/add-product', payload);
+    res.json({ status: 'ok', message: `Added product ${pid} x ${amt} to shopping list ${listId}` });
+  } catch (e) {
+    res.status(400).json({ error: String(e && e.message || e) });
+  }
 });
 
 // Minimal proxy endpoints for test script

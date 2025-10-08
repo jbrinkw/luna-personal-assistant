@@ -458,6 +458,123 @@ async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory
     )
 
 
+async def run_agent_stream(user_prompt: str, chat_history: Optional[str] = None, memory: Optional[str] = None, tool_root: Optional[str] = None, llm: Optional[str] = None):
+    """Yield incremental text chunks while the agent generates a response.
+
+    For this planner-executor architecture, we stream tool results as they complete.
+    Fallback: if streaming is unavailable, yields the final response once.
+    """
+    # Prepare tools once
+    if not TOOL_RUNNERS or isinstance(tool_root, str):
+        initialize_runtime(tool_root=tool_root)
+    if not TOOL_RUNNERS:
+        yield "No tools discovered. Ensure files matching *_tool.py exist under extensions/."
+        return
+
+    # Planner model: use tier if provided; otherwise env-based model
+    tracer = LLMRunTracer("planner")
+    if isinstance(llm, str) and llm.strip() in {"low", "med", "high"}:
+        model = get_chat_model(role="domain", tier=llm.strip(), callbacks=[tracer], temperature=0.0)
+    else:
+        planner_model_name = _get_env("MONO_PT_PLANNER_MODEL", _get_env("REACT_MODEL", "gpt-4.1")) or "gpt-4.1"
+        model = get_chat_model(role="domain", model=planner_model_name, callbacks=[tracer], temperature=0.0)
+
+    # Clear traces per run
+    del RUN_TRACES[:]
+
+    # Iterative plan-execute-review loop with streaming
+    accumulated_segments: List[str] = []
+    recursion_limit = int(_get_env("MONO_PT_RECURSION_LIMIT", "8") or 8)
+    followup_items: List[ToolResult] = []
+    step = 0
+    yielded_any = False
+
+    while step < recursion_limit:
+        step += 1
+        # Build planning messages (initial or follow-up)
+        messages = _build_planner_messages(
+            user_prompt=user_prompt,
+            chat_history=chat_history,
+            memory=memory,
+            light_schema=LIGHT_SCHEMA,
+            review_items=(followup_items or None),
+        )
+
+        # Invoke planner
+        _dbg_print(f"[simple-pt-stream] step {step}: planning...")
+        plan_resp = await model.ainvoke(messages)
+        
+        # Parse plan JSON
+        raw_text = (plan_resp.content or "") if hasattr(plan_resp, "content") else str(plan_resp)
+        _dbg_print(f"[simple-pt-stream] step {step}: planner raw -> {_truncate(raw_text, int(_get_env('MONO_PT_LOG_MAXLEN', '600') or '600'))}")
+        parsed = _extract_json_object(raw_text)
+        planner_step = PlannerStep()
+        if isinstance(parsed, dict):
+            try:
+                planner_step = PlannerStep.model_validate(parsed)
+            except Exception:
+                # Try to coerce structure
+                calls_raw = parsed.get("calls") if isinstance(parsed.get("calls"), list) else []
+                calls: List[PlannedToolCall] = []
+                for c in calls_raw:
+                    try:
+                        calls.append(PlannedToolCall.model_validate(c))
+                    except Exception:
+                        continue
+                planner_step = PlannerStep(calls=calls, final_text=parsed.get("final_text"))
+
+        # If planner provided final text only and no calls, finish
+        if not planner_step.calls:
+            if isinstance(planner_step.final_text, str) and planner_step.final_text.strip():
+                final_chunk = planner_step.final_text.strip()
+                accumulated_segments.append(final_chunk)
+                yield final_chunk
+                yielded_any = True
+                _dbg_print(f"[simple-pt-stream] step {step}: final_text provided; finishing.")
+            break
+
+        # Execute calls concurrently
+        _dbg_print(f"[simple-pt-stream] step {step}: executing {len(planner_step.calls)} call(s) concurrently...")
+        for idx, pc in enumerate(planner_step.calls, start=1):
+            try:
+                args_str = json.dumps(pc.args or {}, ensure_ascii=False)
+            except Exception:
+                args_str = str(pc.args or {})
+            _dbg_print(f"[simple-pt-stream] step {step} CALL {idx}/{len(planner_step.calls)}: tool={pc.tool} passthrough={(pc.options.passthrough if pc.options else True)} args={_truncate(args_str, int(_get_env('MONO_PT_LOG_MAXLEN', '600') or '600'))}")
+
+        _, paired = await _execute_planned_calls(planner_step.calls)
+
+        # Route outputs and stream passthrough results
+        followup_items = []
+        for idx, (pc, res) in enumerate(paired, start=1):
+            passthrough = True if pc.options is None else bool(getattr(pc.options, "passthrough", True))
+            if passthrough and res.success:
+                # Stream directly by yielding
+                if isinstance(res.public_text, str) and res.public_text.strip():
+                    chunk_text = res.public_text.strip()
+                    accumulated_segments.append(chunk_text)
+                    yield chunk_text
+                    yielded_any = True
+                _dbg_print(f"[simple-pt-stream] step {step} RESULT {idx}/{len(paired)}: tool={res.tool} success={res.success} passthrough={passthrough} ROUTE=STREAMED text={_truncate(res.public_text, int(_get_env('MONO_PT_LOG_MAXLEN', '600') or '600'))}")
+            else:
+                followup_items.append(res)
+                _dbg_print(f"[simple-pt-stream] step {step} RESULT {idx}/{len(paired)}: tool={res.tool} success={res.success} passthrough={passthrough} ROUTE=REVIEW text={_truncate(res.public_text, int(_get_env('MONO_PT_LOG_MAXLEN', '600') or '600'))}")
+
+        # If nothing needs review, continue next plan step
+        if not followup_items:
+            _dbg_print(f"[simple-pt-stream] step {step}: no follow-up needed; finishing.")
+            break
+
+    if not yielded_any:
+        # Fallback to non-streaming execution
+        _dbg_print("[simple-pt-stream] no content streamed; falling back to non-streaming.")
+        res = await run_agent(user_prompt, chat_history=chat_history, memory=memory, tool_root=tool_root, llm=llm)
+        yield res.final
+        return
+
+    _dbg_print(f"[simple-pt-stream] done. steps={step} segments={len(accumulated_segments)}")
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     import argparse
     parser = argparse.ArgumentParser(description="Simple passthough agent over all tools")

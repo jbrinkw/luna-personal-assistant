@@ -50,6 +50,7 @@ class AgentResult(BaseModel):
 # ---- Runtime cache ----
 PRELOADED_TOOLS: List[Any] = []
 RUN_TRACES: List[ToolTrace] = []
+DOMAIN_PROMPTS_TEXT: str = ""
 
 
 def _get_env(key: str, default: Optional[str] = None) -> Optional[str]:
@@ -136,19 +137,32 @@ def _wrap_callable_as_tool(fn, ext_name: str):
 
 
 def initialize_runtime(tool_root: Optional[str] = None) -> None:
-    global PRELOADED_TOOLS
+    global PRELOADED_TOOLS, DOMAIN_PROMPTS_TEXT
     try:
         exts = discover_extensions(tool_root)
     except Exception:
         exts = []
     tools: List[Any] = []
+    domain_prompts: List[str] = []
     for ext in exts:
         for fn in (ext.get("tools") or []):
             try:
                 tools.append(_wrap_callable_as_tool(fn, ext.get("name", "unknown")))
             except Exception:
                 continue
+        # Collect full domain system prompts
+        try:
+            name = ext.get("name", "")
+            sp = ext.get("system_prompt", "")
+            if isinstance(name, str) and isinstance(sp, str) and sp.strip():
+                domain_prompts.append(f"[Domain: {name}]\n{sp.strip()}")
+        except Exception:
+            pass
     PRELOADED_TOOLS = tools
+    try:
+        DOMAIN_PROMPTS_TEXT = "\n\n".join([p for p in domain_prompts if p])
+    except Exception:
+        DOMAIN_PROMPTS_TEXT = ""
 
 
 def _active_models() -> Dict[str, str]:
@@ -192,7 +206,12 @@ async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory
             if isinstance(llm, str) and llm.strip() in {"low", "med", "high"}
             else get_chat_model(role="domain", model=_get_env("REACT_MODEL", "gpt-4.1"), callbacks=[LLMRunTracer("react")], temperature=0.0)
         )
-        agent = create_react_agent(model, tools=tools)
+        # Include combined domain system prompts as the agent's system prompt when available
+        if isinstance(DOMAIN_PROMPTS_TEXT, str) and DOMAIN_PROMPTS_TEXT.strip():
+            final_prompt = "Domain system prompts:\n" + DOMAIN_PROMPTS_TEXT.strip()
+            agent = create_react_agent(model, tools=tools, prompt=final_prompt)
+        else:
+            agent = create_react_agent(model, tools=tools)
     except Exception as e:
         msg = f"Error building ReAct agent: {str(e)}"
         return AgentResult(final=msg, results=[], timings=[], content=msg, response_time_secs=0.0, traces=[])
@@ -215,11 +234,11 @@ async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory
     import asyncio
     t0 = time.perf_counter()
     try:
-        result = await agent.ainvoke({"messages": messages}, config={"recursion_limit": 8, "callbacks": [LLMRunTracer("react")]})
+        result = await agent.ainvoke({"messages": messages}, config={"recursion_limit": 16, "callbacks": [LLMRunTracer("react")]})
     except RuntimeError:
         # fallback loop handling if needed
         loop = asyncio.get_event_loop()
-        result = await agent.ainvoke({"messages": messages}, config={"recursion_limit": 8, "callbacks": [LLMRunTracer("react")]})
+        result = await agent.ainvoke({"messages": messages}, config={"recursion_limit": 16, "callbacks": [LLMRunTracer("react")]})
     elapsed = time.perf_counter() - t0
 
     # Extract final content
@@ -247,6 +266,93 @@ async def run_agent(user_prompt: str, chat_history: Optional[str] = None, memory
         response_time_secs=float(elapsed),
         traces=traces,
     )
+
+
+async def run_agent_stream(user_prompt: str, chat_history: Optional[str] = None, memory: Optional[str] = None, tool_root: Optional[str] = None, llm: Optional[str] = None):
+    """Yield incremental text chunks while the agent generates a response.
+
+    Fallback: if streaming is unavailable, yields the final response once.
+    """
+    # Discover/warm tools if not already done or if tool_root differs
+    if not PRELOADED_TOOLS or isinstance(tool_root, str):
+        initialize_runtime(tool_root=tool_root)
+    tools = PRELOADED_TOOLS or []
+    if not tools:
+        yield "No tools discovered. Ensure files matching *_tool.py exist under extensions/."
+        return
+
+    # Build a simple ReAct agent with all tools
+    try:
+        from langgraph.prebuilt import create_react_agent
+        # Use tier if provided; else fall back to env model
+        model = (
+            get_chat_model(role="domain", tier=llm, callbacks=[LLMRunTracer("react")], temperature=0.0)
+            if isinstance(llm, str) and llm.strip() in {"low", "med", "high"}
+            else get_chat_model(role="domain", model=_get_env("REACT_MODEL", "gpt-4.1"), callbacks=[LLMRunTracer("react")], temperature=0.0)
+        )
+        # Include combined domain system prompts as the agent's system prompt when available
+        if isinstance(DOMAIN_PROMPTS_TEXT, str) and DOMAIN_PROMPTS_TEXT.strip():
+            final_prompt = "Domain system prompts:\n" + DOMAIN_PROMPTS_TEXT.strip()
+            agent = create_react_agent(model, tools=tools, prompt=final_prompt)
+        else:
+            agent = create_react_agent(model, tools=tools)
+    except Exception:
+        # If building agent fails, just yield non-streaming result from run_agent
+        res = await run_agent(user_prompt, chat_history=chat_history, memory=memory, tool_root=tool_root, llm=llm)
+        yield res.final
+        return
+
+    # Prepare messages
+    from langchain_core.messages import SystemMessage, HumanMessage
+    messages: List[Any] = []
+    if chat_history or memory:
+        messages.append(SystemMessage(content=(
+            "Conversation context to consider when responding.\n"
+            f"Chat history:\n{chat_history or ''}\n\n"
+            f"Memory:\n{memory or ''}"
+        )))
+    messages.append(HumanMessage(content=user_prompt))
+
+    # Clear traces for this run
+    del RUN_TRACES[:]
+
+    yielded_any = False
+    try:
+        # Prefer event-streaming for token deltas
+        async for event in agent.astream_events({"messages": messages}, config={"recursion_limit": 16, "callbacks": [LLMRunTracer("react")]}, version="v1"):
+            try:
+                ev = event.get("event") if isinstance(event, dict) else getattr(event, "event", None)
+                if ev == "on_chat_model_stream":
+                    data = event.get("data") if isinstance(event, dict) else getattr(event, "data", {})
+                    chunk = (data or {}).get("chunk") if isinstance(data, dict) else getattr(data, "chunk", None)
+                    content = getattr(chunk, "content", None)
+                    
+                    # Handle both string content (OpenAI) and list content (Anthropic)
+                    text = None
+                    if isinstance(content, str):
+                        text = content
+                    elif isinstance(content, list) and content:
+                        # Anthropic format: [{'text': '...', 'type': 'text', 'index': 0}]
+                        for item in content:
+                            if isinstance(item, dict) and item.get("type") == "text":
+                                text = item.get("text", "")
+                                break
+                    
+                    if text:
+                        yielded_any = True
+                        yield text
+            except Exception:
+                # Ignore malformed events; continue streaming
+                continue
+    except Exception:
+        # If streaming path fails, fall back to single-shot
+        pass
+
+    if not yielded_any:
+        # Fallback to non-streaming execution
+        res = await run_agent(user_prompt, chat_history=chat_history, memory=memory, tool_root=tool_root, llm=llm)
+        yield res.final
+        return
 
 
 def main(argv: Optional[List[str]] = None) -> int:
