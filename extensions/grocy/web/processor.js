@@ -1,9 +1,10 @@
 /* eslint-disable */
 const http = require('http');
 const https = require('https');
+const path = require('path');
 
-// Load env from project root .env if present
-try { require('dotenv').config({ path: __dirname + '/../.env' }); } catch (_) {}
+// Load env from repository root .env if present
+try { require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') }); } catch (_) {}
 
 const BASE = (process.env.GROCY_BASE_URL || '').replace(/\/$/, '');
 const KEY = process.env.GROCY_API_KEY || '';

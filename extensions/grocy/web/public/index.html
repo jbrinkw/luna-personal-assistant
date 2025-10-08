@@ -3,257 +3,442 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Grocy Wizard (MVP)</title>
+    <title>Grocy IO Wizard</title>
     <style>
-      body { font-family: system-ui, Arial, sans-serif; margin: 24px; }
-      .row { display: flex; gap: 8px; align-items: center; }
-      .btn { padding: 8px 12px; border: 1px solid #ccc; background: #f7f7f7; cursor: pointer; }
-      .btn.active { background: #222; color: #fff; border-color: #222; }
-      #logs { white-space: pre-wrap; background: #f9f9f9; padding: 12px; border: 1px solid #eee; max-height: 300px; overflow: auto; }
-      input[type="text"] { padding: 8px; width: 280px; }
-      .status { margin-top: 12px; }
+      :root {
+        --accent: #d33;
+        --accent-dark: #a11;
+        --bg: #f7f7f9;
+        --key: #fff;
+        --key-border: #ddd;
+        --key-hover: #f0f0f0;
+        --active: #1e66f5;
+      }
+      body { font-family: system-ui, Arial, sans-serif; margin: 0; padding: 16px; background: #fff; color: #111; height: 100vh; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; }
+      h1 { margin: 8px 0 12px; font-size: 20px; font-weight: 600; }
+      .status { margin: 8px 0 12px; color: #444; min-height: 20px; }
+      .headerBar { display: grid; grid-template-columns: 1fr 33vw; align-items: center; gap: 12px; margin-bottom: 8px; }
+      .headerBar .rightActions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+      .headerBar .actionBtn { width: 100%; padding: 16px 12px; border: 1px solid #ccc; background: #fff; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 16px; }
+      .headerBar .actionBtn:hover { background: #f5f5f5; }
+      .modeButtons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
+      .modeBtn { padding: 14px 16px; border: 1px solid #ccc; background: #fff; border-radius: 10px; cursor: pointer; font-weight: 700; width: 100%; font-size: 16px; }
+      .modeBtn.active { background: #222; color: #fff; border-color: #222; }
+      .app { display: grid; grid-template-columns: 1fr 3fr; gap: 16px; align-items: stretch; flex: 1 1 auto; min-height: 0; height: auto; }
+      .panel { background: var(--bg); border: 1px solid #eee; border-radius: 8px; padding: 12px; height: 100%; min-height: 0; display: flex; flex-direction: column; }
+      .queuePanel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; height: 100%; }
+      .queueHeader { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+      .logHeader { display: flex; align-items: center; justify-content: flex-end; margin: 6px 0 8px; }
+      .logFilterButtons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
+      .queueHeader input[type="text"] { flex: 1; padding: 10px 12px; border: 1px solid #ccc; border-radius: 6px; }
+      .queueList { display: flex; flex-direction: column; gap: 8px; flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 4px; max-height: none; }
+      .queueItem { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; background: #fff; cursor: pointer; }
+      .queueItem.red { border-color: var(--accent); background: #ffe9e9; }
+      .queueItem.active { outline: 2px solid var(--active); }
+      .queueItem .name { font-weight: 600; }
+      .queueItem .right { color: #000; font-variant-numeric: tabular-nums; }
+
+      .keypadPanel { display: grid; grid-template-columns: 120px 1fr; grid-template-rows: auto auto 1fr auto; gap: 10px; min-height: 0; height: 100%; }
+      .keypadPanel .modeButtons { grid-column: 1; grid-row: 1 / -1; display: flex; flex-direction: column; gap: 10px; height: 100%; }
+      .keypadPanel .modeButtons .modeBtn { flex: 1 1 0; }
+      .keypadPanel .activeBar, .keypadPanel .screen, .keypadPanel .keysGrid, .keypadPanel .completeBtn { grid-column: 2; }
+      .activeBar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .activeName { font-size: 24px; font-weight: 800; padding: 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .modeBtn.small { padding: 8px 12px; font-size: 14px; border-radius: 8px; }
+      .screen { display: flex; align-items: center; gap: 8px; }
+      .screen input { flex: 1; font-size: 42px; padding: 8px 10px; border: 1px solid #ccc; border-radius: 8px; text-align: right; }
+      .screen .units { font-size: 16px; color: #666; }
+
+      .keysGrid { display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: minmax(80px, 1fr); gap: 10px; }
+      .key { background: var(--key); border: 1px solid var(--key-border); border-radius: 10px; font-size: 28px; font-weight: 700; cursor: pointer; user-select: none; display: flex; align-items: center; justify-content: center; }
+      .key:hover { background: var(--key-hover); }
+      .key.op { background: #fef3f3; border-color: #f2d1d1; }
+      .key.op:hover { background: #fde7e7; }
+      .key.plus { grid-column: 4; grid-row: 1 / span 2; font-size: 36px; }
+      .key.minus { grid-column: 4; grid-row: 3 / span 2; font-size: 36px; }
+      /* specific key slots are styled by position; no extra styles needed */
+
+      /* Hidden debug areas */
+      #logs, #modlogs { display: none; }
+
+      .completeBtn { margin-top: 4px; padding: 24px; font-size: 18px; font-weight: 700; color: #fff; background: #2f9e44; border: 1px solid #2b8a3e; border-radius: 10px; cursor: pointer; }
+      .completeBtn:hover { background: #2b8a3e; }
     </style>
   </head>
   <body>
-    <h1>Grocy Wizard (MVP)</h1>
-    <div class="row">
-      <input id="barcode" type="text" placeholder="Scan or type barcode and press Enter" />
-      <button id="btnAdd" class="btn active">Add</button>
-      <button id="btnRemove" class="btn">Remove</button>
-      <button id="btnGo" class="btn">Submit</button>
+    <div class="headerBar">
+      <h1>Grocy IO Wizard</h1>
     </div>
-    <div class="status">
-      <div id="statusText"></div>
+    <div class="status" id="statusText"></div>
+    <div class="app">
+      <div class="panel queuePanel">
+        <div class="queueHeader">
+          <input id="barcode" type="text" placeholder="Scan or type barcode and press Enter" />
+        </div>
+        <div class="logHeader">
+          <div class="logFilterButtons">
+            <button id="btnLogAll" class="modeBtn small active">All</button>
+            <button id="btnLogNew" class="modeBtn small">Incomplete</button>
+          </div>
+        </div>
+        <div id="queue" class="queueList"></div>
+      </div>
+      <div class="panel keypadPanel">
+        <div class="modeButtons">
+          <button id="btnPurchase" class="modeBtn active">Purchase</button>
+          <button id="btnConsume" class="modeBtn">Consume</button>
+          <button id="btnShopping" class="modeBtn">Shopping List</button>
+        </div>
+        <div class="activeBar">
+          <div id="activeName" class="activeName">No item selected</div>
+        </div>
+        <div class="screen">
+          <input id="screen" type="text" inputmode="decimal" pattern="^\\d*\\.?\\d*$" value="1" />
+          <div class="units">servings</div>
+        </div>
+        <div class="keysGrid">
+          <button class="key" data-digit="7">7</button>
+          <button class="key" data-digit="8">8</button>
+          <button class="key" data-digit="9">9</button>
+          <button class="key op plus" data-act="plus">+</button>
+          <button class="key" data-digit="4">4</button>
+          <button class="key" data-digit="5">5</button>
+          <button class="key" data-digit="6">6</button>
+          <button class="key op minus" data-act="minus">−</button>
+          <button class="key" data-digit="1">1</button>
+          <button class="key" data-digit="2">2</button>
+          <button class="key" data-digit="3">3</button>
+          <button class="key dot" data-act="dot">.</button>
+          <button class="key" data-digit="0">0</button>
+          <button class="key backspace" data-act="backspace">←</button>
+        </div>
+        <button id="btnComplete" class="completeBtn">Complete</button>
+      </div>
     </div>
-    <h3>Recent new items (last 3)</h3>
-    <div id="recent"></div>
-    <h3>Logs</h3>
+
     <div id="logs"></div>
-    <h3>Modification logs</h3>
-    <div id="modlogs" style="white-space: pre-wrap; background:#f9f9f9; padding:12px; border:1px solid #eee; max-height:220px; overflow:auto;"></div>
+    <div id="modlogs"></div>
 
     <script>
-      const barcodeInput = document.getElementById('barcode');
-      const btnAdd = document.getElementById('btnAdd');
-      const btnRemove = document.getElementById('btnRemove');
-      const btnGo = document.getElementById('btnGo');
       const statusText = document.getElementById('statusText');
+      const barcodeInput = document.getElementById('barcode');
+      const queueEl = document.getElementById('queue');
+      const screen = document.getElementById('screen');
       const logsEl = document.getElementById('logs');
-      const recentEl = document.getElementById('recent');
       const modlogsEl = document.getElementById('modlogs');
+      const btnPurchase = document.getElementById('btnPurchase');
+      const btnConsume = document.getElementById('btnConsume');
+      const btnShopping = document.getElementById('btnShopping');
+      const btnComplete = document.getElementById('btnComplete');
+      const btnLogAll = document.getElementById('btnLogAll');
+      const btnLogNew = document.getElementById('btnLogNew');
 
-      let op = 'add';
+      // removed MAX_RED limit on new items
+      let mode = 'purchase'; // 'purchase' | 'consume' | 'shopping'
+      let scanOp = 'add'; // derived: 'add' for purchase/shopping, 'remove' for consume
+      let items = []; // { key, barcode, product_id|null, name, servings, isRed, active, lastSavedServings|null, pendingSave:false }
+      let activeKey = null;
+      let overwriteOnNextDigit = false;
+      let saveTimer = null;
 
-      function setOp(newOp) {
-        op = newOp;
-        if (op === 'add') {
-          btnAdd.classList.add('active');
-          btnRemove.classList.remove('active');
-        } else {
-          btnRemove.classList.add('active');
-          btnAdd.classList.remove('active');
+      function setMode(newMode) {
+        mode = (newMode === 'consume') ? 'consume' : (newMode === 'shopping' ? 'shopping' : 'purchase');
+        scanOp = (mode === 'consume') ? 'remove' : 'add';
+        // update active classes
+        if (btnPurchase) btnPurchase.classList.toggle('active', mode === 'purchase');
+        if (btnConsume) btnConsume.classList.toggle('active', mode === 'consume');
+        if (btnShopping) btnShopping.classList.toggle('active', mode === 'shopping');
+        try { localStorage.setItem('grocy_mode', mode); } catch (_) {}
+      }
+      btnPurchase.addEventListener('click', () => setMode('purchase'));
+      btnConsume.addEventListener('click', () => setMode('consume'));
+      if (btnShopping) btnShopping.addEventListener('click', () => setMode('shopping'));
+      btnComplete.addEventListener('click', () => {
+        if (mode === 'shopping') {
+          addActiveOrLatestToShoppingList();
+        }
+        try { barcodeInput.focus(); } catch (_) {}
+      });
+      if (btnLogAll && btnLogNew) {
+        btnLogAll.addEventListener('click', () => { btnLogAll.classList.add('active'); btnLogNew.classList.remove('active'); renderQueue(); });
+        btnLogNew.addEventListener('click', () => { btnLogNew.classList.add('active'); btnLogAll.classList.remove('active'); renderQueue(); });
+      }
+
+      function beepBad() {
+        try {
+          const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+          const ctx = new AC();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'square'; osc.frequency.value = 330;
+          gain.gain.value = 0.08;
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.start(); setTimeout(() => { osc.stop(); ctx.close(); }, 180);
+        } catch (_) {}
+      }
+
+      function redCount() { return items.filter(x => x.isRed).length; }
+      function showOnlyNew() { return btnLogNew && btnLogNew.classList.contains('active'); }
+
+      async function addActiveOrLatestToShoppingList() {
+        try {
+          const chosen = getActiveItem() || items[0] || null;
+          if (!chosen) { statusText.textContent = 'No item to add'; return; }
+          const amount = Number.isFinite(Number(chosen.servings)) && Number(chosen.servings) > 0 ? Number(chosen.servings) : 1;
+          // If we have a product_id, use it directly; otherwise, try to resolve by barcode
+          let pid = Number(chosen.product_id);
+          if (!Number.isFinite(pid) && chosen.barcode) {
+            try {
+              const res = await fetch(`/api/products/summary/by-barcode/${encodeURIComponent(chosen.barcode)}`);
+              const s = await res.json();
+              if (s && s.exists && Number.isFinite(Number(s.product_id))) pid = Number(s.product_id);
+            } catch (_) {}
+          }
+          if (!Number.isFinite(pid)) { statusText.textContent = 'Product not resolved yet'; beepBad(); return; }
+          statusText.textContent = 'Adding to shopping list...';
+          let shoppingListId = null;
+          try { const ls = Number(localStorage.getItem('grocy_shopping_list_id')); if (Number.isFinite(ls) && ls > 0) shoppingListId = ls; } catch (_) {}
+          const payload = { product_id: pid, amount };
+          if (Number.isFinite(shoppingListId)) payload.shopping_list_id = shoppingListId;
+          const res = await fetch(`/api/shopping/add`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data && data.error || 'Failed to add');
+          statusText.textContent = 'Added to shopping list';
+          setTimeout(() => { if (statusText.textContent === 'Added to shopping list') statusText.textContent = ''; }, 1200);
+        } catch (e) {
+          statusText.textContent = 'Error: ' + (e && e.message || e);
+          beepBad();
         }
       }
 
-      btnAdd.addEventListener('click', () => setOp('add'));
-      btnRemove.addEventListener('click', () => setOp('remove'));
-      btnGo.addEventListener('click', submit);
-      barcodeInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          submit();
+      function renderQueue() {
+        queueEl.innerHTML = '';
+        items.forEach((it) => {
+          if (showOnlyNew() && !it.isRed) return;
+          const div = document.createElement('div');
+          const isActive = (it.key === activeKey);
+          div.className = 'queueItem' + (it.isRed ? ' red' : '') + (isActive ? ' active' : '');
+          if (isActive) div.style.outlineColor = 'var(--active)';
+          const name = document.createElement('div');
+          name.className = 'name';
+          name.textContent = (it.name || 'Unknown');
+          const right = document.createElement('div');
+          right.className = 'right';
+          right.textContent = `${Number.isFinite(it.servings) ? it.servings : 1}`;
+          div.appendChild(name);
+          div.appendChild(right);
+          div.addEventListener('click', () => selectItem(it.key));
+          queueEl.appendChild(div);
+        });
+      }
+
+      function selectItem(key) {
+        activeKey = key;
+        items.forEach(i => { i.active = (i.key === key); });
+        const it = items.find(i => i.key === key);
+        if (it) it.isRed = false; // acknowledge on click
+        const v = Number.isFinite(it && it.servings) ? it.servings : 1;
+        screen.value = String(v);
+        setTimeout(() => { try { screen.focus(); screen.select(); } catch (_) {} }, 0);
+        overwriteOnNextDigit = true;
+        document.getElementById('activeName').textContent = it ? (it.name || 'Unnamed') : 'No item selected';
+        renderQueue();
+      }
+
+      function getActiveItem() { return items.find(i => i.key === activeKey) || null; }
+
+      function clampServings(n) { const num = Number(n); if (!Number.isFinite(num)) return 1; const v = Math.max(1, num); return Math.round(v * 100) / 100; }
+
+      function updateFromScreen() {
+        const it = getActiveItem();
+        if (!it) return;
+        const raw = String(screen.value || '');
+        // If mid-typing a decimal like "1." or just ".", defer updates
+        if (raw === '.' || /^(\d+)\.$/.test(raw)) return;
+        const v = clampServings(raw);
+        if (!Number.isFinite(v)) return;
+        it.servings = v;
+        scheduleSave(it);
+        renderQueue();
+      }
+
+      function onDigit(d) {
+        if (overwriteOnNextDigit) {
+          screen.value = String(d);
+          overwriteOnNextDigit = false;
+        } else {
+          const s = String(screen.value || '');
+          screen.value = (s === '0') ? String(d) : (s + String(d));
         }
+        updateFromScreen();
+      }
+
+      function onBackspace() {
+        const s = String(screen.value || '');
+        screen.value = s.length > 1 ? s.slice(0, -1) : '0';
+        overwriteOnNextDigit = false;
+        updateFromScreen();
+      }
+
+      function onDot() {
+        const s = String(screen.value || '');
+        if (s.includes('.')) return;
+        if (overwriteOnNextDigit || s === '0') {
+          screen.value = '0.';
+          overwriteOnNextDigit = false;
+        } else {
+          screen.value = s + '.';
+        }
+        updateFromScreen();
+      }
+
+      function onPlus() {
+        const v = clampServings(Number(screen.value));
+        screen.value = String(v + 1);
+        overwriteOnNextDigit = false;
+        updateFromScreen();
+      }
+
+      function onMinus() {
+        const v = clampServings(Number(screen.value));
+        screen.value = String(Math.max(1, v - 1));
+        overwriteOnNextDigit = false;
+        updateFromScreen();
+      }
+
+      function scheduleSave(it) {
+        if (saveTimer) clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => saveItem(it), 500);
+      }
+
+      async function saveItem(it) {
+        if (!it || !Number.isFinite(Number(it.product_id))) return; // wait until we know product id
+        const val = clampServings(it.servings);
+        if (Number(it.lastSavedServings) === val) return;
+        try {
+          const res = await fetch(`/api/products/${it.product_id}/servings`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ servings: val })
+          });
+          if (!res.ok) throw new Error((await res.json()).error || 'save failed');
+          it.lastSavedServings = val;
+          statusText.textContent = 'Saved';
+          setTimeout(() => { if (statusText.textContent === 'Saved') statusText.textContent = ''; }, 1200);
+          renderQueue();
+        } catch (e) {
+          statusText.textContent = 'Save error: ' + (e && e.message || e);
+        }
+      }
+
+      // Keypad wiring
+      document.querySelectorAll('[data-digit]').forEach(btn => btn.addEventListener('click', () => onDigit(Number(btn.dataset.digit))));
+      document.querySelector('[data-act="backspace"]').addEventListener('click', onBackspace);
+      const dotBtn = document.querySelector('[data-act="dot"]'); if (dotBtn) dotBtn.addEventListener('click', onDot);
+      document.querySelector('[data-act="plus"]').addEventListener('click', onPlus);
+      document.querySelector('[data-act="minus"]').addEventListener('click', onMinus);
+      screen.addEventListener('input', () => { overwriteOnNextDigit = false; updateFromScreen(); });
+      // Shopping list add is triggered when in shopping mode via the Complete button
+
+      // Scanning flow: enqueue job, then attach item to queue, then enrich via summary
+      barcodeInput.addEventListener('keydown', async (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); await submitScan(); }
       });
 
-      async function submit() {
+      async function submitScan() {
         const barcode = barcodeInput.value.trim();
-        if (!barcode) {
-          statusText.textContent = 'Enter a barcode';
+        if (!barcode) { statusText.textContent = 'Enter a barcode'; return; }
+        if (mode === 'shopping') {
+          await submitScanShopping(barcode);
           return;
         }
+        /* removed limit on number of new items */
         statusText.textContent = 'Submitting...';
-        logsEl.textContent = '';
         try {
-          const res = await fetch(`/api/scan/${op}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ barcode })
-          });
+          const res = await fetch(`/api/scan/${scanOp}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ barcode }) });
           const data = await res.json();
           if (!res.ok) throw new Error(data && data.error || 'Request failed');
-          statusText.textContent = `Queued job ${data.jobId}`;
-          // Clear and refocus after successful submit
-          barcodeInput.value = '';
-          barcodeInput.focus();
-          pollJob(data.jobId);
-          refreshRecent();
+          const key = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+          // Initially unknown if new; do not mark red until job result confirms creation
+          const item = { key, barcode, product_id: null, name: 'Scanning…', servings: 1, isRed: false, active: false, lastSavedServings: null };
+          items.unshift(item);
+          if (items.length > 100) items = items.slice(0, 100);
+          // do not auto-select; keep keypad inactive until user clicks an item
+          barcodeInput.value = ''; barcodeInput.focus();
+          renderQueue();
+          pollJob(data.jobId, barcode, key);
         } catch (err) {
           statusText.textContent = 'Error: ' + err.message;
         }
       }
 
-      async function pollJob(jobId) {
-        let done = false;
-        while (!done) {
-          await new Promise(r => setTimeout(r, 800));
-          const res = await fetch(`/api/jobs/${jobId}`);
-          const data = await res.json();
-          if (!res.ok) {
-            statusText.textContent = 'Job error: ' + (data && data.error);
+      async function submitScanShopping(barcode) {
+        try {
+          statusText.textContent = 'Looking up product...';
+          const res = await fetch(`/api/products/summary/by-barcode/${encodeURIComponent(barcode)}`);
+          const summary = await res.json();
+          if (!res.ok) throw new Error(summary && summary.error || 'Lookup failed');
+          if (!summary || !summary.exists || !Number.isFinite(Number(summary.product_id))) {
+            statusText.textContent = 'Product not found in Grocy; cannot add to shopping list';
+            beepBad();
             return;
           }
-          logsEl.textContent = (data.logs || []).join('\n');
+          const key = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+          const item = { key, barcode, product_id: Number(summary.product_id), name: summary.name || 'Unknown', servings: 1, isRed: false, active: false, lastSavedServings: null };
+          items.unshift(item);
+          if (items.length > 100) items = items.slice(0, 100);
+          barcodeInput.value = ''; barcodeInput.focus();
+          // Auto-add immediately in Shopping mode using current servings (default 1)
+          await addActiveOrLatestToShoppingList();
+          renderQueue();
+        } catch (e) {
+          statusText.textContent = 'Error: ' + (e && e.message || e);
+          beepBad();
+        }
+      }
+
+      async function pollJob(jobId, barcode, key) {
+        let done = false;
+        while (!done) {
+          await new Promise(r => setTimeout(r, 700));
+          const res = await fetch(`/api/jobs/${jobId}`);
+          const data = await res.json();
+          if (!res.ok) { statusText.textContent = 'Job error: ' + (data && data.error); return; }
           if (data.status === 'done') {
             done = true;
-            statusText.textContent = (data.result && data.result.status === 'ok')
-              ? 'Success'
-              : 'Failed';
-            // Append final JSON result at the bottom of logs
-            if (data.result) {
-              logsEl.textContent += '\n\n[result] ' + JSON.stringify(data.result);
+            if (data.result && data.result.status === 'ok') {
+              statusText.textContent = 'Success';
+            } else {
+              statusText.textContent = 'Failed';
             }
-            // Refresh recent list after job completion
-            try { await refreshRecent(); await refreshModLogs(); } catch (e) {}
+            try { await enrichItemFromSummary(barcode, key, data.result); } catch (_) {}
+            setTimeout(() => { if (statusText.textContent === 'Success') statusText.textContent = ''; }, 1200);
           }
         }
       }
 
-      async function refreshRecent() {
+      async function enrichItemFromSummary(barcode, key, jobResult) {
         try {
-          const res = await fetch('/api/recent-new-items');
-          const items = await res.json();
-          recentEl.innerHTML = '';
-          items.forEach((it) => {
-            const row = document.createElement('div');
-            row.style.display = 'grid';
-            row.style.gridTemplateColumns = '2fr 100px 200px';
-            row.style.gap = '12px';
-            row.style.alignItems = 'center';
-            row.style.margin = '6px 0';
-            row.style.justifyContent = 'start';
-
-            // Name editor
-            const nameInput = document.createElement('input');
-            nameInput.type = 'text';
-            nameInput.value = it.name || '';
-            nameInput.placeholder = 'Name';
-            // Inline save on blur (not Enter)
-            nameInput.addEventListener('blur', async () => {
-              if ((it.name || '') !== nameInput.value) {
-                await saveInline(it.product_id, { name: nameInput.value });
-                it.name = nameInput.value;
-                await refreshRecent();
-                await refreshModLogs();
-              }
-            });
-
-            // Best-before days editor (int)
-            const daysInput = document.createElement('input');
-            daysInput.type = 'number';
-            daysInput.min = '0';
-            daysInput.placeholder = 'days';
-            // Prefill days from current date if available
-            if (it.best_before_date) {
-              const days = daysFromNowLocal(it.best_before_date.slice(0, 10));
-              if (days != null) daysInput.value = String(days);
-            }
-            // Inline save on blur (not change or Enter)
-            daysInput.addEventListener('blur', async () => {
-              const val = Number(daysInput.value);
-              if (Number.isFinite(val)) {
-                await saveInline(it.product_id, { best_before_days: val });
-                // Update local preview date
-                it.best_before_date = dateStringFromDaysLocal(val);
-                await refreshRecent();
-                await refreshModLogs();
-              }
-            });
-
-            // Location radios
-            const loc = document.createElement('div');
-            ['fridge', 'freezer', 'pantry'].forEach((label) => {
-              const id = `loc_${it.product_id}_${label}`;
-              const r = document.createElement('input');
-              r.type = 'radio';
-              r.name = `loc_${it.product_id}`;
-              r.id = id;
-              r.value = label;
-              if ((it.location_label || '').toLowerCase() === label) r.checked = true;
-              const lab = document.createElement('label');
-              lab.htmlFor = id;
-              lab.textContent = label;
-              loc.appendChild(r);
-              loc.appendChild(lab);
-              loc.appendChild(document.createTextNode(' '));
-              // Freezer sets expiry to 180 days when selected
-              r.addEventListener('change', async () => {
-                await saveInline(it.product_id, {
-                  location_label: label,
-                  ...(label === 'freezer' ? { best_before_days: 180 } : {})
-                });
-                // Update UI by refetching the recent list so product_id updates after recreate
-                await refreshRecent();
-                await refreshModLogs();
-              });
-            });
-
-            row.appendChild(nameInput);
-            row.appendChild(daysInput);
-            row.appendChild(loc);
-            recentEl.appendChild(row);
-          });
-        } catch (e) {
-          // ignore
-        }
+          const res = await fetch(`/api/products/summary/by-barcode/${encodeURIComponent(barcode)}`);
+          const s = await res.json();
+          const it = items.find(i => i.key === key);
+          if (!it) return;
+          if (s && s.exists) {
+            it.product_id = Number(s.product_id);
+            it.name = s.name || it.name;
+            // Mark red only if job created a product; existing products are not red
+            const wasCreated = !!(jobResult && jobResult.created_product);
+            it.isRed = wasCreated;
+            // Ignore any 'servings' in summary response to avoid prefill
+            // Now that we know the product id, persist current servings
+            scheduleSave(it);
+            renderQueue();
+          }
+        } catch (_) {}
       }
 
-      async function saveInline(productId, payload) {
-        const res = await fetch(`/api/recent-new-items/${productId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          statusText.textContent = 'Update error: ' + (data && data.error || res.statusText);
-          throw new Error(data && data.error || res.statusText);
-        } else {
-          statusText.textContent = 'Updated';
-          setTimeout(() => { if (statusText.textContent === 'Updated') statusText.textContent = ''; }, 1500);
-        }
-      }
-
-      function dateStringFromDaysLocal(days) {
-        const d = new Date();
-        d.setDate(d.getDate() + Number(days || 0));
-        const yyyy = d.getFullYear();
-        const mm = String(d.getMonth() + 1).padStart(2, '0');
-        const dd = String(d.getDate()).padStart(2, '0');
-        return `${yyyy}-${mm}-${dd}`;
-      }
-
-      function daysFromNowLocal(dateStr) {
-        try {
-          const now = new Date();
-          const t = new Date(dateStr);
-          const ms = t.getTime() - now.getTime();
-          const days = Math.floor(ms / (1000 * 60 * 60 * 24));
-          return days >= 0 ? days : 0;
-        } catch { return null; }
-      }
-
-      async function refreshModLogs() {
-        try {
-          const res = await fetch('/api/mod-logs');
-          const arr = await res.json();
-          modlogsEl.textContent = (arr || []).map((x) => JSON.stringify(x)).join('\n');
-        } catch (e) {
-          modlogsEl.textContent = '';
-        }
-      }
-
-      // Initial load of recent list on page ready
-      refreshRecent();
+      // Start with last mode and empty queue; focus scanner input
+      try { const stored = localStorage.getItem('grocy_mode'); if (stored) setMode(stored); } catch (_) {}
+      renderQueue();
+      setTimeout(() => { try { barcodeInput.focus(); } catch (_) {} }, 0);
     </script>
   </body>
   </html>

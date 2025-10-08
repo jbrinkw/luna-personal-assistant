@@ -6,25 +6,27 @@ SUPPORTED_OPENAI = {
     "gpt-4.1-nano",
     "gpt-4.1-mini",
     "gpt-4.1",
+    "gpt-5"
 }
 
 SUPPORTED_GEMINI = {
     "gemini-2.5-flash",
     "gemini-2.5-flash-lite",
-    "gemini-2.5-pro-thinking",
+    "gemini-2.5-pro",
 }
 
-SUPPORTED_ANTHROPIC = {
-    "claude-3.5-sonnet",
-    "claude-4.0-sonnet",
+SUPPORTED_ANTHROPIC = {           # Alias for claude-sonnet-4-20250514
+    "claude-sonnet-4-20250514",           # Alias for claude-sonnet-4-5-20250929
+    "claude-sonnet-4-5-20250929",       # Claude Sonnet 4.5 full ID
+
 }
 
 
 # Simple fixed tier mapping (no overrides for now)
 TIER_TO_MODEL = {
     "low": "gpt-4.1",
-    "med": "claude-4.0-sonnet",
-    "high": "gemini-2.5-pro-thinking",
+    "med": "claude-sonnet-4-0",         # Claude Sonnet 4.0
+    "high": "claude-sonnet-4-5",        # Claude Sonnet 4.5
 }
 
 
@@ -62,13 +64,13 @@ def get_chat_model(*, role: str, model: Optional[str] = None, tier: Optional[str
     # Heuristic: choose provider based on model identifier prefix/allowlist
     if selected in SUPPORTED_OPENAI or selected.lower().startswith("gpt"):
         from langchain_openai import ChatOpenAI
-        return ChatOpenAI(model=selected, temperature=temperature, callbacks=cbs)
+        return ChatOpenAI(model=selected, temperature=temperature, callbacks=cbs, streaming=True)
 
     if selected in SUPPORTED_ANTHROPIC or selected.lower().startswith("claude"):
         from langchain_anthropic import ChatAnthropic
 
         api_key = _env("ANTHROPIC_API_KEY")
-        kwargs = {"model": selected, "temperature": temperature, "callbacks": cbs}
+        kwargs = {"model": selected, "temperature": temperature, "callbacks": cbs, "streaming": True}
         if api_key:
             kwargs["anthropic_api_key"] = api_key
         return ChatAnthropic(**kwargs)
@@ -85,7 +87,7 @@ def get_chat_model(*, role: str, model: Optional[str] = None, tier: Optional[str
     # Allow explicit API key passthrough via env, but ChatGoogleGenerativeAI also reads GOOGLE_API_KEY
     api_key = _env("GOOGLE_API_KEY") or _env("GEMINI_API_KEY")
     if api_key:
-        return ChatGoogleGenerativeAI(model=selected, temperature=temperature, callbacks=cbs, api_key=api_key)
-    return ChatGoogleGenerativeAI(model=selected, temperature=temperature, callbacks=cbs)
+        return ChatGoogleGenerativeAI(model=selected, temperature=temperature, callbacks=cbs, api_key=api_key, streaming=True)
+    return ChatGoogleGenerativeAI(model=selected, temperature=temperature, callbacks=cbs, streaming=True)
 
 

@@ -648,8 +648,20 @@ async def run_agent_stream(user_prompt: str, chat_history: Optional[str] = None,
                 if ev == "on_chat_model_stream":
                     data = event.get("data") if isinstance(event, dict) else getattr(event, "data", {})
                     chunk = (data or {}).get("chunk") if isinstance(data, dict) else getattr(data, "chunk", None)
-                    text = getattr(chunk, "content", None)
-                    if isinstance(text, str) and text:
+                    content = getattr(chunk, "content", None)
+                    
+                    # Handle both string content (OpenAI) and list content (Anthropic)
+                    text = None
+                    if isinstance(content, str):
+                        text = content
+                    elif isinstance(content, list) and content:
+                        # Anthropic format: [{'text': '...', 'type': 'text', 'index': 0}]
+                        for item in content:
+                            if isinstance(item, dict) and item.get("type") == "text":
+                                text = item.get("text", "")
+                                break
+                    
+                    if text:
                         yielded_any = True
                         yield text
             except Exception:
