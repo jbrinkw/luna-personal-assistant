@@ -1,19 +1,37 @@
-# Core web
-fastapi>=0.112,<1
-uvicorn[standard]>=0.30,<1
-pydantic>=2.8,<3
-python-dotenv>=1.0,<2
+# Luna Core Requirements
+# Python 3.10+
 
-# LLM tooling
-langchain-core>=0.2,<1
-langgraph>=0.2,<1
-langchain-openai>=0.2,<1
-langchain-google-genai>=2,<3
+# Web frameworks
+fastapi==0.115.0
+uvicorn==0.30.0
+starlette==0.38.0
+streamlit==1.39.0
 
-# Databases
-psycopg2-binary>=2.9,<3
+# Database  
+# Note: psycopg2-binary 2.9.9 doesn't work on Python 3.13
+# Use psycopg (v3) for Python 3.13+ support, or use Python 3.12
+psycopg[binary]>=3.1.0  # Modern psycopg3 with Python 3.13 support
+psycopg-pool>=3.1.0  # Connection pooling for psycopg3
+# psycopg2-binary>=2.9.9  # Legacy, only if using Python < 3.13
 
-# Utilities
-starlette>=0.37,<1
+# LangChain and AI
+langchain>=0.3.0
+langchain-core>=0.2.27,<0.4
+langchain-openai>=0.2.0
+langchain-anthropic>=0.2.0
+langgraph>=0.2.0
 
+# MCP Server
+fastmcp==0.3.0
+
+# Validation and utilities
+pydantic==2.9.0
+python-dotenv==1.0.1
+
+# Timezone support
+pytz==2024.1
+
+# Testing (optional)
+pytest==8.3.0
+pytest-asyncio==0.24.0
 

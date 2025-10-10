@@ -1,1 +1,0 @@
-this is a great introduciton to agentic ai for the common person

@@ -1,95 +1,204 @@
-body {
-  font-family: Arial, sans-serif;
+* {
+  box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-.sidebar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  height: 100%;
-  width: 30%;
-  max-width: 350px;
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   background: #f5f5f5;
-  box-shadow: 2px 0 5px rgba(0,0,0,0.1);
-  transform: translateX(-100%);
-  transition: transform 0.3s ease;
-  display: flex;
-  flex-direction: column;
-  z-index: 1000;
-}
-
-.sidebar.open {
-  transform: translateX(0);
-}
-
-.sidebar-toggle {
-  position: fixed;
-  top: 10px;
-  left: 10px;
-  z-index: 1100;
-}
-
-.chat-input {
-  border: none;
-  border-bottom: 1px solid #ccc;
-  padding: 8px;
-  width: calc(100% - 16px);
-  box-sizing: border-box;
-}
-
-.chat-input input {
-  width: 100%;
-  padding: 8px;
-}
-
-.chat-history {
-  flex: 1;
-  overflow-y: auto;
-  padding: 10px;
-}
-
-.chat-message {
-  margin-bottom: 8px;
-  background: #fff;
-  padding: 6px 8px;
-  border-radius: 4px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-}
-
-#main-container {
-  margin-left: 30%;
   padding: 20px;
-  box-sizing: border-box;
 }
 
-.tables-row {
+.app {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.header {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.header h1 {
+  font-size: 24px;
+  color: #333;
+}
+
+.tabs {
   display: flex;
-  gap: 20px;
-  align-items: flex-start;
-}
-
-.tables-row > div {
-  flex: 1;
-}
-
-.sets-container {
-  display: flex;
-  gap: 20px;
-}
-
-.plan-section, .completed-section {
-  flex: 1;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
+  gap: 10px;
   margin-bottom: 20px;
 }
 
-table th, table td {
-  border: 1px solid #ddd;
-  padding: 4px;
+.tab-button {
+  padding: 10px 20px;
+  border: none;
+  background: white;
+  border-radius: 8px 8px 0 0;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
+
+.tab-button:hover {
+  background: #f0f0f0;
+}
+
+.tab-button.active {
+  background: #007bff;
+  color: white;
+  font-weight: 600;
+}
+
+.tab-content {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.item {
+  padding: 15px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+.item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.item-title {
+  font-weight: 600;
+  color: #333;
+}
+
+.item-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: #007bff;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #0056b3;
+}
+
+.btn-danger {
+  background: #dc3545;
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #c82333;
+}
+
+.btn-secondary {
+  background: #6c757d;
+  color: white;
+}
+
+.btn-secondary:hover {
+  background: #545b62;
+}
+
+.form-group {
+  margin-bottom: 15px;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 500;
+  color: #333;
+}
+
+.form-input,
+.form-textarea,
+.form-select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.form-textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+.form-select {
+  cursor: pointer;
+}
+
+.add-button {
+  margin-bottom: 15px;
+}
+
+.healthz {
+  margin-top: 10px;
+  padding: 8px;
+  background: #d4edda;
+  color: #155724;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.healthz.error {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.agent-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  background: #e3f2fd;
+  color: #1976d2;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.prompts-list {
+  list-style: none;
+  margin-top: 8px;
+}
+
+.prompts-list li {
+  padding: 6px 0;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.prompts-list li:last-child {
+  border-bottom: none;
+}
+

@@ -1,1 +1,0 @@
-enviroment for simulating survival and collaboration amoung multiple agents

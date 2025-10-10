@@ -1,1 +1,0 @@
-[https://www.aliexpress.us/item/3256802850200017.html?src=google&gatewayAdapt=glo2usa](https://www.aliexpress.us/item/3256802850200017.html?src=google&gatewayAdapt=glo2usa)

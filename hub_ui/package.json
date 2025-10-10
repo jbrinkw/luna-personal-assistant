@@ -1,9 +1,9 @@
 {
-  "name": "automation-memory-ui",
+  "name": "luna-hub-ui",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
+    "dev": "vite --host 127.0.0.1 --port 5173",
     "build": "vite build",
     "preview": "vite preview"
   },
