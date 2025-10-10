@@ -1,0 +1,12 @@
+{
+  "name": "home_assistant",
+  "required_secrets": [
+    "HA_URL",
+    "HA_TOKEN"
+  ],
+  "auto_update": false
+}
+
+
+
+

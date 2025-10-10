@@ -1,394 +1,462 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
-function SectionTab({ label, active, onClick }) {
-  const base = {
-    padding: '8px 12px',
-    border: '1px solid #ddd',
-    borderBottom: active ? '2px solid #007bff' : '1px solid #ddd',
-    marginRight: '8px',
-    cursor: 'pointer',
-    background: active ? '#eef6ff' : '#fff',
-    fontWeight: active ? 'bold' : 'normal'
-  };
-  return <button style={base} onClick={onClick}>{label}</button>;
-}
-
-function InlineInput({ value, onChange, placeholder }) {
-  const [draft, setDraft] = useState(value ?? '');
-  useEffect(() => { setDraft(value ?? ''); }, [value]);
-  const commit = () => { if (draft !== value) onChange(draft); };
-  const onKey = (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } };
-  return (
-    <input
-      style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 4 }}
-      value={draft}
-      onChange={e => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={onKey}
-      placeholder={placeholder}
-    />
-  );
-}
-
-function InlineTextarea({ value, onChange, placeholder, rows = 4 }) {
-  const [draft, setDraft] = useState(value ?? '');
-  useEffect(() => { setDraft(value ?? ''); }, [value]);
-  const commit = () => { if (draft !== value) onChange(draft); };
-  const onKey = (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); commit(); } };
-  return (
-    <textarea
-      style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 4 }}
-      value={draft}
-      onChange={e => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={onKey}
-      placeholder={placeholder}
-      rows={rows}
-    />
-  );
-}
-
-function Block({ children }) {
-  return (
-    <div style={{ border: '1px solid #eee', borderRadius: 8, padding: 12, marginBottom: 12, background: '#fff' }}>
-      {children}
-    </div>
-  );
-}
+const API_BASE = 'http://127.0.0.1:3051';
 
 export default function App() {
-  const [tab, setTab] = useState('flows');
+  const [tab, setTab] = useState('memories');
+  const [memories, setMemories] = useState([]);
   const [flows, setFlows] = useState([]);
   const [schedules, setSchedules] = useState([]);
-  const [memories, setMemories] = useState([]);
-  const [queued, setQueued] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [notice, setNotice] = useState(null);
-  const noticeTimer = useRef(null);
+  const [agents, setAgents] = useState(['simple_agent', 'passthrough_agent']);
+  const [health, setHealth] = useState(null);
 
-  const showNotice = (text, type = 'info') => {
-    if (noticeTimer.current) {
-      clearTimeout(noticeTimer.current);
-    }
-    setNotice({ text, type });
-    noticeTimer.current = setTimeout(() => setNotice(null), 4000);
-  };
-
-  const readError = async (res) => {
-    try {
-      const text = await res.text();
-      try {
-        const j = JSON.parse(text);
-        const msg = (j && (j.error || j.message || j.detail || j.status)) || '';
-        return msg || text || (res.statusText || 'Unknown error');
-      } catch (_) {
-        return text || (res.statusText || 'Unknown error');
-      }
-    } catch (_) {
-      try { return res.statusText || 'Unknown error'; } catch { return 'Unknown error'; }
-    }
-  };
-
-  const loadAll = async () => {
-    setLoading(true);
-    try {
-      const [f, s, m, q] = await Promise.all([
-        fetch('/api/task_flows').then(async r => { try { const j = await r.json(); return Array.isArray(j) ? j : []; } catch { return []; } }),
-        fetch('/api/scheduled_prompts').then(async r => { try { const j = await r.json(); return Array.isArray(j) ? j : []; } catch { return []; } }),
-        fetch('/api/memories').then(async r => { try { const j = await r.json(); return Array.isArray(j) ? j : []; } catch { return []; } }),
-        fetch('/api/queued_messages').then(async r => { try { const j = await r.json(); return Array.isArray(j) ? j : []; } catch { return []; } }),
-      ]);
-      setFlows(f);
-      setSchedules(s);
-      setMemories(m);
-      setQueued(q);
-    } catch (e) {
-      console.error('load error', e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { loadAll(); }, []);
-
+  // Load data on mount and tab change
   useEffect(() => {
-    return () => {
-      if (noticeTimer.current) {
-        clearTimeout(noticeTimer.current);
-      }
-    };
+    loadAgents();
+    loadData();
+    checkHealth();
   }, []);
 
-  // CRUD helpers
-  const createFlow = async () => {
-    const temp = { id: Math.random(), call_name: 'new_flow', prompts: ['step 1'], _temp: true };
-    setFlows(prev => [temp, ...prev]);
+  useEffect(() => {
+    loadData();
+  }, [tab]);
+
+  const checkHealth = async () => {
     try {
-      const res = await fetch('/api/task_flows', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ call_name: temp.call_name, prompts: temp.prompts }) });
-      if (res.ok) {
-        const { id } = await res.json();
-        setFlows(prev => prev.map(f => f === temp ? { ...temp, id, _temp: false } : f));
-        showNotice(`Created "${temp.call_name}"`, 'success');
-      } else {
-        setFlows(prev => prev.filter(f => f !== temp));
-        const err = await readError(res);
-        showNotice(`Failed to create "${temp.call_name}": ${err}`,'error');
-      }
+      const res = await fetch(`${API_BASE}/healthz`);
+      const data = await res.json();
+      setHealth(data.status === 'ok' ? 'Connected' : 'Error');
     } catch (e) {
-      setFlows(prev => prev.filter(f => f !== temp));
-      showNotice(`Failed to create "${temp.call_name}": ` + (e && e.message ? e.message : String(e)), 'error');
-    }
-  };
-  const updateFlow = async (id, payload) => {
-    setFlows(prev => prev.map(f => f.id === id ? { ...f, ...payload } : f));
-    try {
-      const res = await fetch(`/api/task_flows/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      if (res.ok) {
-        const name = (payload && typeof payload.call_name === 'string')
-          ? payload.call_name
-          : (flows.find(f => f.id === id)?.call_name || 'flow');
-        showNotice(`Updated "${name}"`, 'success');
-      } else {
-        const name = (payload && typeof payload.call_name === 'string')
-          ? payload.call_name
-          : (flows.find(f => f.id === id)?.call_name || 'flow');
-        const err = await readError(res);
-        showNotice(`Update failed for "${name}": ${err}`, 'error');
-      }
-    } catch (e) {
-      const name = (payload && typeof payload.call_name === 'string')
-        ? payload.call_name
-        : (flows.find(f => f.id === id)?.call_name || 'flow');
-      showNotice(`Update failed for "${name}": ` + (e && e.message ? e.message : String(e)), 'error');
-    }
-  };
-  const deleteFlow = async (id) => {
-    const prev = flows;
-    const name = (prev.find(f => f.id === id)?.call_name) || 'flow';
-    setFlows(flows.filter(f => f.id !== id));
-    try {
-      const res = await fetch(`/api/task_flows/${id}`, { method: 'DELETE' });
-      if (!res.ok) {
-        setFlows(prev);
-        const err = await readError(res);
-        showNotice(`Delete failed for "${name}": ${err}`, 'error');
-      } else {
-        showNotice(`Deleted "${name}"`, 'success');
-      }
-    } catch (e) {
-      setFlows(prev);
-      showNotice(`Delete failed for "${name}": ` + (e && e.message ? e.message : String(e)), 'error');
-    }
-  };
-  const runFlow = async (id) => {
-    const name = (flows.find(f => f.id === id)?.call_name) || 'flow';
-    try {
-      const res = await fetch(`/api/task_flows/${id}/run`, { method: 'POST' });
-      if (res.ok) {
-        showNotice(`Started "${name}"`, 'success');
-      } else {
-        const err = await readError(res);
-        showNotice(`Run failed for "${name}": ${err}`, 'error');
-      }
-    } catch (e) {
-      showNotice(`Run failed for "${name}": ` + (e && e.message ? e.message : String(e)), 'error');
+      setHealth('Disconnected');
     }
   };
 
-  const createSchedule = async () => {
-    const temp = { id: Math.random(), time_of_day: '09:00', days_of_week: [false,true,true,true,true,true,false], prompt: 'Good morning', enabled: true, _temp: true };
-    setSchedules(prev => [temp, ...prev]);
-    const res = await fetch('/api/scheduled_prompts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(temp) });
-    if (res.ok) {
-      const { id } = await res.json();
-      setSchedules(prev => prev.map(s => s === temp ? { ...temp, id, _temp: false } : s));
-    } else {
-      setSchedules(prev => prev.filter(s => s !== temp));
+  const loadAgents = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/agents`);
+      const data = await res.json();
+      if (data.agents && data.agents.length > 0) {
+        setAgents(data.agents);
+      }
+    } catch (e) {
+      console.error('Failed to load agents:', e);
     }
   };
-  const updateSchedule = async (id, payload) => {
-    setSchedules(prev => prev.map(s => s.id === id ? { ...s, ...payload } : s));
-    await fetch(`/api/scheduled_prompts/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-  };
-  const deleteSchedule = async (id) => {
-    const prev = schedules;
-    setSchedules(schedules.filter(s => s.id !== id));
-    const res = await fetch(`/api/scheduled_prompts/${id}`, { method: 'DELETE' });
-    if (!res.ok) setSchedules(prev);
-  };
 
-  const createMemory = async () => {
-    const temp = { id: Math.random(), content: '', _temp: true };
-    setMemories(prev => [temp, ...prev]);
-    const res = await fetch('/api/memories', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: '' }) });
-    if (res.ok) {
-      const { id } = await res.json();
-      setMemories(prev => prev.map(m => m === temp ? { ...temp, id, _temp: false } : m));
-    } else {
-      setMemories(prev => prev.filter(m => m !== temp));
+  const loadData = async () => {
+    try {
+      if (tab === 'memories') {
+        const res = await fetch(`${API_BASE}/api/memories`);
+        const data = await res.json();
+        setMemories(data || []);
+      } else if (tab === 'flows') {
+        const res = await fetch(`${API_BASE}/api/task_flows`);
+        const data = await res.json();
+        setFlows(data || []);
+      } else if (tab === 'schedules') {
+        const res = await fetch(`${API_BASE}/api/scheduled_prompts`);
+        const data = await res.json();
+        setSchedules(data || []);
+      }
+    } catch (e) {
+      console.error('Failed to load data:', e);
     }
   };
-  const updateMemory = async (id, payload) => {
-    setMemories(prev => prev.map(m => m.id === id ? { ...m, ...payload } : m));
-    await fetch(`/api/memories/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-  };
-  const deleteMemory = async (id) => {
-    const prev = memories;
-    setMemories(memories.filter(m => m.id !== id));
-    const res = await fetch(`/api/memories/${id}`, { method: 'DELETE' });
-    if (!res.ok) setMemories(prev);
-  };
-
-  const createQueuedMsg = async () => {
-    const temp = { id: Math.random(), content: '', created_at: new Date().toISOString(), _temp: true };
-    setQueued(prev => [temp, ...prev]);
-    const res = await fetch('/api/queued_messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: '' }) });
-    if (res.ok) {
-      const { id } = await res.json();
-      setQueued(prev => prev.map(q => q === temp ? { ...temp, id, _temp: false } : q));
-    } else {
-      setQueued(prev => prev.filter(q => q !== temp));
-    }
-  };
-  const updateQueuedMsg = async (id, payload) => {
-    setQueued(prev => prev.map(q => q.id === id ? { ...q, ...payload } : q));
-    await fetch(`/api/queued_messages/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-  };
-  const deleteQueuedMsg = async (id) => {
-    const prev = queued;
-    setQueued(queued.filter(q => q.id !== id));
-    const res = await fetch(`/api/queued_messages/${id}`, { method: 'DELETE' });
-    if (!res.ok) setQueued(prev);
-  };
-
-  if (loading) {
-    return <div style={{ padding: 20 }}>Loading…</div>;
-  }
 
   return (
-    <div style={{ padding: 20, fontFamily: 'Arial, sans-serif' }}>
-      <div style={{ marginBottom: 12 }}>
-        <SectionTab label="Task Flows" active={tab==='flows'} onClick={()=>setTab('flows')} />
-        <SectionTab label="Scheduled Prompts" active={tab==='scheduled'} onClick={()=>setTab('scheduled')} />
-        <SectionTab label="Memories" active={tab==='memories'} onClick={()=>setTab('memories')} />
-        <SectionTab label="Queued Messages" active={tab==='queued'} onClick={()=>setTab('queued')} />
+    <div className="app">
+      <div className="header">
+        <h1>Automation Memory</h1>
+        <div className={`healthz ${health !== 'Connected' ? 'error' : ''}`}>
+          Status: {health || 'Checking...'}
+        </div>
       </div>
 
-      {tab === 'flows' && (
-        <div>
-          {notice && (
-            <div style={{
-              padding: '8px 12px',
-              border: '1px solid',
-              borderColor: notice.type === 'error' ? '#f5c2c7' : (notice.type === 'success' ? '#a3d9a5' : '#b6d4fe'),
-              background: notice.type === 'error' ? '#f8d7da' : (notice.type === 'success' ? '#d1e7dd' : '#e7f1ff'),
-              color: notice.type === 'error' ? '#842029' : (notice.type === 'success' ? '#0f5132' : '#084298'),
-              borderRadius: 6,
-              marginBottom: 8,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between'
-            }}>
-              <span>{notice.text}</span>
-              <button onClick={() => setNotice(null)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</button>
-            </div>
-          )}
-          <div style={{ marginBottom: 8 }}>
-            <button onClick={createFlow}>New Task Flow</button>
-          </div>
-          {flows.map(f => (
-            <Block key={f.id}>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <InlineInput value={f.call_name} onChange={v => updateFlow(f.id, { call_name: v })} placeholder="call name" />
-                <button onClick={()=>runFlow(f.id)}>Run now</button>
-                <button onClick={()=>deleteFlow(f.id)} style={{ color: '#b00' }}>Delete</button>
-              </div>
-              <div style={{ marginTop: 8 }}>
-                <InlineTextarea
-                  value={(f.prompts || []).join('\n')}
-                  onChange={v => updateFlow(f.id, { prompts: v.split('\n').map(s => s.trim()).filter(Boolean) })}
-                  placeholder="One prompt per line"
-                  rows={Math.max(3, (f.prompts||[]).length)}
-                />
-              </div>
-            </Block>
-          ))}
-          {flows.length === 0 && <div>No task flows yet.</div>}
-        </div>
-      )}
+      <div className="tabs">
+        <button
+          className={`tab-button ${tab === 'memories' ? 'active' : ''}`}
+          onClick={() => setTab('memories')}
+        >
+          Memories
+        </button>
+        <button
+          className={`tab-button ${tab === 'flows' ? 'active' : ''}`}
+          onClick={() => setTab('flows')}
+        >
+          Task Flows
+        </button>
+        <button
+          className={`tab-button ${tab === 'schedules' ? 'active' : ''}`}
+          onClick={() => setTab('schedules')}
+        >
+          Scheduled Tasks
+        </button>
+      </div>
 
-      {tab === 'scheduled' && (
-        <div>
-          <div style={{ marginBottom: 8 }}>
-            <button onClick={createSchedule}>New Scheduled Prompt</button>
-          </div>
-          {schedules.map(s => (
-            <Block key={s.id}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <InlineInput value={s.time_of_day} onChange={v => updateSchedule(s.id, { time_of_day: v })} placeholder="HH:MM" />
-                <label style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                  <input type="checkbox" checked={!!s.enabled} onChange={e => updateSchedule(s.id, { enabled: e.target.checked })} /> Enabled
-                </label>
-                <button onClick={()=>deleteSchedule(s.id)} style={{ color: '#b00' }}>Delete</button>
-              </div>
-              <div style={{ marginTop: 8 }}>
-                <InlineTextarea value={s.prompt || ''} onChange={v => updateSchedule(s.id, { prompt: v })} placeholder="Prompt to send" rows={3} />
-              </div>
-              <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d, idx) => (
-                  <label key={idx} style={{ border: '1px solid #ddd', padding: '4px 8px', borderRadius: 4 }}>
-                    <input
-                      type="checkbox"
-                      checked={Array.isArray(s.days_of_week) ? !!s.days_of_week[idx] : false}
-                      onChange={e => {
-                        const next = Array.isArray(s.days_of_week) && s.days_of_week.length === 7 ? [...s.days_of_week] : [false,false,false,false,false,false,false];
-                        next[idx] = e.target.checked;
-                        updateSchedule(s.id, { days_of_week: next });
-                      }}
-                    /> {d}
-                  </label>
-                ))}
-              </div>
-            </Block>
-          ))}
-          {schedules.length === 0 && <div>No scheduled prompts yet.</div>}
-        </div>
-      )}
-
-      {tab === 'memories' && (
-        <div>
-          <div style={{ marginBottom: 8 }}>
-            <button onClick={createMemory}>New Memory</button>
-          </div>
-          {memories.map(m => (
-            <Block key={m.id}>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <InlineInput value={m.content || ''} onChange={v => updateMemory(m.id, { content: v })} placeholder="Memory text" />
-                <button onClick={()=>deleteMemory(m.id)} style={{ color: '#b00' }}>Delete</button>
-              </div>
-            </Block>
-          ))}
-          {memories.length === 0 && <div>No memories yet.</div>}
-        </div>
-      )}
-
-      {tab === 'queued' && (
-        <div>
-          <div style={{ marginBottom: 8 }}>
-            <button onClick={createQueuedMsg}>New Queued Message</button>
-          </div>
-          {queued.map(qm => (
-            <Block key={qm.id}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span style={{ fontSize: 12, color: '#666', minWidth: 180 }}>Created: {qm.created_at}</span>
-                <InlineInput value={qm.content || ''} onChange={v => updateQueuedMsg(qm.id, { content: v })} placeholder="Message text" />
-                <button onClick={()=>deleteQueuedMsg(qm.id)} style={{ color: '#b00' }}>Delete</button>
-              </div>
-            </Block>
-          ))}
-          {queued.length === 0 && <div>No queued messages yet.</div>}
-        </div>
-      )}
+      <div className="tab-content">
+        {tab === 'memories' && <MemoriesTab memories={memories} onUpdate={loadData} />}
+        {tab === 'flows' && <FlowsTab flows={flows} agents={agents} onUpdate={loadData} />}
+        {tab === 'schedules' && <SchedulesTab schedules={schedules} agents={agents} onUpdate={loadData} />}
+      </div>
     </div>
   );
 }
+
+function MemoriesTab({ memories, onUpdate }) {
+  const [newContent, setNewContent] = useState('');
+
+  const handleAdd = async () => {
+    if (!newContent.trim()) return;
+    try {
+      await fetch(`${API_BASE}/api/memories`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: newContent }),
+      });
+      setNewContent('');
+      onUpdate();
+    } catch (e) {
+      alert('Failed to add memory');
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('Delete this memory?')) return;
+    try {
+      await fetch(`${API_BASE}/api/memories/${id}`, { method: 'DELETE' });
+      onUpdate();
+    } catch (e) {
+      alert('Failed to delete memory');
+    }
+  };
+
+  return (
+    <div>
+      <div className="form-group">
+        <label className="form-label">Add New Memory</label>
+        <textarea
+          className="form-textarea"
+          value={newContent}
+          onChange={(e) => setNewContent(e.target.value)}
+          placeholder="Enter memory content..."
+        />
+      </div>
+      <button className="btn btn-primary add-button" onClick={handleAdd}>
+        Add Memory
+      </button>
+
+      <div className="item-list">
+        {memories.map((mem) => (
+          <div key={mem.id} className="item">
+            <div className="item-header">
+              <span className="item-title">Memory #{mem.id}</span>
+              <button className="btn btn-danger" onClick={() => handleDelete(mem.id)}>
+                Delete
+              </button>
+            </div>
+            <div>{mem.content}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FlowsTab({ flows, agents, onUpdate }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [newFlow, setNewFlow] = useState({
+    call_name: '',
+    prompts: [''],
+    agent: 'simple_agent',
+  });
+
+  const handleAdd = async () => {
+    if (!newFlow.call_name.trim()) {
+      alert('Call name is required');
+      return;
+    }
+    try {
+      await fetch(`${API_BASE}/api/task_flows`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          call_name: newFlow.call_name,
+          prompts: newFlow.prompts.filter(p => p.trim()),
+          agent: newFlow.agent,
+        }),
+      });
+      setNewFlow({ call_name: '', prompts: [''], agent: 'simple_agent' });
+      setShowAdd(false);
+      onUpdate();
+    } catch (e) {
+      alert('Failed to add flow');
+    }
+  };
+
+  const handleRun = async (id) => {
+    try {
+      await fetch(`${API_BASE}/api/task_flows/${id}/run`, { method: 'POST' });
+      alert('Flow execution started');
+    } catch (e) {
+      alert('Failed to run flow');
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('Delete this flow?')) return;
+    try {
+      await fetch(`${API_BASE}/api/task_flows/${id}`, { method: 'DELETE' });
+      onUpdate();
+    } catch (e) {
+      alert('Failed to delete flow');
+    }
+  };
+
+  return (
+    <div>
+      <button className="btn btn-primary add-button" onClick={() => setShowAdd(!showAdd)}>
+        {showAdd ? 'Cancel' : 'Add New Flow'}
+      </button>
+
+      {showAdd && (
+        <div className="item" style={{ marginBottom: 15 }}>
+          <div className="form-group">
+            <label className="form-label">Call Name</label>
+            <input
+              className="form-input"
+              value={newFlow.call_name}
+              onChange={(e) => setNewFlow({ ...newFlow, call_name: e.target.value })}
+              placeholder="e.g., morning_routine"
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Agent</label>
+            <select
+              className="form-select"
+              value={newFlow.agent}
+              onChange={(e) => setNewFlow({ ...newFlow, agent: e.target.value })}
+            >
+              {agents.map(agent => (
+                <option key={agent} value={agent}>{agent}</option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Prompts</label>
+            {newFlow.prompts.map((prompt, idx) => (
+              <input
+                key={idx}
+                className="form-input"
+                style={{ marginBottom: 8 }}
+                value={prompt}
+                onChange={(e) => {
+                  const updated = [...newFlow.prompts];
+                  updated[idx] = e.target.value;
+                  setNewFlow({ ...newFlow, prompts: updated });
+                }}
+                placeholder={`Prompt ${idx + 1}`}
+              />
+            ))}
+            <button
+              className="btn btn-secondary"
+              onClick={() => setNewFlow({ ...newFlow, prompts: [...newFlow.prompts, ''] })}
+            >
+              Add Prompt
+            </button>
+          </div>
+          <button className="btn btn-primary" onClick={handleAdd}>
+            Save Flow
+          </button>
+        </div>
+      )}
+
+      <div className="item-list">
+        {flows.map((flow) => (
+          <div key={flow.id} className="item">
+            <div className="item-header">
+              <div>
+                <span className="item-title">{flow.call_name}</span>
+                <span className="agent-badge" style={{ marginLeft: 10 }}>
+                  {flow.agent}
+                </span>
+              </div>
+              <div className="item-actions">
+                <button className="btn btn-primary" onClick={() => handleRun(flow.id)}>
+                  Run
+                </button>
+                <button className="btn btn-danger" onClick={() => handleDelete(flow.id)}>
+                  Delete
+                </button>
+              </div>
+            </div>
+            <ul className="prompts-list">
+              {(flow.prompts || []).map((prompt, idx) => (
+                <li key={idx}>{idx + 1}. {prompt}</li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SchedulesTab({ schedules, agents, onUpdate }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [newSchedule, setNewSchedule] = useState({
+    time_of_day: '09:00',
+    days_of_week: [false, false, false, false, false, false, false],
+    prompt: '',
+    agent: 'simple_agent',
+    enabled: true,
+  });
+
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  const handleAdd = async () => {
+    if (!newSchedule.prompt.trim()) {
+      alert('Prompt is required');
+      return;
+    }
+    try {
+      await fetch(`${API_BASE}/api/scheduled_prompts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newSchedule),
+      });
+      setNewSchedule({
+        time_of_day: '09:00',
+        days_of_week: [false, false, false, false, false, false, false],
+        prompt: '',
+        agent: 'simple_agent',
+        enabled: true,
+      });
+      setShowAdd(false);
+      onUpdate();
+    } catch (e) {
+      alert('Failed to add schedule');
+    }
+  };
+
+  const handleToggle = async (id, enabled) => {
+    try {
+      await fetch(`${API_BASE}/api/scheduled_prompts/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+      onUpdate();
+    } catch (e) {
+      alert('Failed to toggle schedule');
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('Delete this schedule?')) return;
+    try {
+      await fetch(`${API_BASE}/api/scheduled_prompts/${id}`, { method: 'DELETE' });
+      onUpdate();
+    } catch (e) {
+      alert('Failed to delete schedule');
+    }
+  };
+
+  return (
+    <div>
+      <button className="btn btn-primary add-button" onClick={() => setShowAdd(!showAdd)}>
+        {showAdd ? 'Cancel' : 'Add New Schedule'}
+      </button>
+
+      {showAdd && (
+        <div className="item" style={{ marginBottom: 15 }}>
+          <div className="form-group">
+            <label className="form-label">Time (HH:MM)</label>
+            <input
+              className="form-input"
+              type="time"
+              value={newSchedule.time_of_day}
+              onChange={(e) => setNewSchedule({ ...newSchedule, time_of_day: e.target.value })}
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Days of Week</label>
+            <div style={{ display: 'flex', gap: 10 }}>
+              {dayNames.map((day, idx) => (
+                <label key={idx} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <input
+                    type="checkbox"
+                    checked={newSchedule.days_of_week[idx]}
+                    onChange={(e) => {
+                      const updated = [...newSchedule.days_of_week];
+                      updated[idx] = e.target.checked;
+                      setNewSchedule({ ...newSchedule, days_of_week: updated });
+                    }}
+                  />
+                  {day}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Agent</label>
+            <select
+              className="form-select"
+              value={newSchedule.agent}
+              onChange={(e) => setNewSchedule({ ...newSchedule, agent: e.target.value })}
+            >
+              {agents.map(agent => (
+                <option key={agent} value={agent}>{agent}</option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Prompt</label>
+            <textarea
+              className="form-textarea"
+              value={newSchedule.prompt}
+              onChange={(e) => setNewSchedule({ ...newSchedule, prompt: e.target.value })}
+              placeholder="Enter prompt to execute..."
+            />
+          </div>
+          <button className="btn btn-primary" onClick={handleAdd}>
+            Save Schedule
+          </button>
+        </div>
+      )}
+
+      <div className="item-list">
+        {schedules.map((sched) => {
+          const activeDays = (sched.days_of_week || []).map((active, idx) => active ? dayNames[idx] : null).filter(Boolean);
+          return (
+            <div key={sched.id} className="item">
+              <div className="item-header">
+                <div>
+                  <span className="item-title">{sched.time_of_day}</span>
+                  <span className="agent-badge" style={{ marginLeft: 10 }}>
+                    {sched.agent}
+                  </span>
+                  <span style={{ marginLeft: 10, fontSize: 13, color: '#666' }}>
+                    {activeDays.join(', ')}
+                  </span>
+                </div>
+                <div className="item-actions">
+                  <button
+                    className={`btn ${sched.enabled ? 'btn-secondary' : 'btn-primary'}`}
+                    onClick={() => handleToggle(sched.id, !sched.enabled)}
+                  >
+                    {sched.enabled ? 'Disable' : 'Enable'}
+                  </button>
+                  <button className="btn btn-danger" onClick={() => handleDelete(sched.id)}>
+                    Delete
+                  </button>
+                </div>
+              </div>
+              <div>{sched.prompt}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+

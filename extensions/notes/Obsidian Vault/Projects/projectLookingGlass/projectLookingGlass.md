@@ -1,1 +1,0 @@
-C:\Users\jeremy\Documents\obsidian\Obsidian Vault\Projects\projectLookingGlass\Notes.md
