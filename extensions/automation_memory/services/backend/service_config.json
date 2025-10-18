@@ -1,0 +1,9 @@
+{
+  "name": "backend",
+  "requires_port": false,
+  "fixed_port": 3051,
+  "health_check": "/healthz",
+  "restart_on_failure": true
+}
+
+

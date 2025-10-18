@@ -1,6 +1,7 @@
 # Luna Core Requirements
 # Python 3.10+
 
+dotenv
 # Web frameworks
 fastapi==0.115.0
 uvicorn==0.30.0
@@ -22,11 +23,16 @@ langchain-anthropic>=0.2.0
 langgraph>=0.2.0
 
 # MCP Server
-fastmcp==0.3.0
+fastmcp>=2.12.4
+
+# OAuth 2.0 and Authentication
+pyjwt==2.9.0
+bcrypt==4.2.0
 
 # Validation and utilities
-pydantic==2.9.0
-python-dotenv==1.0.1
+pydantic>=2.12.0
+python-dotenv>=1.1.0
+aiohttp>=3.9.0
 
 # Timezone support
 pytz==2024.1

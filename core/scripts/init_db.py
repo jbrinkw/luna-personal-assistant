@@ -92,12 +92,34 @@ def init_database():
         """)
         print("  [OK] memories table created")
         
+        # Create flow_executions table for tracking task flow progress
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS flow_executions (
+                id SERIAL PRIMARY KEY,
+                flow_id INTEGER NOT NULL REFERENCES task_flows(id) ON DELETE CASCADE,
+                status VARCHAR(50) NOT NULL DEFAULT 'running',
+                current_prompt_index INTEGER DEFAULT 0,
+                total_prompts INTEGER NOT NULL DEFAULT 0,
+                started_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMPTZ,
+                error TEXT,
+                prompt_results JSONB DEFAULT '[]'::jsonb
+            );
+        """)
+        print("  [OK] flow_executions table created")
+        
         # Create indexes for better performance
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_task_flows_call_name ON task_flows(call_name);
         """)
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_scheduled_prompts_enabled ON scheduled_prompts(enabled);
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_flow_executions_flow_id ON flow_executions(flow_id);
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_flow_executions_status ON flow_executions(status);
         """)
         print("  [OK] Indexes created")
         

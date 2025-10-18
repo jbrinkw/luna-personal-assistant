@@ -1,6 +1,7 @@
-"""Simple ReAct agent implementation.
+"""Simple agent with direct tool calling.
 
-LangChain ReAct agent that discovers and uses all available tools from extensions.
+Uses LLM native function calling (bind_tools) with Pydantic validation.
+All tool arguments are validated before execution.
 Includes error retry logic (up to 2 retries on tool failures).
 """
 import os
@@ -69,9 +70,9 @@ def _get_env(key: str, default: Optional[str] = None) -> Optional[str]:
 
 
 def _wrap_callable_as_tool(fn, ext_name: str):
-    """Wrap a Python callable as a LangChain StructuredTool with retry logic."""
+    """Wrap a Python callable as a LangChain StructuredTool with Pydantic validation and retry logic."""
     from langchain_core.tools import StructuredTool
-    from pydantic import create_model
+    from pydantic import create_model, ValidationError
 
     # Get full docstring for agent visibility
     try:
@@ -85,7 +86,7 @@ def _wrap_callable_as_tool(fn, ext_name: str):
         # Fallback to function name
         description = fn.__name__
 
-    # Build Pydantic schema for structured args
+    # Build Pydantic schema for structured args with strict validation
     sig = inspect.signature(fn)
     fields: Dict[str, Tuple[Any, Any]] = {}
     try:
@@ -101,12 +102,20 @@ def _wrap_callable_as_tool(fn, ext_name: str):
     ArgsSchema = create_model(f"{fn.__name__}Args", **fields)  # type: ignore[arg-type]
 
     def _runner(**kwargs):
-        """Runner with retry logic (up to 2 retries on failure)."""
+        """Runner with Pydantic validation and retry logic (up to 2 retries on failure)."""
         last_err = None
         for attempt in range(2):  # Try once, then retry once more
             try:
                 t0 = time.perf_counter()
-                result = fn(**kwargs)
+                
+                # Pydantic validation before execution
+                try:
+                    validated_args = ArgsSchema(**kwargs)
+                    validated_kwargs = validated_args.model_dump()
+                except ValidationError as ve:
+                    raise ValueError(f"Validation error: {ve}")
+                
+                result = fn(**validated_kwargs)
                 
                 # Normalize result to string
                 if isinstance(result, BaseModel):
@@ -213,7 +222,7 @@ async def run_agent(
     tool_root: Optional[str] = None,
     llm: Optional[str] = None
 ) -> AgentResult:
-    """Run the simple ReAct agent.
+    """Run the simple agent with direct tool calling.
     
     Args:
         user_prompt: The user's prompt/query
@@ -234,31 +243,32 @@ async def run_agent(
         msg = "No tools discovered. Ensure files matching *_tools.py exist under extensions/."
         return AgentResult(final=msg, results=[], timings=[], content=msg, response_time_secs=0.0, traces=[])
 
-    # Build ReAct agent
+    # Build model with tools bound directly
     try:
-        from langgraph.prebuilt import create_react_agent
-        
         model = get_chat_model(
             role="domain",
             model=llm or _get_env("LLM_DEFAULT_MODEL", "gpt-4.1"),
-            callbacks=[LLMRunTracer("react")],
+            callbacks=[LLMRunTracer("direct")],
             temperature=0.0
         )
         
-        # Include domain system prompts if available
-        if isinstance(DOMAIN_PROMPTS_TEXT, str) and DOMAIN_PROMPTS_TEXT.strip():
-            final_prompt = "Domain system prompts:\n" + DOMAIN_PROMPTS_TEXT.strip()
-            agent = create_react_agent(model, tools=tools, prompt=final_prompt)
-        else:
-            agent = create_react_agent(model, tools=tools)
+        # Bind tools directly to model for native function calling
+        model_with_tools = model.bind_tools(tools)
     
     except Exception as e:
-        msg = f"Error building ReAct agent: {str(e)}"
+        msg = f"Error building agent with tools: {str(e)}"
         return AgentResult(final=msg, results=[], timings=[], content=msg, response_time_secs=0.0, traces=[])
 
     # Prepare messages
-    from langchain_core.messages import SystemMessage, HumanMessage
+    from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
     messages: List[Any] = []
+    
+    # System prompt with domain prompts
+    sys_parts = []
+    if isinstance(DOMAIN_PROMPTS_TEXT, str) and DOMAIN_PROMPTS_TEXT.strip():
+        sys_parts.append("Domain system prompts:\n" + DOMAIN_PROMPTS_TEXT.strip())
+    sys_parts.append("You are a helpful assistant with access to tools. Use tools when appropriate to help the user.")
+    messages.append(SystemMessage(content="\n\n".join(sys_parts)))
     
     if chat_history or memory:
         messages.append(SystemMessage(content=(
@@ -272,37 +282,65 @@ async def run_agent(
     # Clear traces for this run
     del RUN_TRACES[:]
 
-    # Invoke agent
-    import asyncio
+    # Agent loop with direct tool calling
     t0 = time.perf_counter()
+    max_iterations = 16
     
     try:
-        result = await agent.ainvoke(
-            {"messages": messages},
-            config={"recursion_limit": 16, "callbacks": [LLMRunTracer("react")]}
-        )
-    except RuntimeError:
-        # Fallback for event loop issues
-        loop = asyncio.get_event_loop()
-        result = await agent.ainvoke(
-            {"messages": messages},
-            config={"recursion_limit": 16, "callbacks": [LLMRunTracer("react")]}
-        )
+        for iteration in range(max_iterations):
+            # Invoke model
+            response = await model_with_tools.ainvoke(messages)
+            messages.append(response)
+            
+            # Check if model wants to call tools
+            tool_calls = getattr(response, "tool_calls", None) or []
+            
+            if not tool_calls:
+                # No tool calls, we have final response
+                break
+            
+            # Execute tool calls
+            for tool_call in tool_calls:
+                tool_name = tool_call.get("name")
+                tool_args = tool_call.get("args", {})
+                tool_id = tool_call.get("id", "")
+                
+                # Find and execute tool
+                tool_found = None
+                for tool in tools:
+                    if tool.name == tool_name:
+                        tool_found = tool
+                        break
+                
+                if tool_found:
+                    try:
+                        result = await tool_found.ainvoke(tool_args)
+                        tool_result = str(result)
+                    except Exception as e:
+                        tool_result = f"Error executing tool {tool_name}: {str(e)}"
+                else:
+                    tool_result = f"Tool {tool_name} not found"
+                
+                # Add tool result to messages
+                messages.append(ToolMessage(content=tool_result, tool_call_id=tool_id))
+        
+        elapsed = time.perf_counter() - t0
+        
+        # Extract final content from last AI message
+        final_text = ""
+        for msg in reversed(messages):
+            if isinstance(msg, AIMessage):
+                content = getattr(msg, "content", "")
+                if isinstance(content, str) and content.strip():
+                    final_text = content
+                    break
+        
+        if not final_text:
+            final_text = "No response generated"
     
-    elapsed = time.perf_counter() - t0
-
-    # Extract final content
-    final_text: str
-    try:
-        msgs = result.get("messages") if isinstance(result, dict) else None
-        if isinstance(msgs, list) and msgs:
-            last = msgs[-1]
-            content = getattr(last, "content", None)
-            final_text = content if isinstance(content, str) else str(result)
-        else:
-            final_text = str(result)
-    except Exception:
-        final_text = str(result)
+    except Exception as e:
+        elapsed = time.perf_counter() - t0
+        final_text = f"Error during agent execution: {str(e)}"
 
     # Assemble response
     timings = [Timing(name="total", seconds=float(elapsed))]
@@ -330,91 +368,10 @@ async def run_agent_stream(
     Yields:
         String tokens as they are generated
     """
-    # Initialize tools if needed
-    if not PRELOADED_TOOLS or isinstance(tool_root, str):
-        initialize_runtime(tool_root=tool_root)
-    
-    tools = PRELOADED_TOOLS or []
-    if not tools:
-        yield "No tools discovered. Ensure files matching *_tools.py exist under extensions/."
-        return
-
-    # Build ReAct agent
-    try:
-        from langgraph.prebuilt import create_react_agent
-        
-        model = get_chat_model(
-            role="domain",
-            model=llm or _get_env("LLM_DEFAULT_MODEL", "gpt-4.1"),
-            callbacks=[LLMRunTracer("react")],
-            temperature=0.0
-        )
-        
-        if isinstance(DOMAIN_PROMPTS_TEXT, str) and DOMAIN_PROMPTS_TEXT.strip():
-            final_prompt = "Domain system prompts:\n" + DOMAIN_PROMPTS_TEXT.strip()
-            agent = create_react_agent(model, tools=tools, prompt=final_prompt)
-        else:
-            agent = create_react_agent(model, tools=tools)
-    
-    except Exception:
-        # Fallback to non-streaming
-        res = await run_agent(user_prompt, chat_history=chat_history, memory=memory, tool_root=tool_root, llm=llm)
-        yield res.final
-        return
-
-    # Prepare messages
-    from langchain_core.messages import SystemMessage, HumanMessage
-    messages: List[Any] = []
-    
-    if chat_history or memory:
-        messages.append(SystemMessage(content=(
-            "Conversation context to consider when responding.\n"
-            f"Chat history:\n{chat_history or ''}\n\n"
-            f"Memory:\n{memory or ''}"
-        )))
-    
-    messages.append(HumanMessage(content=user_prompt))
-
-    # Clear traces
-    del RUN_TRACES[:]
-
-    yielded_any = False
-    try:
-        # Stream events for token-by-token output
-        async for event in agent.astream_events(
-            {"messages": messages},
-            config={"recursion_limit": 16, "callbacks": [LLMRunTracer("react")]},
-            version="v1"
-        ):
-            try:
-                ev = event.get("event") if isinstance(event, dict) else getattr(event, "event", None)
-                if ev == "on_chat_model_stream":
-                    data = event.get("data") if isinstance(event, dict) else getattr(event, "data", {})
-                    chunk = (data or {}).get("chunk") if isinstance(data, dict) else getattr(data, "chunk", None)
-                    content = getattr(chunk, "content", None)
-                    
-                    # Handle both string (OpenAI) and list (Anthropic) content
-                    text = None
-                    if isinstance(content, str):
-                        text = content
-                    elif isinstance(content, list) and content:
-                        for item in content:
-                            if isinstance(item, dict) and item.get("type") == "text":
-                                text = item.get("text", "")
-                                break
-                    
-                    if text:
-                        yielded_any = True
-                        yield text
-            except Exception:
-                continue
-    except Exception:
-        pass
-
-    if not yielded_any:
-        # Fallback to non-streaming
-        res = await run_agent(user_prompt, chat_history=chat_history, memory=memory, tool_root=tool_root, llm=llm)
-        yield res.final
+    # Fallback to non-streaming for now with direct tool calling
+    # Streaming with tool calls requires more complex handling
+    res = await run_agent(user_prompt, chat_history=chat_history, memory=memory, tool_root=tool_root, llm=llm)
+    yield res.final
 
 
 def main(argv: Optional[List[str]] = None) -> int:

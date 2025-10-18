@@ -15,6 +15,35 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// In-memory cache for flow executions (persists while server runs)
+const executionCache = {
+  active: new Map(),    // execution_id -> execution data
+  recent: [],           // array of recent executions (max 50)
+  maxRecent: 50
+};
+
+// Helper to update cache
+function updateExecutionCache(execution) {
+  if (execution.status === 'running') {
+    executionCache.active.set(execution.id, execution);
+  } else {
+    // Move from active to recent
+    executionCache.active.delete(execution.id);
+    
+    // Add to recent if not already there
+    const existingIndex = executionCache.recent.findIndex(e => e.id === execution.id);
+    if (existingIndex >= 0) {
+      executionCache.recent[existingIndex] = execution;
+    } else {
+      executionCache.recent.unshift(execution);
+      // Keep only max recent
+      if (executionCache.recent.length > executionCache.maxRecent) {
+        executionCache.recent.pop();
+      }
+    }
+  }
+}
+
 // Health check
 app.get('/healthz', (req, res) => {
   res.json({ status: 'ok' });
@@ -66,17 +95,53 @@ app.delete('/api/task_flows/:id', async (req, res) => {
   }
 });
 
-// Run a flow (placeholder - actual execution would use prompt_runner)
+// Run a flow
 app.post('/api/task_flows/:id/run', async (req, res) => {
   try {
-    const id = Number(req.params.id);
-    const flow = await db.getFlow(id);
+    const flowId = Number(req.params.id);
+    const flow = await db.getFlow(flowId);
     if (!flow) return res.status(404).json({ error: 'not found' });
     
-    // TODO: Execute flow using Python prompt_runner
-    console.log(`[runner] Would run flow: ${flow.call_name} with agent: ${flow.agent}`);
+    const prompts = Array.isArray(flow.prompts) ? flow.prompts : JSON.parse(flow.prompts || '[]');
     
-    res.json({ ok: true, status: 'completed', id });
+    // Create execution record
+    const executionId = await db.createExecution(flowId, prompts.length);
+    
+    // Add to cache immediately
+    const newExecution = {
+      id: executionId,
+      flow_id: flowId,
+      status: 'running',
+      current_prompt_index: 0,
+      total_prompts: prompts.length,
+      started_at: new Date().toISOString(),
+      completed_at: null,
+      error: null,
+      prompt_results: [],
+      call_name: flow.call_name,
+      agent: flow.agent,
+      prompts: prompts
+    };
+    updateExecutionCache(newExecution);
+    
+    // Start flow execution in background
+    const { spawn } = require('child_process');
+    const runnerPath = path.join(__dirname, 'flow_runner.py');
+    
+    // Use venv Python if available, otherwise fall back to system python3
+    const venvPython = path.resolve(__dirname, '../../../.venv/bin/python3');
+    const pythonCmd = require('fs').existsSync(venvPython) ? venvPython : (process.env.PYTHON_CMD || 'python3');
+    
+    const runner = spawn(pythonCmd, [runnerPath, String(flowId), String(executionId)], {
+      detached: true,
+      stdio: 'ignore',
+    });
+    
+    runner.unref(); // Allow parent to exit independently
+    
+    console.log(`[runner] Started flow execution: ${flow.call_name} (execution_id: ${executionId})`);
+    
+    res.json({ ok: true, execution_id: executionId, flow_id: flowId });
   } catch (e) {
     console.error('[task_flows] RUN error:', e);
     res.status(500).json({ error: String(e) });
@@ -170,6 +235,99 @@ app.delete('/api/memories/:id', async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error('[memories] DELETE error:', e);
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// Flow Executions - Get active executions (from cache)
+app.get('/api/executions/active', async (req, res) => {
+  try {
+    // Refresh cache from database for running executions
+    const dbExecutions = await db.listActiveExecutions();
+    dbExecutions.forEach(exec => updateExecutionCache(exec));
+    
+    // Return from cache
+    const activeExecutions = Array.from(executionCache.active.values());
+    res.json(activeExecutions);
+  } catch (e) {
+    console.error('[executions] GET active error:', e);
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// Flow Executions - Get recent executions (from cache + database)
+app.get('/api/executions/recent', async (req, res) => {
+  try {
+    const limit = Number(req.query.limit) || 20;
+    
+    // If cache is empty, populate from database
+    if (executionCache.recent.length === 0) {
+      const dbExecutions = await db.listRecentExecutions(limit);
+      dbExecutions.forEach(exec => updateExecutionCache(exec));
+    }
+    
+    // Return from cache
+    res.json(executionCache.recent.slice(0, limit));
+  } catch (e) {
+    console.error('[executions] GET recent error:', e);
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// Flow Executions - Refresh cache (polls database for updates)
+app.get('/api/executions/refresh', async (req, res) => {
+  try {
+    // Get all running executions from DB and update cache
+    const activeExecs = await db.listActiveExecutions();
+    
+    // Check each active execution for updates
+    for (const exec of activeExecs) {
+      const cached = executionCache.active.get(exec.id);
+      // Update if new or if progress changed
+      if (!cached || cached.current_prompt_index !== exec.current_prompt_index || 
+          JSON.stringify(cached.prompt_results) !== JSON.stringify(exec.prompt_results)) {
+        updateExecutionCache(exec);
+      }
+    }
+    
+    // Check if any cached active executions completed
+    for (const [id, cached] of executionCache.active.entries()) {
+      const stillRunning = activeExecs.find(e => e.id === id);
+      if (!stillRunning) {
+        // Execution completed, fetch final state from DB
+        const finalExec = await db.getExecution(id);
+        if (finalExec) {
+          // Fetch flow details to include call_name and agent
+          const flow = await db.getFlow(finalExec.flow_id);
+          if (flow) {
+            finalExec.call_name = flow.call_name;
+            finalExec.agent = flow.agent;
+          }
+          updateExecutionCache(finalExec);
+        }
+      }
+    }
+    
+    res.json({ 
+      active: Array.from(executionCache.active.values()),
+      recent: executionCache.recent.slice(0, 20)
+    });
+  } catch (e) {
+    console.error('[executions] REFRESH error:', e);
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// Flow Executions - Get specific execution
+app.get('/api/executions/:id', async (req, res) => {
+  try {
+    const execution = await db.getExecution(Number(req.params.id));
+    if (!execution) {
+      return res.status(404).json({ error: 'execution not found' });
+    }
+    res.json(execution);
+  } catch (e) {
+    console.error('[executions] GET error:', e);
     res.status(500).json({ error: String(e) });
   }
 });

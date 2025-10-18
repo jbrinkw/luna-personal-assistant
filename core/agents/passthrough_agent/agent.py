@@ -1,7 +1,9 @@
-"""Passthrough agent implementation.
+"""Passthrough agent with direct tool calling and structured output.
 
-Planner-executor architecture that honors passthrough=true in tool_config.json.
+Planner-executor architecture using LLM structured output (response_format) with Pydantic validation.
+Honors passthrough=true in tool_config.json.
 Includes internal DIRECT_RESPONSE tool for answering without tool calls.
+All tool arguments are validated with Pydantic before execution.
 """
 import os
 import sys
@@ -183,14 +185,38 @@ def _normalize_result_to_string(result: Any) -> str:
 
 
 def _wrap_callable_as_runner(fn, ext_name: str):
-    """Wrap a tool function to return structured ToolResult.
+    """Wrap a tool function to return structured ToolResult with Pydantic validation.
     
     Success is True unless an exception is raised.
     """
+    from pydantic import create_model, ValidationError
+    
+    # Build Pydantic schema for validation
+    sig = inspect.signature(fn)
+    fields: Dict[str, Tuple[Any, Any]] = {}
+    try:
+        hints = get_type_hints(fn, globalns=getattr(fn, "__globals__", {}))
+    except Exception:
+        hints = {}
+    
+    for name, param in sig.parameters.items():
+        ann = hints.get(name, (param.annotation if param.annotation is not inspect._empty else str))
+        default = param.default if param.default is not inspect._empty else ...
+        fields[name] = (ann, default)
+    
+    ArgsSchema = create_model(f"{fn.__name__}Args", **fields)  # type: ignore[arg-type]
+    
     def _runner(**kwargs) -> ToolResult:
         t0 = time.perf_counter()
         try:
-            result = fn(**kwargs)
+            # Pydantic validation before execution
+            try:
+                validated_args = ArgsSchema(**kwargs)
+                validated_kwargs = validated_args.model_dump()
+            except ValidationError as ve:
+                raise ValueError(f"Validation error: {ve}")
+            
+            result = fn(**validated_kwargs)
             sres = _normalize_result_to_string(result)
             dur = time.perf_counter() - t0
             RUN_TRACES.append(ToolTrace(tool=fn.__name__, args=(kwargs or None), output=sres, duration_secs=dur))
@@ -415,14 +441,22 @@ async def run_agent(
         msg = "No tools discovered. Ensure files matching *_tools.py exist under extensions/."
         return AgentResult(final=msg, results=[], timings=[], content=msg, response_time_secs=0.0, traces=[])
 
-    # Planner model
+    # Planner model with structured output
     tracer = LLMRunTracer("planner")
-    model = get_chat_model(
+    base_model = get_chat_model(
         role="domain",
         model=llm or _get_env("LLM_DEFAULT_MODEL", "gpt-4.1"),
         callbacks=[tracer],
         temperature=0.0
     )
+    
+    # Use structured output with Pydantic schema for direct validation
+    try:
+        model = base_model.with_structured_output(PlannerStep, method="function_calling")
+    except Exception:
+        # Fallback if structured output not supported
+        model = base_model
+        _dbg_print("[passthrough] Warning: structured output not supported, falling back to JSON parsing")
 
     # Clear traces per run
     del RUN_TRACES[:]
@@ -447,32 +481,39 @@ async def run_agent(
             review_items=(followup_items or None),
         )
 
-        # Invoke planner
+        # Invoke planner with structured output
         t0_plan = time.perf_counter()
         _dbg_print(f"[passthrough] step {step}: planning...")
         plan_resp = await model.ainvoke(messages)
         plan_secs = time.perf_counter() - t0_plan
         timings.append(Timing(name=f"plan:{step}", seconds=float(plan_secs)))
         
-        # Parse plan JSON
-        raw_text = (plan_resp.content or "") if hasattr(plan_resp, "content") else str(plan_resp)
-        _dbg_print(f"[passthrough] step {step}: planner raw -> {_truncate(raw_text, 600)}")
-        parsed = _extract_json_object(raw_text)
+        # Parse plan - should be PlannerStep if structured output worked
         planner_step = PlannerStep()
         
-        if isinstance(parsed, dict):
-            try:
-                planner_step = PlannerStep.model_validate(parsed)
-            except Exception:
-                # Try to coerce structure
-                calls_raw = parsed.get("calls") if isinstance(parsed.get("calls"), list) else []
-                calls: List[PlannedToolCall] = []
-                for c in calls_raw:
-                    try:
-                        calls.append(PlannedToolCall.model_validate(c))
-                    except Exception:
-                        continue
-                planner_step = PlannerStep(calls=calls, final_text=parsed.get("final_text"))
+        if isinstance(plan_resp, PlannerStep):
+            # Direct Pydantic model from structured output
+            planner_step = plan_resp
+            _dbg_print(f"[passthrough] step {step}: got structured output with {len(planner_step.calls)} calls")
+        else:
+            # Fallback to JSON parsing
+            raw_text = (plan_resp.content or "") if hasattr(plan_resp, "content") else str(plan_resp)
+            _dbg_print(f"[passthrough] step {step}: planner raw -> {_truncate(raw_text, 600)}")
+            parsed = _extract_json_object(raw_text)
+            
+            if isinstance(parsed, dict):
+                try:
+                    planner_step = PlannerStep.model_validate(parsed)
+                except Exception:
+                    # Try to coerce structure
+                    calls_raw = parsed.get("calls") if isinstance(parsed.get("calls"), list) else []
+                    calls: List[PlannedToolCall] = []
+                    for c in calls_raw:
+                        try:
+                            calls.append(PlannedToolCall.model_validate(c))
+                        except Exception:
+                            continue
+                    planner_step = PlannerStep(calls=calls, final_text=parsed.get("final_text"))
 
         # If planner provided final text only and no calls, finish
         if not planner_step.calls:
@@ -549,14 +590,21 @@ async def run_agent_stream(
         yield "No tools discovered. Ensure files matching *_tools.py exist under extensions/."
         return
 
-    # Planner model
+    # Planner model with structured output
     tracer = LLMRunTracer("planner")
-    model = get_chat_model(
+    base_model = get_chat_model(
         role="domain",
         model=llm or _get_env("LLM_DEFAULT_MODEL", "gpt-4.1"),
         callbacks=[tracer],
         temperature=0.0
     )
+    
+    # Use structured output with Pydantic schema
+    try:
+        model = base_model.with_structured_output(PlannerStep, method="function_calling")
+    except Exception:
+        model = base_model
+        _dbg_print("[passthrough-stream] Warning: structured output not supported, falling back to JSON parsing")
 
     # Clear traces
     del RUN_TRACES[:]
@@ -582,23 +630,29 @@ async def run_agent_stream(
         _dbg_print(f"[passthrough-stream] step {step}: planning...")
         plan_resp = await model.ainvoke(messages)
         
-        raw_text = (plan_resp.content or "") if hasattr(plan_resp, "content") else str(plan_resp)
-        _dbg_print(f"[passthrough-stream] step {step}: planner raw -> {_truncate(raw_text, 600)}")
-        parsed = _extract_json_object(raw_text)
+        # Parse plan - should be PlannerStep if structured output worked
         planner_step = PlannerStep()
         
-        if isinstance(parsed, dict):
-            try:
-                planner_step = PlannerStep.model_validate(parsed)
-            except Exception:
-                calls_raw = parsed.get("calls") if isinstance(parsed.get("calls"), list) else []
-                calls: List[PlannedToolCall] = []
-                for c in calls_raw:
-                    try:
-                        calls.append(PlannedToolCall.model_validate(c))
-                    except Exception:
-                        continue
-                planner_step = PlannerStep(calls=calls, final_text=parsed.get("final_text"))
+        if isinstance(plan_resp, PlannerStep):
+            planner_step = plan_resp
+            _dbg_print(f"[passthrough-stream] step {step}: got structured output with {len(planner_step.calls)} calls")
+        else:
+            raw_text = (plan_resp.content or "") if hasattr(plan_resp, "content") else str(plan_resp)
+            _dbg_print(f"[passthrough-stream] step {step}: planner raw -> {_truncate(raw_text, 600)}")
+            parsed = _extract_json_object(raw_text)
+            
+            if isinstance(parsed, dict):
+                try:
+                    planner_step = PlannerStep.model_validate(parsed)
+                except Exception:
+                    calls_raw = parsed.get("calls") if isinstance(parsed.get("calls"), list) else []
+                    calls: List[PlannedToolCall] = []
+                    for c in calls_raw:
+                        try:
+                            calls.append(PlannedToolCall.model_validate(c))
+                        except Exception:
+                            continue
+                    planner_step = PlannerStep(calls=calls, final_text=parsed.get("final_text"))
 
         if not planner_step.calls:
             if isinstance(planner_step.final_text, str) and planner_step.final_text.strip():

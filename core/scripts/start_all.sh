@@ -51,67 +51,56 @@ mkdir -p logs
 
 # Start Agent API
 echo -e "${GREEN}Starting Agent API on port ${AGENT_API_PORT:-8080}...${NC}"
-python3 core/utils/agent_api.py > logs/agent_api.log 2>&1 &
+setsid python3 core/utils/agent_api.py > logs/agent_api.log 2>&1 &
 AGENT_API_PID=$!
 echo "Agent API PID: $AGENT_API_PID"
 
 # Wait a moment for Agent API to start
 sleep 2
 
-# Start MCP Server
-echo -e "${GREEN}Starting MCP Server on port 8765...${NC}"
-python3 core/utils/mcp_server.py --port 8765 > logs/mcp_server.log 2>&1 &
+# Start MCP Server with GitHub OAuth
+echo -e "${GREEN}Starting MCP Server with GitHub OAuth...${NC}"
+setsid python3 core/utils/mcp_server_anthropic.py --provider github > logs/mcp_server.log 2>&1 &
 MCP_SERVER_PID=$!
 echo "MCP Server PID: $MCP_SERVER_PID"
 
 # Wait a moment for MCP Server to start
+sleep 3
+
+# Start ngrok tunnel for MCP Server (non-interactive)
+echo -e "${GREEN}Starting ngrok tunnel for MCP Server...${NC}"
+setsid bash -c '
+    export $(grep -v "^#" .env | xargs) 2>/dev/null || true
+    MCP_PORT="${MCP_SERVER_PORT:-8765}"
+    NGROK_DOMAIN="${NGROK_DOMAIN}"
+    
+    if [ -n "$NGROK_DOMAIN" ] && command -v ngrok &> /dev/null; then
+        # Kill any existing ngrok processes more safely
+        ngrok_pids=$(pgrep -x ngrok 2>/dev/null)
+        if [ -n "$ngrok_pids" ]; then
+            echo "Stopping existing ngrok processes..."
+            for pid in $ngrok_pids; do
+                kill -TERM "$pid" 2>/dev/null || true
+            done
+            sleep 1
+        fi
+        # Start ngrok
+        echo "Starting ngrok tunnel on https://$NGROK_DOMAIN"
+        exec ngrok http "$MCP_PORT" --domain="$NGROK_DOMAIN" --log=stdout
+    else
+        echo "Warning: NGROK_DOMAIN not set or ngrok not installed"
+        echo "Run manually: ./core/scripts/ngrok_mcp.sh"
+        exit 0
+    fi
+' > logs/ngrok.log 2>&1 &
+NGROK_PID=$!
+echo "ngrok PID: $NGROK_PID"
+
+# Wait a moment for ngrok to start
 sleep 2
 
-# Start Automation Memory Backend (if exists)
-if [ -d "extensions/automation_memory/backend" ]; then
-    echo -e "${GREEN}Starting Automation Memory Backend on port 3051...${NC}"
-    cd extensions/automation_memory/backend
-    
-    # Install dependencies if needed
-    if [ ! -d "node_modules" ]; then
-        echo -e "${YELLOW}Installing backend dependencies...${NC}"
-        npm install
-    fi
-    
-    # Start backend in background
-    node server.js > ../../../logs/am_backend.log 2>&1 &
-    AM_BACKEND_PID=$!
-    echo "Automation Memory Backend PID: $AM_BACKEND_PID"
-    
-    cd "$PROJECT_ROOT"
-    sleep 2
-else
-    echo -e "${YELLOW}Automation Memory Backend not found, skipping...${NC}"
-    AM_BACKEND_PID=""
-fi
-
-# Start Automation Memory UI (if exists)
-if [ -d "extensions/automation_memory/ui" ]; then
-    echo -e "${GREEN}Starting Automation Memory UI on port 5200...${NC}"
-    cd extensions/automation_memory/ui
-    
-    # Install dependencies if needed
-    if [ ! -d "node_modules" ]; then
-        echo -e "${YELLOW}Installing UI dependencies...${NC}"
-        npm install
-    fi
-    
-    # Start UI in background with port
-    PORT=5200 npm run dev > ../../../logs/am_ui.log 2>&1 &
-    AM_UI_PID=$!
-    echo "Automation Memory UI PID: $AM_UI_PID"
-    
-    cd "$PROJECT_ROOT"
-    sleep 2
-else
-    echo -e "${YELLOW}Automation Memory UI not found, skipping...${NC}"
-    AM_UI_PID=""
-fi
+## NOTE: Extension UIs and Services are now auto-started by the Agent API service manager.
+echo -e "${GREEN}Extension UIs and Services will be auto-started by Agent API on startup${NC}"
 
 # Start Hub UI (if exists)
 if [ -d "hub_ui" ]; then
@@ -125,7 +114,7 @@ if [ -d "hub_ui" ]; then
     fi
     
     # Start UI in background
-    npm run dev > ../logs/hub_ui.log 2>&1 &
+    setsid npm run dev > ../logs/hub_ui.log 2>&1 &
     HUB_UI_PID=$!
     echo "Hub UI PID: $HUB_UI_PID"
     
@@ -138,12 +127,8 @@ fi
 # Save PIDs to file for cleanup
 echo "$AGENT_API_PID" > logs/agent_api.pid
 echo "$MCP_SERVER_PID" > logs/mcp_server.pid
-if [ -n "$AM_BACKEND_PID" ]; then
-    echo "$AM_BACKEND_PID" > logs/am_backend.pid
-fi
-if [ -n "$AM_UI_PID" ]; then
-    echo "$AM_UI_PID" > logs/am_ui.pid
-fi
+echo "$NGROK_PID" > logs/ngrok.pid
+# No per-extension PIDs tracked here; managed by Agent API service manager
 if [ -n "$HUB_UI_PID" ]; then
     echo "$HUB_UI_PID" > logs/hub_ui.pid
 fi
@@ -151,18 +136,18 @@ fi
 echo ""
 echo -e "${GREEN}All services started successfully!${NC}"
 echo "========================================"
-echo -e "Agent API:  ${GREEN}http://127.0.0.1:${AGENT_API_PORT:-8080}${NC}"
-echo -e "MCP Server: ${GREEN}http://127.0.0.1:8765${NC}"
+echo -e "Agent API:    ${GREEN}http://127.0.0.1:${AGENT_API_PORT:-8080}${NC}"
+echo -e "MCP Server:   ${GREEN}http://127.0.0.1:8765${NC} (GitHub OAuth enabled)"
+echo -e "ngrok Tunnel: ${GREEN}Check logs/ngrok.log for public URL${NC}"
 if [ -n "$HUB_UI_PID" ]; then
     echo -e "Hub UI:     ${GREEN}http://127.0.0.1:${HUB_UI_PORT:-5173}${NC}"
 fi
-if [ -n "$AM_BACKEND_PID" ]; then
-    echo -e "Automation Memory: ${GREEN}http://127.0.0.1:5200${NC}"
-fi
+# UIs will be served on 5200–5299, consult /extensions API
 echo ""
 echo "Logs:"
 echo "  - logs/agent_api.log"
 echo "  - logs/mcp_server.log"
+echo "  - logs/ngrok.log"
 if [ -n "$AM_BACKEND_PID" ]; then
     echo "  - logs/am_backend.log"
     echo "  - logs/am_ui.log"

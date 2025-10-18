@@ -312,6 +312,13 @@ async def _on_startup() -> None:
     """Initialize agents on startup."""
     _init_agents()
     _maybe_print_startup_models()
+    try:
+        # Initialize and start extension UIs/services in background
+        from core.utils.service_manager import init_and_start
+        init_and_start()
+    except Exception:
+        # Best effort; API still usable without service manager
+        pass
 
 
 # ---- Routes ----
@@ -319,6 +326,62 @@ async def _on_startup() -> None:
 async def healthz() -> Dict[str, str]:
     """Health check endpoint."""
     return {"status": "ok"}
+
+
+@app.get("/extensions")
+async def list_extensions_status() -> Dict[str, Any]:
+    """List discovered extensions with UI and services status."""
+    try:
+        from core.utils.service_manager import get_manager
+        mgr = get_manager()
+        return {"extensions": mgr.list_extensions()}
+    except Exception:
+        return {"extensions": []}
+
+
+@app.get("/extensions/{name}")
+async def get_extension_status(name: str) -> Dict[str, Any]:
+    try:
+        from core.utils.service_manager import get_manager
+        mgr = get_manager()
+        data = mgr.get_extension(name)
+        if not data:
+            raise HTTPException(status_code=404, detail="extension not found")
+        return data
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="internal error")
+
+
+@app.post("/extensions/{name}/ui/restart")
+async def restart_extension_ui(name: str) -> Dict[str, Any]:
+    try:
+        from core.utils.service_manager import get_manager
+        mgr = get_manager()
+        ok = mgr.restart_ui(name)
+        if not ok:
+            raise HTTPException(status_code=404, detail="ui not found")
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="internal error")
+
+
+@app.post("/extensions/{name}/services/{service}/restart")
+async def restart_extension_service(name: str, service: str) -> Dict[str, Any]:
+    try:
+        from core.utils.service_manager import get_manager
+        mgr = get_manager()
+        ok = mgr.restart_service(name, service)
+        if not ok:
+            raise HTTPException(status_code=404, detail="service not found")
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="internal error")
 
 
 @app.get("/v1/models")
@@ -436,7 +499,7 @@ async def chat_completions(
 
 if __name__ == "__main__":
     import uvicorn
-    host = os.environ.get("AGENT_API_HOST", "127.0.0.1")
+    host = os.environ.get("AGENT_API_HOST", "0.0.0.0")
     port = int(os.environ.get("AGENT_API_PORT", "8080"))
     uvicorn.run(app, host=host, port=port, reload=False)
 
