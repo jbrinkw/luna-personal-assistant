@@ -1,0 +1,7 @@
+{
+  "name": "web_server",
+  "requires_port": true,
+  "health_check": "/healthz",
+  "restart_on_failure": true
+}
+

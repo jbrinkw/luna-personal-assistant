@@ -124,6 +124,69 @@ async function deleteMemory(id) {
   await pool.query('DELETE FROM memories WHERE id = $1', [id]);
 }
 
+// Flow Executions
+async function createExecution(flowId, totalPrompts) {
+  const result = await pool.query(
+    'INSERT INTO flow_executions (flow_id, total_prompts, status, started_at) VALUES ($1, $2, $3, CURRENT_TIMESTAMP) RETURNING id',
+    [flowId, totalPrompts, 'running']
+  );
+  return result.rows[0].id;
+}
+
+async function getExecution(id) {
+  const result = await pool.query(
+    'SELECT id, flow_id, status, current_prompt_index, total_prompts, started_at, completed_at, error, prompt_results FROM flow_executions WHERE id = $1',
+    [id]
+  );
+  return result.rows[0] || null;
+}
+
+async function listActiveExecutions() {
+  const result = await pool.query(
+    `SELECT e.id, e.flow_id, e.status, e.current_prompt_index, e.total_prompts, e.started_at, e.completed_at, e.error, e.prompt_results,
+            f.call_name, f.agent, f.prompts
+     FROM flow_executions e
+     JOIN task_flows f ON e.flow_id = f.id
+     WHERE e.status = 'running'
+     ORDER BY e.started_at DESC`
+  );
+  return result.rows;
+}
+
+async function listRecentExecutions(limit = 20) {
+  const result = await pool.query(
+    `SELECT e.id, e.flow_id, e.status, e.current_prompt_index, e.total_prompts, e.started_at, e.completed_at, e.error, e.prompt_results,
+            f.call_name, f.agent
+     FROM flow_executions e
+     JOIN task_flows f ON e.flow_id = f.id
+     ORDER BY e.started_at DESC
+     LIMIT $1`,
+    [limit]
+  );
+  return result.rows;
+}
+
+async function updateExecutionProgress(id, promptIndex, promptResult) {
+  const execution = await getExecution(id);
+  if (!execution) return false;
+
+  const results = execution.prompt_results || [];
+  results.push(promptResult);
+
+  await pool.query(
+    'UPDATE flow_executions SET current_prompt_index = $1, prompt_results = $2 WHERE id = $3',
+    [promptIndex, JSON.stringify(results), id]
+  );
+  return true;
+}
+
+async function completeExecution(id, status = 'completed', error = null) {
+  await pool.query(
+    'UPDATE flow_executions SET status = $1, completed_at = CURRENT_TIMESTAMP, error = $2 WHERE id = $3',
+    [status, error, id]
+  );
+}
+
 module.exports = {
   listFlows,
   getFlow,
@@ -140,5 +203,11 @@ module.exports = {
   createMemory,
   updateMemory,
   deleteMemory,
+  createExecution,
+  getExecution,
+  listActiveExecutions,
+  listRecentExecutions,
+  updateExecutionProgress,
+  completeExecution,
 };
 

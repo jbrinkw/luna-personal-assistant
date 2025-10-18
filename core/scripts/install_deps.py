@@ -59,14 +59,36 @@ def check_uv_installed() -> bool:
         return False
 
 
-def install_requirements(req_file: Path, label: str, verbose: bool = False) -> Tuple[bool, str]:
+def read_packages_from_requirements(req_file: Path) -> List[str]:
+    """
+    Read and parse packages from a requirements.txt file.
+    
+    Args:
+        req_file: Path to requirements.txt
+    
+    Returns:
+        List of package specifications
+    """
+    packages = []
+    try:
+        with open(req_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                # Skip empty lines and comments
+                if line and not line.startswith('#'):
+                    packages.append(line)
+    except Exception as e:
+        print_status(f"Error reading {req_file}: {e}", "warning")
+    return packages
+
+
+def install_requirements(req_file: Path, label: str) -> Tuple[bool, str]:
     """
     Install a requirements.txt file using uv.
     
     Args:
         req_file: Path to requirements.txt
         label: Human-readable label for this installation
-        verbose: Show detailed output
     
     Returns:
         Tuple of (success, message)
@@ -76,52 +98,42 @@ def install_requirements(req_file: Path, label: str, verbose: bool = False) -> T
     
     print_status(f"Installing {label}...", "info")
     
+    # Read and display packages
+    packages = read_packages_from_requirements(req_file)
+    if packages:
+        print(f"\n{Colors.BOLD}Requested packages ({len(packages)}):{Colors.END}")
+        for pkg in packages:
+            print(f"  • {pkg}")
+        print()
+    
     try:
         # Use uv with --python flag to target the active Python
         cmd = ["uv", "pip", "install", "-r", str(req_file), "--python", sys.executable]
         
-        if verbose:
-            # Real-time streaming: show output as it happens
-            print(f"\nRunning: {' '.join(cmd)}\n")
-            print("=" * 70)
-            
-            # Set proper encoding for Windows
-            import os
-            env = os.environ.copy()
-            env["PYTHONIOENCODING"] = "utf-8"
-            
-            result = subprocess.run(
-                cmd,
-                cwd=str(PROJECT_ROOT),
-                timeout=300,  # 5 minutes timeout
-                env=env
-            )
-            
-            print("=" * 70)
-            
-            if result.returncode == 0:
-                print_status(f"{label} installed successfully", "success")
-                return True, "Success"
-            else:
-                print_status(f"{label} installation failed (exit code: {result.returncode})", "error")
-                return False, f"Exit code: {result.returncode}"
+        # Real-time streaming: show output as it happens
+        print(f"{Colors.BOLD}Running: {' '.join(cmd)}{Colors.END}\n")
+        print("=" * 70)
+        
+        # Set proper encoding
+        import os
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        
+        result = subprocess.run(
+            cmd,
+            cwd=str(PROJECT_ROOT),
+            timeout=300,  # 5 minutes timeout
+            env=env
+        )
+        
+        print("=" * 70)
+        
+        if result.returncode == 0:
+            print_status(f"{label} installed successfully", "success")
+            return True, "Success"
         else:
-            # Quiet mode: capture output
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=300,  # 5 minutes timeout
-                cwd=str(PROJECT_ROOT)
-            )
-            
-            if result.returncode == 0:
-                print_status(f"{label} installed successfully", "success")
-                return True, "Success"
-            else:
-                error_msg = result.stderr if result.stderr else result.stdout
-                print_status(f"{label} installation failed", "error")
-                return False, error_msg
+            print_status(f"{label} installation failed (exit code: {result.returncode})", "error")
+            return False, f"Exit code: {result.returncode}"
     
     except subprocess.TimeoutExpired:
         msg = "Installation timed out (>5 min)"
@@ -154,12 +166,9 @@ def find_extension_requirements() -> List[Tuple[str, Path]]:
     return extension_reqs
 
 
-def install_all_dependencies(verbose: bool = False) -> int:
+def install_all_dependencies() -> int:
     """
     Install all dependencies (core + extensions) using uv.
-    
-    Args:
-        verbose: Show detailed output
     
     Returns:
         Exit code (0 = success, 1 = failure)
@@ -185,7 +194,7 @@ def install_all_dependencies(verbose: bool = False) -> int:
     # Install core requirements
     core_req = PROJECT_ROOT / "requirements.txt"
     if core_req.exists():
-        success, msg = install_requirements(core_req, "Core dependencies", verbose)
+        success, msg = install_requirements(core_req, "Core dependencies")
         results.append(("Core", success, msg))
     else:
         print_status("Core requirements.txt not found", "warning")
@@ -202,8 +211,7 @@ def install_all_dependencies(verbose: bool = False) -> int:
         for ext_name, req_file in extension_reqs:
             success, msg = install_requirements(
                 req_file,
-                f"Extension: {ext_name}",
-                verbose
+                f"Extension: {ext_name}"
             )
             results.append((ext_name, success, msg))
             print()
@@ -222,7 +230,7 @@ def install_all_dependencies(verbose: bool = False) -> int:
     for name, success, msg in results:
         status = f"{Colors.GREEN}OK{Colors.END}" if success else f"{Colors.RED}FAIL{Colors.END}"
         print(f"  [{status}] {name}")
-        if not success and verbose:
+        if not success:
             print(f"       {Colors.RED}{msg[:100]}{Colors.END}")
     
     print(f"{Colors.BOLD}{Colors.CYAN}{'='*60}{Colors.END}")
@@ -239,24 +247,6 @@ def install_all_dependencies(verbose: bool = False) -> int:
 
 def main():
     """Main entry point."""
-    import argparse
-    
-    parser = argparse.ArgumentParser(
-        description="Install all Luna dependencies using uv"
-    )
-    parser.add_argument(
-        "-v", "--verbose",
-        action="store_true",
-        help="Show detailed output with real-time streaming"
-    )
-    parser.add_argument(
-        "--quiet",
-        action="store_true",
-        help="Minimal output (errors only)"
-    )
-    
-    args = parser.parse_args()
-    
     # Print Python info
     print(f"\n{Colors.CYAN}Python executable: {sys.executable}{Colors.END}")
     print(f"{Colors.CYAN}Python version: {sys.version.split()[0]}{Colors.END}")
@@ -273,16 +263,7 @@ def main():
     else:
         print(f"{Colors.YELLOW}Warning: No virtual environment detected (running in system Python){Colors.END}\n")
     
-    # Suppress non-error output in quiet mode
-    if args.quiet:
-        import io
-        import contextlib
-        
-        # Redirect stdout but keep stderr
-        with contextlib.redirect_stdout(io.StringIO()):
-            exit_code = install_all_dependencies(verbose=False)
-    else:
-        exit_code = install_all_dependencies(verbose=args.verbose)
+    exit_code = install_all_dependencies()
     
     return exit_code
 

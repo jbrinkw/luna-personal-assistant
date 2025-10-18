@@ -164,11 +164,39 @@ function MemoriesTab({ memories, onUpdate }) {
 
 function FlowsTab({ flows, agents, onUpdate }) {
   const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [activeExecutions, setActiveExecutions] = useState([]);
+  const [recentExecutions, setRecentExecutions] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
   const [newFlow, setNewFlow] = useState({
     call_name: '',
     prompts: [''],
     agent: 'simple_agent',
   });
+  const [editFlow, setEditFlow] = useState({
+    call_name: '',
+    prompts: [''],
+    agent: 'simple_agent',
+  });
+
+  // Poll for execution updates
+  useEffect(() => {
+    loadExecutions();
+    const interval = setInterval(loadExecutions, 2000); // Poll every 2 seconds
+    return () => clearInterval(interval);
+  }, []);
+
+  const loadExecutions = async () => {
+    try {
+      // Use refresh endpoint to get both active and recent from cache
+      const res = await fetch(`${API_BASE}/api/executions/refresh`);
+      const data = await res.json();
+      setActiveExecutions(data.active || []);
+      setRecentExecutions(data.recent || []);
+    } catch (e) {
+      console.error('Failed to load executions:', e);
+    }
+  };
 
   const handleAdd = async () => {
     if (!newFlow.call_name.trim()) {
@@ -193,10 +221,54 @@ function FlowsTab({ flows, agents, onUpdate }) {
     }
   };
 
+  const handleEdit = (flow) => {
+    setEditingId(flow.id);
+    setEditFlow({
+      call_name: flow.call_name,
+      prompts: flow.prompts || [''],
+      agent: flow.agent || 'simple_agent',
+    });
+    setShowAdd(false);
+  };
+
+  const handleUpdate = async () => {
+    if (!editFlow.call_name.trim()) {
+      alert('Call name is required');
+      return;
+    }
+    try {
+      await fetch(`${API_BASE}/api/task_flows/${editingId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          call_name: editFlow.call_name,
+          prompts: editFlow.prompts.filter(p => p.trim()),
+          agent: editFlow.agent,
+        }),
+      });
+      setEditingId(null);
+      setEditFlow({ call_name: '', prompts: [''], agent: 'simple_agent' });
+      onUpdate();
+    } catch (e) {
+      alert('Failed to update flow');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditFlow({ call_name: '', prompts: [''], agent: 'simple_agent' });
+  };
+
   const handleRun = async (id) => {
     try {
-      await fetch(`${API_BASE}/api/task_flows/${id}/run`, { method: 'POST' });
-      alert('Flow execution started');
+      const res = await fetch(`${API_BASE}/api/task_flows/${id}/run`, { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        loadExecutions(); // Refresh executions immediately
+        alert('Flow execution started');
+      } else {
+        alert('Failed to start flow');
+      }
     } catch (e) {
       alert('Failed to run flow');
     }
@@ -214,7 +286,189 @@ function FlowsTab({ flows, agents, onUpdate }) {
 
   return (
     <div>
-      <button className="btn btn-primary add-button" onClick={() => setShowAdd(!showAdd)}>
+      {/* Recent & Active Executions Section - Always Visible */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <h3 style={{ fontSize: 16, margin: 0, color: activeExecutions.length > 0 ? '#4CAF50' : '#666' }}>
+            {activeExecutions.length > 0 ? `⚡ Running Flows (${activeExecutions.length})` : '📊 Recent Flow Executions'}
+          </h3>
+          <button 
+            className="btn btn-secondary" 
+            style={{ fontSize: 12, padding: '4px 12px' }}
+            onClick={() => setShowHistory(!showHistory)}
+          >
+            {showHistory ? 'Hide All' : `Show All (${recentExecutions.length})`}
+          </button>
+        </div>
+        
+        {/* Active/Running Flows */}
+        {activeExecutions.length > 0 && activeExecutions.map((exec) => {
+            const prompts = Array.isArray(exec.prompts) ? exec.prompts : JSON.parse(exec.prompts || '[]');
+            const currentPrompt = prompts[exec.current_prompt_index] || '';
+            const promptResults = Array.isArray(exec.prompt_results) ? exec.prompt_results : JSON.parse(exec.prompt_results || '[]');
+            const progress = exec.total_prompts > 0 ? (exec.current_prompt_index / exec.total_prompts) * 100 : 0;
+            
+            return (
+              <div key={exec.id} className="item" style={{ borderLeft: '4px solid #4CAF50' }}>
+                <div className="item-header">
+                  <div>
+                    <span className="item-title">{exec.call_name}</span>
+                    <span className="agent-badge" style={{ marginLeft: 10 }}>
+                      {exec.agent}
+                    </span>
+                    <span style={{ marginLeft: 10, fontSize: 13, color: '#4CAF50' }}>
+                      Prompt {exec.current_prompt_index}/{exec.total_prompts}
+                    </span>
+                  </div>
+                </div>
+                
+                {/* Progress Bar */}
+                <div style={{ margin: '10px 0', background: '#f0f0f0', borderRadius: 4, height: 8, overflow: 'hidden' }}>
+                  <div style={{ 
+                    width: `${progress}%`, 
+                    background: '#4CAF50', 
+                    height: '100%',
+                    transition: 'width 0.3s ease'
+                  }}></div>
+                </div>
+                
+                {/* Current Prompt */}
+                {currentPrompt && (
+                  <div style={{ marginTop: 10 }}>
+                    <strong>Current Prompt:</strong>
+                    <div style={{ 
+                      padding: 8, 
+                      background: '#f9f9f9', 
+                      borderRadius: 4, 
+                      marginTop: 4,
+                      fontSize: 13
+                    }}>
+                      {currentPrompt}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Latest Response */}
+                {promptResults.length > 0 && promptResults[promptResults.length - 1].response && (
+                  <div style={{ marginTop: 10 }}>
+                    <strong>Latest Response:</strong>
+                    <div style={{ 
+                      padding: 8, 
+                      background: '#f0f8ff', 
+                      borderRadius: 4, 
+                      marginTop: 4,
+                      fontSize: 13,
+                      maxHeight: 100,
+                      overflow: 'auto'
+                    }}>
+                      {promptResults[promptResults.length - 1].response}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        
+        {/* Show most recent completed flows (top 3) when not running anything */}
+        {activeExecutions.length === 0 && recentExecutions.length > 0 && !showHistory && 
+          recentExecutions.slice(0, 3).map((exec) => {
+            const promptResults = Array.isArray(exec.prompt_results) ? exec.prompt_results : JSON.parse(exec.prompt_results || '[]');
+            const statusColor = exec.status === 'completed' ? '#4CAF50' : exec.status === 'failed' ? '#f44336' : '#2196F3';
+            const statusIcon = exec.status === 'completed' ? '✓' : exec.status === 'failed' ? '✗' : '⟳';
+            
+            return (
+              <div key={exec.id} className="item" style={{ borderLeft: `4px solid ${statusColor}` }}>
+                <div className="item-header">
+                  <div>
+                    <span className="item-title">{exec.call_name}</span>
+                    <span className="agent-badge" style={{ marginLeft: 10 }}>
+                      {exec.agent}
+                    </span>
+                    <span style={{ marginLeft: 10, fontSize: 13, color: statusColor }}>
+                      {statusIcon} {exec.status}
+                    </span>
+                    <span style={{ marginLeft: 10, fontSize: 12, color: '#666' }}>
+                      {exec.current_prompt_index}/{exec.total_prompts} prompts
+                    </span>
+                  </div>
+                </div>
+                
+                {exec.error && (
+                  <div style={{ marginTop: 10, padding: 8, background: '#ffebee', borderRadius: 4, fontSize: 13 }}>
+                    <strong style={{ color: '#f44336' }}>Error:</strong> {exec.error}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        }
+      </div>
+
+      {/* Full Execution History */}
+      {showHistory && recentExecutions.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <h3 style={{ fontSize: 16, marginBottom: 10 }}>All Recent Executions</h3>
+          {recentExecutions.map((exec) => {
+            const promptResults = Array.isArray(exec.prompt_results) ? exec.prompt_results : JSON.parse(exec.prompt_results || '[]');
+            const statusColor = exec.status === 'completed' ? '#4CAF50' : exec.status === 'failed' ? '#f44336' : '#2196F3';
+            const statusIcon = exec.status === 'completed' ? '✓' : exec.status === 'failed' ? '✗' : '⟳';
+            
+            return (
+              <div key={exec.id} className="item" style={{ borderLeft: `4px solid ${statusColor}` }}>
+                <div className="item-header">
+                  <div>
+                    <span className="item-title">{exec.call_name}</span>
+                    <span className="agent-badge" style={{ marginLeft: 10 }}>
+                      {exec.agent}
+                    </span>
+                    <span style={{ marginLeft: 10, fontSize: 13, color: statusColor }}>
+                      {statusIcon} {exec.status}
+                    </span>
+                    <span style={{ marginLeft: 10, fontSize: 12, color: '#666' }}>
+                      {exec.current_prompt_index}/{exec.total_prompts} prompts
+                    </span>
+                  </div>
+                </div>
+                
+                {exec.error && (
+                  <div style={{ marginTop: 10, padding: 8, background: '#ffebee', borderRadius: 4 }}>
+                    <strong style={{ color: '#f44336' }}>Error:</strong> {exec.error}
+                  </div>
+                )}
+                
+                {promptResults.length > 0 && (
+                  <details style={{ marginTop: 10 }}>
+                    <summary style={{ cursor: 'pointer', fontSize: 14, fontWeight: 500 }}>
+                      View Results ({promptResults.length})
+                    </summary>
+                    <div style={{ marginTop: 8 }}>
+                      {promptResults.map((result, idx) => (
+                        <div key={idx} style={{ 
+                          padding: 8, 
+                          background: result.success ? '#f0f8ff' : '#ffebee', 
+                          borderRadius: 4,
+                          marginBottom: 8
+                        }}>
+                          <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 4 }}>
+                            Prompt {idx + 1}: {result.prompt}
+                          </div>
+                          {result.success ? (
+                            <div style={{ fontSize: 13 }}>{result.response}</div>
+                          ) : (
+                            <div style={{ fontSize: 13, color: '#f44336' }}>Error: {result.error}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <button className="btn btn-primary add-button" onClick={() => { setShowAdd(!showAdd); setEditingId(null); }}>
         {showAdd ? 'Cancel' : 'Add New Flow'}
       </button>
 
@@ -273,27 +527,89 @@ function FlowsTab({ flows, agents, onUpdate }) {
       <div className="item-list">
         {flows.map((flow) => (
           <div key={flow.id} className="item">
-            <div className="item-header">
+            {editingId === flow.id ? (
               <div>
-                <span className="item-title">{flow.call_name}</span>
-                <span className="agent-badge" style={{ marginLeft: 10 }}>
-                  {flow.agent}
-                </span>
+                <div className="form-group">
+                  <label className="form-label">Call Name</label>
+                  <input
+                    className="form-input"
+                    value={editFlow.call_name}
+                    onChange={(e) => setEditFlow({ ...editFlow, call_name: e.target.value })}
+                    placeholder="e.g., morning_routine"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Agent</label>
+                  <select
+                    className="form-select"
+                    value={editFlow.agent}
+                    onChange={(e) => setEditFlow({ ...editFlow, agent: e.target.value })}
+                  >
+                    {agents.map(agent => (
+                      <option key={agent} value={agent}>{agent}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Prompts</label>
+                  {editFlow.prompts.map((prompt, idx) => (
+                    <input
+                      key={idx}
+                      className="form-input"
+                      style={{ marginBottom: 8 }}
+                      value={prompt}
+                      onChange={(e) => {
+                        const updated = [...editFlow.prompts];
+                        updated[idx] = e.target.value;
+                        setEditFlow({ ...editFlow, prompts: updated });
+                      }}
+                      placeholder={`Prompt ${idx + 1}`}
+                    />
+                  ))}
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => setEditFlow({ ...editFlow, prompts: [...editFlow.prompts, ''] })}
+                  >
+                    Add Prompt
+                  </button>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-primary" onClick={handleUpdate}>
+                    Save Changes
+                  </button>
+                  <button className="btn btn-secondary" onClick={handleCancelEdit}>
+                    Cancel
+                  </button>
+                </div>
               </div>
-              <div className="item-actions">
-                <button className="btn btn-primary" onClick={() => handleRun(flow.id)}>
-                  Run
-                </button>
-                <button className="btn btn-danger" onClick={() => handleDelete(flow.id)}>
-                  Delete
-                </button>
+            ) : (
+              <div>
+                <div className="item-header">
+                  <div>
+                    <span className="item-title">{flow.call_name}</span>
+                    <span className="agent-badge" style={{ marginLeft: 10 }}>
+                      {flow.agent}
+                    </span>
+                  </div>
+                  <div className="item-actions">
+                    <button className="btn btn-primary" onClick={() => handleRun(flow.id)}>
+                      Run
+                    </button>
+                    <button className="btn btn-secondary" onClick={() => handleEdit(flow)}>
+                      Edit
+                    </button>
+                    <button className="btn btn-danger" onClick={() => handleDelete(flow.id)}>
+                      Delete
+                    </button>
+                  </div>
+                </div>
+                <ul className="prompts-list">
+                  {(flow.prompts || []).map((prompt, idx) => (
+                    <li key={idx}>{idx + 1}. {prompt}</li>
+                  ))}
+                </ul>
               </div>
-            </div>
-            <ul className="prompts-list">
-              {(flow.prompts || []).map((prompt, idx) => (
-                <li key={idx}>{idx + 1}. {prompt}</li>
-              ))}
-            </ul>
+            )}
           </div>
         ))}
       </div>
@@ -303,7 +619,15 @@ function FlowsTab({ flows, agents, onUpdate }) {
 
 function SchedulesTab({ schedules, agents, onUpdate }) {
   const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [newSchedule, setNewSchedule] = useState({
+    time_of_day: '09:00',
+    days_of_week: [false, false, false, false, false, false, false],
+    prompt: '',
+    agent: 'simple_agent',
+    enabled: true,
+  });
+  const [editSchedule, setEditSchedule] = useState({
     time_of_day: '09:00',
     days_of_week: [false, false, false, false, false, false, false],
     prompt: '',
@@ -338,6 +662,54 @@ function SchedulesTab({ schedules, agents, onUpdate }) {
     }
   };
 
+  const handleEdit = (schedule) => {
+    setEditingId(schedule.id);
+    setEditSchedule({
+      time_of_day: schedule.time_of_day,
+      days_of_week: schedule.days_of_week || [false, false, false, false, false, false, false],
+      prompt: schedule.prompt,
+      agent: schedule.agent || 'simple_agent',
+      enabled: schedule.enabled !== undefined ? schedule.enabled : true,
+    });
+    setShowAdd(false);
+  };
+
+  const handleUpdate = async () => {
+    if (!editSchedule.prompt.trim()) {
+      alert('Prompt is required');
+      return;
+    }
+    try {
+      await fetch(`${API_BASE}/api/scheduled_prompts/${editingId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editSchedule),
+      });
+      setEditingId(null);
+      setEditSchedule({
+        time_of_day: '09:00',
+        days_of_week: [false, false, false, false, false, false, false],
+        prompt: '',
+        agent: 'simple_agent',
+        enabled: true,
+      });
+      onUpdate();
+    } catch (e) {
+      alert('Failed to update schedule');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditSchedule({
+      time_of_day: '09:00',
+      days_of_week: [false, false, false, false, false, false, false],
+      prompt: '',
+      agent: 'simple_agent',
+      enabled: true,
+    });
+  };
+
   const handleToggle = async (id, enabled) => {
     try {
       await fetch(`${API_BASE}/api/scheduled_prompts/${id}`, {
@@ -363,7 +735,7 @@ function SchedulesTab({ schedules, agents, onUpdate }) {
 
   return (
     <div>
-      <button className="btn btn-primary add-button" onClick={() => setShowAdd(!showAdd)}>
+      <button className="btn btn-primary add-button" onClick={() => { setShowAdd(!showAdd); setEditingId(null); }}>
         {showAdd ? 'Cancel' : 'Add New Schedule'}
       </button>
 
@@ -429,29 +801,112 @@ function SchedulesTab({ schedules, agents, onUpdate }) {
           const activeDays = (sched.days_of_week || []).map((active, idx) => active ? dayNames[idx] : null).filter(Boolean);
           return (
             <div key={sched.id} className="item">
-              <div className="item-header">
+              {editingId === sched.id ? (
                 <div>
-                  <span className="item-title">{sched.time_of_day}</span>
-                  <span className="agent-badge" style={{ marginLeft: 10 }}>
-                    {sched.agent}
-                  </span>
-                  <span style={{ marginLeft: 10, fontSize: 13, color: '#666' }}>
-                    {activeDays.join(', ')}
-                  </span>
+                  <div className="form-group">
+                    <label className="form-label">Time (HH:MM)</label>
+                    <input
+                      className="form-input"
+                      type="time"
+                      value={editSchedule.time_of_day}
+                      onChange={(e) => setEditSchedule({ ...editSchedule, time_of_day: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Days of Week</label>
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      {dayNames.map((day, idx) => (
+                        <label key={idx} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <input
+                            type="checkbox"
+                            checked={editSchedule.days_of_week[idx]}
+                            onChange={(e) => {
+                              const updated = [...editSchedule.days_of_week];
+                              updated[idx] = e.target.checked;
+                              setEditSchedule({ ...editSchedule, days_of_week: updated });
+                            }}
+                          />
+                          {day}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Agent</label>
+                    <select
+                      className="form-select"
+                      value={editSchedule.agent}
+                      onChange={(e) => setEditSchedule({ ...editSchedule, agent: e.target.value })}
+                    >
+                      {agents.map(agent => (
+                        <option key={agent} value={agent}>{agent}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Enabled</label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={editSchedule.enabled}
+                        onChange={(e) => setEditSchedule({ ...editSchedule, enabled: e.target.checked })}
+                      />
+                      Schedule is enabled
+                    </label>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Prompt</label>
+                    <textarea
+                      className="form-textarea"
+                      value={editSchedule.prompt}
+                      onChange={(e) => setEditSchedule({ ...editSchedule, prompt: e.target.value })}
+                      placeholder="Enter prompt to execute..."
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-primary" onClick={handleUpdate}>
+                      Save Changes
+                    </button>
+                    <button className="btn btn-secondary" onClick={handleCancelEdit}>
+                      Cancel
+                    </button>
+                  </div>
                 </div>
-                <div className="item-actions">
-                  <button
-                    className={`btn ${sched.enabled ? 'btn-secondary' : 'btn-primary'}`}
-                    onClick={() => handleToggle(sched.id, !sched.enabled)}
-                  >
-                    {sched.enabled ? 'Disable' : 'Enable'}
-                  </button>
-                  <button className="btn btn-danger" onClick={() => handleDelete(sched.id)}>
-                    Delete
-                  </button>
+              ) : (
+                <div>
+                  <div className="item-header">
+                    <div>
+                      <span className="item-title">{sched.time_of_day}</span>
+                      <span className="agent-badge" style={{ marginLeft: 10 }}>
+                        {sched.agent}
+                      </span>
+                      <span style={{ marginLeft: 10, fontSize: 13, color: '#666' }}>
+                        {activeDays.join(', ')}
+                      </span>
+                      {!sched.enabled && (
+                        <span style={{ marginLeft: 10, fontSize: 13, color: '#999', fontStyle: 'italic' }}>
+                          (disabled)
+                        </span>
+                      )}
+                    </div>
+                    <div className="item-actions">
+                      <button
+                        className={`btn ${sched.enabled ? 'btn-secondary' : 'btn-primary'}`}
+                        onClick={() => handleToggle(sched.id, !sched.enabled)}
+                      >
+                        {sched.enabled ? 'Disable' : 'Enable'}
+                      </button>
+                      <button className="btn btn-secondary" onClick={() => handleEdit(sched)}>
+                        Edit
+                      </button>
+                      <button className="btn btn-danger" onClick={() => handleDelete(sched.id)}>
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                  <div>{sched.prompt}</div>
                 </div>
-              </div>
-              <div>{sched.prompt}</div>
+              )}
             </div>
           );
         })}

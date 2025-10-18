@@ -130,6 +130,76 @@ def discover_extensions(tool_root: Optional[str] = None) -> List[Dict[str, Any]]
     return extensions
 
 
+def discover_extension_uis(tool_root: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Discover extension UIs that provide a start.sh entrypoint.
+
+    Returns a list of dicts: { 'name': str, 'ui_path': str, 'start': str }
+    """
+    if tool_root is None:
+        tool_root = str(PROJECT_ROOT / 'extensions')
+    else:
+        tool_root = str(Path(tool_root).resolve())
+
+    results: List[Dict[str, Any]] = []
+    if not os.path.isdir(tool_root):
+        return results
+
+    for ext_dir in glob.glob(os.path.join(tool_root, '*')):
+        if not os.path.isdir(ext_dir):
+            continue
+        ui_dir = os.path.join(ext_dir, 'ui')
+        start_sh = os.path.join(ui_dir, 'start.sh')
+        if os.path.isdir(ui_dir) and os.path.isfile(start_sh):
+            results.append({
+                'name': os.path.basename(ext_dir),
+                'ui_path': ui_dir,
+                'start': start_sh,
+            })
+    return results
+
+
+def discover_extension_services(tool_root: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Discover extension services defined under services/* with start.sh and service_config.json.
+
+    Returns a list of dicts: { 'extension': str, 'service': str, 'path': str, 'start': str, 'config': Dict }
+    """
+    if tool_root is None:
+        tool_root = str(PROJECT_ROOT / 'extensions')
+    else:
+        tool_root = str(Path(tool_root).resolve())
+
+    results: List[Dict[str, Any]] = []
+    if not os.path.isdir(tool_root):
+        return results
+
+    for ext_dir in glob.glob(os.path.join(tool_root, '*')):
+        if not os.path.isdir(ext_dir):
+            continue
+        services_root = os.path.join(ext_dir, 'services')
+        if not os.path.isdir(services_root):
+            continue
+        for svc_dir in glob.glob(os.path.join(services_root, '*')):
+            if not os.path.isdir(svc_dir):
+                continue
+            start_sh = os.path.join(svc_dir, 'start.sh')
+            cfg_path = os.path.join(svc_dir, 'service_config.json')
+            if not os.path.isfile(start_sh) or not os.path.isfile(cfg_path):
+                continue
+            try:
+                with open(cfg_path, 'r', encoding='utf-8') as f:
+                    cfg = json.load(f)
+            except Exception:
+                cfg = {}
+            results.append({
+                'extension': os.path.basename(ext_dir),
+                'service': os.path.basename(svc_dir),
+                'path': svc_dir,
+                'start': start_sh,
+                'config': cfg,
+            })
+    return results
+
+
 def build_all_light_schema() -> str:
     """Build a lightweight schema description of all available tools.
     
