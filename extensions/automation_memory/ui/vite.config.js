@@ -9,7 +9,7 @@ export default defineConfig(({ command, mode }) => {
     plugins: [react()],
     server: {
       port: port,
-      host: '127.0.0.1',
+      host: '0.0.0.0',  // Allow network access
       strictPort: true,
     },
   };

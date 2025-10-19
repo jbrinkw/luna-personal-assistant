@@ -4,14 +4,43 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUPERVISOR_PY="$SCRIPT_DIR/supervisor/supervisor.py"
+SHUTDOWN_FLAG="$SCRIPT_DIR/.luna_shutdown"
 HEALTH_URL="http://127.0.0.1:9999/health"
+SHUTDOWN_URL="http://127.0.0.1:9999/shutdown"
 HEALTH_CHECK_INTERVAL=10
 MAX_FAILURES=3
+SHUTDOWN_REQUESTED=false
 
 echo "=========================================="
 echo "Luna Bootstrap Starting"
 echo "Repository: $SCRIPT_DIR"
 echo "=========================================="
+
+# Function to handle shutdown signals
+handle_shutdown() {
+    echo ""
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Shutdown signal received"
+    SHUTDOWN_REQUESTED=true
+    
+    # Tell supervisor to shutdown gracefully
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Requesting graceful shutdown from supervisor..."
+    curl -s -X POST "$SHUTDOWN_URL" > /dev/null 2>&1
+    
+    # Give supervisor time to shutdown
+    sleep 3
+    
+    # Force kill if still running
+    if is_supervisor_running; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Supervisor still running, forcing shutdown..."
+        kill_supervisor
+    fi
+    
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Luna shutdown complete"
+    exit 0
+}
+
+# Trap SIGINT (Ctrl+C) and SIGTERM
+trap handle_shutdown SIGINT SIGTERM
 
 # Function to check if supervisor is running
 is_supervisor_running() {
@@ -22,10 +51,12 @@ is_supervisor_running() {
 # Function to start supervisor
 start_supervisor() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting supervisor..."
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] [Bootstrap] Starting supervisor process" >> "$BOOTSTRAP_LOG"
     cd "$SCRIPT_DIR"
     python3 "$SUPERVISOR_PY" "$SCRIPT_DIR" > logs/supervisor.log 2>&1 &
     SUPERVISOR_PID=$!
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Supervisor started with PID: $SUPERVISOR_PID"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] [Bootstrap] Supervisor started with PID: $SUPERVISOR_PID" >> "$BOOTSTRAP_LOG"
 }
 
 # Function to perform health check
@@ -41,8 +72,18 @@ kill_supervisor() {
     sleep 1
 }
 
-# Create logs directory if it doesn't exist
+# Rotate logs directory - keep previous run as logs.old
+if [ -d "$SCRIPT_DIR/logs" ]; then
+    rm -rf "$SCRIPT_DIR/logs.old" 2>/dev/null || true
+    mv "$SCRIPT_DIR/logs" "$SCRIPT_DIR/logs.old" 2>/dev/null || true
+fi
 mkdir -p "$SCRIPT_DIR/logs"
+
+# Create bootstrap log
+BOOTSTRAP_LOG="$SCRIPT_DIR/logs/bootstrap.log"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] [Bootstrap] Luna Bootstrap Starting" >> "$BOOTSTRAP_LOG"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] [Bootstrap] Repository: $SCRIPT_DIR" >> "$BOOTSTRAP_LOG"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] [Bootstrap] Logs directory rotated (previous saved to logs.old)" >> "$BOOTSTRAP_LOG"
 
 # Initialize failure counter
 failure_count=0
@@ -53,9 +94,28 @@ echo "[$(date '+%Y-%m-%d %H:%M:%S')] Health check interval: ${HEALTH_CHECK_INTER
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Max failures before restart: $MAX_FAILURES"
 
 while true; do
+    # Exit loop if shutdown was requested
+    if [ "$SHUTDOWN_REQUESTED" = true ]; then
+        break
+    fi
+    
     # Check if supervisor process exists
     if ! is_supervisor_running; then
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] Supervisor not running"
+        
+        # Check if shutdown flag exists (intentional shutdown via API)
+        if [ -f "$SHUTDOWN_FLAG" ]; then
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Shutdown flag detected, exiting bootstrap"
+            rm -f "$SHUTDOWN_FLAG"
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Luna shutdown complete"
+            exit 0
+        fi
+        
+        # Don't restart if shutdown was requested
+        if [ "$SHUTDOWN_REQUESTED" = true ]; then
+            break
+        fi
+        
         start_supervisor
         sleep 5
         continue
@@ -66,15 +126,18 @@ while true; do
         # Health check passed
         if [ $failure_count -gt 0 ]; then
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] Health check passed (recovered)"
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] [Bootstrap] Health check recovered" >> "$BOOTSTRAP_LOG"
         fi
         failure_count=0
     else
         # Health check failed
         failure_count=$((failure_count + 1))
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] Health check failed (failure $failure_count/$MAX_FAILURES)"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] [Bootstrap] Health check failed (failure $failure_count/$MAX_FAILURES)" >> "$BOOTSTRAP_LOG"
         
         if [ $failure_count -ge $MAX_FAILURES ]; then
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] Max failures reached, restarting supervisor..."
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] [Bootstrap] Max failures reached, restarting supervisor" >> "$BOOTSTRAP_LOG"
             kill_supervisor
             failure_count=0
             # Loop will restart supervisor on next iteration

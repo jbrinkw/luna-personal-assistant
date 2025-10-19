@@ -348,8 +348,8 @@ app.get('/api/agents', async (req, res) => {
 });
 
 const PORT = process.env.AM_API_PORT || 3051;
-app.listen(PORT, '127.0.0.1', () => {
-  console.log(`[automation-memory] API listening on http://127.0.0.1:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`[automation-memory] API listening on 0.0.0.0:${PORT}`);
   console.log(`[automation-memory] Database: ${process.env.DB_NAME || 'luna'}`);
 });
 

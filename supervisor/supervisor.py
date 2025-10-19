@@ -6,6 +6,8 @@ import json
 import os
 import sys
 import threading
+import subprocess
+import traceback
 from datetime import datetime
 from pathlib import Path
 
@@ -21,23 +23,39 @@ class Supervisor:
         
         self.core_path = self.repo_path / "core"
         self.supervisor_path = self.repo_path / "supervisor"
+        self.logs_path = self.repo_path / "logs"
         
         self.master_config_path = self.core_path / "master_config.json"
         self.state_path = self.supervisor_path / "state.json"
         self.update_queue_path = self.core_path / "update_queue.json"
+        self.log_file = self.logs_path / "supervisor.log"
         
         self.master_config = {}
         self.state = {"services": {}}
+        self.processes = {}  # Track spawned processes
         
         # Ensure directories exist
         self.core_path.mkdir(parents=True, exist_ok=True)
         self.supervisor_path.mkdir(parents=True, exist_ok=True)
+        self.logs_path.mkdir(parents=True, exist_ok=True)
+    
+    def log(self, level, message):
+        """Write structured log message"""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_line = f"[{timestamp}] [{level}] [Supervisor] {message}\n"
+        try:
+            with open(self.log_file, 'a') as f:
+                f.write(log_line)
+        except Exception:
+            pass
+        # Also print to stdout for supervisor.log redirect
+        print(f"[{timestamp}] [{level}] [Supervisor] {message}", flush=True)
     
     def check_for_update_queue(self):
         """Check if update queue exists and trigger apply_updates if found"""
         if self.update_queue_path.exists():
-            print(f"Update queue found at {self.update_queue_path}")
-            print("Triggering apply_updates...")
+            self.log("INFO", f"Update queue found at {self.update_queue_path}")
+            self.log("INFO", "Triggering apply_updates...")
             
             # Copy apply_updates.py to /tmp
             apply_updates_source = self.core_path / "scripts" / "apply_updates.py"
@@ -45,13 +63,9 @@ class Supervisor:
             
             import shutil
             shutil.copy2(apply_updates_source, apply_updates_temp)
-            print(f"Copied apply_updates to {apply_updates_temp}")
+            self.log("INFO", f"Copied apply_updates to {apply_updates_temp}")
             
             # Spawn detached process
-            import subprocess
-            import os
-            
-            # Make process independent of parent
             process = subprocess.Popen(
                 ["python3", str(apply_updates_temp), str(self.repo_path)],
                 stdout=subprocess.DEVNULL,
@@ -60,8 +74,8 @@ class Supervisor:
                 start_new_session=True
             )
             
-            print(f"Spawned apply_updates process (PID: {process.pid})")
-            print("Exiting supervisor to allow update process to run...")
+            self.log("INFO", f"Spawned apply_updates process (PID: {process.pid})")
+            self.log("INFO", "Exiting supervisor to allow update process to run...")
             
             # Exit supervisor with code 0
             sys.exit(0)
@@ -76,11 +90,11 @@ class Supervisor:
     def load_or_create_master_config(self):
         """Load existing master_config.json or create default"""
         if self.master_config_path.exists():
-            print(f"Loading existing master_config from {self.master_config_path}")
+            self.log("INFO", f"Loading existing master_config from {self.master_config_path}")
             with open(self.master_config_path, 'r') as f:
                 self.master_config = json.load(f)
         else:
-            print(f"Creating default master_config at {self.master_config_path}")
+            self.log("INFO", f"Creating default master_config at {self.master_config_path}")
             self.master_config = {
                 "luna": {
                     "version": self.get_current_date_version(),
@@ -100,18 +114,13 @@ class Supervisor:
         """Save master_config to disk"""
         with open(self.master_config_path, 'w') as f:
             json.dump(self.master_config, f, indent=2)
-        print(f"Saved master_config to {self.master_config_path}")
+        self.log("INFO", f"Saved master_config to {self.master_config_path}")
     
     def load_or_create_state(self):
-        """Load existing state.json or create default"""
-        if self.state_path.exists():
-            print(f"Loading existing state from {self.state_path}")
-            with open(self.state_path, 'r') as f:
-                self.state = json.load(f)
-        else:
-            print(f"Creating default state at {self.state_path}")
-            self.state = {"services": {}}
-            self.save_state()
+        """Clear and create fresh state.json on every startup"""
+        self.log("INFO", f"Clearing state and creating fresh state at {self.state_path}")
+        self.state = {"services": {}}
+        self.save_state()
     
     def save_state(self):
         """Save state to disk"""
@@ -135,7 +144,7 @@ class Supervisor:
             self.state["services"][service_name]["status"] = status
         
         self.save_state()
-        print(f"Updated service {service_name}: pid={pid}, port={port}, status={status}")
+        self.log("INFO", f"Updated service {service_name}: pid={pid}, port={port}, status={status}")
     
     def assign_port(self, port_type, name, requires_port=True):
         """
@@ -213,16 +222,138 @@ class Supervisor:
             "services": self.master_config["port_assignments"]["services"]
         }
     
+    def _start_agent_api(self):
+        """Start Agent API server on port 8080"""
+        try:
+            self.log("INFO", "Starting Agent API server...")
+            agent_api_script = self.core_path / "utils" / "agent_api.py"
+            
+            if not agent_api_script.exists():
+                self.log("ERROR", f"Agent API script not found at {agent_api_script}")
+                self.update_service_status("agent_api", status="failed")
+                return
+            
+            log_file = self.logs_path / "agent_api.log"
+            log_fp = open(log_file, 'w')
+            
+            # Spawn agent_api.py process
+            proc = subprocess.Popen(
+                ["python3", str(agent_api_script)],
+                stdout=log_fp,
+                stderr=subprocess.STDOUT,
+                cwd=str(self.repo_path),
+                start_new_session=True
+            )
+            
+            self.processes["agent_api"] = proc
+            self.update_service_status("agent_api", pid=proc.pid, port=8080, status="starting")
+            self.log("INFO", f"Agent API started with PID {proc.pid} on port 8080")
+            
+        except Exception as e:
+            self.log("ERROR", f"Failed to start Agent API: {e}")
+            self.log("ERROR", traceback.format_exc())
+            self.update_service_status("agent_api", status="failed")
+    
+    def _start_mcp_server(self):
+        """Start MCP Server on port 8765"""
+        try:
+            self.log("INFO", "Starting MCP Server...")
+            mcp_server_script = self.core_path / "utils" / "mcp_server_anthropic.py"
+            
+            if not mcp_server_script.exists():
+                self.log("ERROR", f"MCP Server script not found at {mcp_server_script}")
+                self.update_service_status("mcp_server", status="failed")
+                return
+            
+            log_file = self.logs_path / "mcp_server.log"
+            log_fp = open(log_file, 'w')
+            
+            # Spawn mcp_server_anthropic.py process
+            proc = subprocess.Popen(
+                ["python3", str(mcp_server_script)],
+                stdout=log_fp,
+                stderr=subprocess.STDOUT,
+                cwd=str(self.repo_path),
+                start_new_session=True
+            )
+            
+            self.processes["mcp_server"] = proc
+            self.update_service_status("mcp_server", pid=proc.pid, port=8765, status="starting")
+            self.log("INFO", f"MCP Server started with PID {proc.pid} on port 8765")
+            
+        except Exception as e:
+            self.log("ERROR", f"Failed to start MCP Server: {e}")
+            self.log("ERROR", traceback.format_exc())
+            self.update_service_status("mcp_server", status="failed")
+    
+    def _start_hub_ui(self):
+        """Start Hub UI on port 5173"""
+        try:
+            self.log("INFO", "Starting Hub UI...")
+            hub_ui_dir = self.repo_path / "hub_ui"
+            
+            if not hub_ui_dir.exists():
+                self.log("ERROR", f"Hub UI directory not found at {hub_ui_dir}")
+                self.update_service_status("hub_ui", status="failed")
+                return
+            
+            # Check if node_modules exists, install if needed
+            node_modules = hub_ui_dir / "node_modules"
+            if not node_modules.exists():
+                self.log("INFO", "Installing Hub UI dependencies...")
+                install_log = self.logs_path / "hub_ui_install.log"
+                install_fp = open(install_log, 'w')
+                
+                # Try pnpm first, fallback to npm
+                import shutil
+                if shutil.which('pnpm'):
+                    subprocess.run(
+                        ["pnpm", "install"],
+                        cwd=str(hub_ui_dir),
+                        stdout=install_fp,
+                        stderr=subprocess.STDOUT
+                    )
+                else:
+                    subprocess.run(
+                        ["npm", "install"],
+                        cwd=str(hub_ui_dir),
+                        stdout=install_fp,
+                        stderr=subprocess.STDOUT
+                    )
+                install_fp.close()
+                self.log("INFO", "Hub UI dependencies installed")
+            
+            log_file = self.logs_path / "hub_ui.log"
+            log_fp = open(log_file, 'w')
+            
+            # Spawn npm run dev
+            proc = subprocess.Popen(
+                ["npm", "run", "dev"],
+                stdout=log_fp,
+                stderr=subprocess.STDOUT,
+                cwd=str(hub_ui_dir),
+                start_new_session=True
+            )
+            
+            self.processes["hub_ui"] = proc
+            self.update_service_status("hub_ui", pid=proc.pid, port=5173, status="starting")
+            self.log("INFO", f"Hub UI started with PID {proc.pid} on port 5173")
+            
+        except Exception as e:
+            self.log("ERROR", f"Failed to start Hub UI: {e}")
+            self.log("ERROR", traceback.format_exc())
+            self.update_service_status("hub_ui", status="failed")
+    
     def startup(self):
         """Main startup flow"""
-        print("=" * 60)
-        print("Luna Supervisor Starting...")
-        print(f"Repository path: {self.repo_path}")
-        print("=" * 60)
+        self.log("INFO", "=" * 60)
+        self.log("INFO", "Luna Supervisor Starting...")
+        self.log("INFO", f"Repository path: {self.repo_path}")
+        self.log("INFO", "=" * 60)
         
         # Phase 1: Check for update queue
         if self.check_for_update_queue():
-            print("(In full implementation, would process updates here)")
+            self.log("INFO", "(In full implementation, would process updates here)")
         
         # Phase 2: Load or create master config
         self.load_or_create_master_config()
@@ -230,13 +361,22 @@ class Supervisor:
         # Phase 3: Load or create state
         self.load_or_create_state()
         
-        # Phase 1A: Basic startup complete, ready for API
-        print("=" * 60)
-        print("Supervisor startup complete")
-        print(f"Master config: {self.master_config_path}")
-        print(f"State file: {self.state_path}")
-        print("API will be available on http://127.0.0.1:9999")
-        print("=" * 60)
+        # Phase 4: Start core services
+        self.log("INFO", "Starting core services...")
+        self._start_hub_ui()
+        self._start_agent_api()
+        self._start_mcp_server()
+        
+        # Phase 5: Basic startup complete, ready for API
+        self.log("INFO", "=" * 60)
+        self.log("INFO", "Supervisor startup complete")
+        self.log("INFO", f"Master config: {self.master_config_path}")
+        self.log("INFO", f"State file: {self.state_path}")
+        self.log("INFO", "Supervisor API available on http://0.0.0.0:9999")
+        self.log("INFO", "Hub UI available on http://0.0.0.0:5173")
+        self.log("INFO", "Agent API available on http://0.0.0.0:8080")
+        self.log("INFO", "MCP Server available on http://0.0.0.0:8765")
+        self.log("INFO", "=" * 60)
     
     def run(self):
         """Run supervisor with API server"""
@@ -255,8 +395,8 @@ class Supervisor:
         api.init_api(self)
         
         # Start API server (blocking)
-        print("Starting API server on 127.0.0.1:9999...")
-        api.run_api(host='127.0.0.1', port=9999)
+        print("Starting API server on 0.0.0.0:9999...")
+        api.run_api(host='0.0.0.0', port=9999)
 
 
 def main():

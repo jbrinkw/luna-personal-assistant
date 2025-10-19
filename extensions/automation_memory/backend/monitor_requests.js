@@ -212,14 +212,14 @@ const PORT = process.env.AM_API_PORT || 3051;
 console.log('\n' + '='.repeat(60));
 console.log('🔍 AUTOMATION MEMORY - REQUEST MONITOR');
 console.log('='.repeat(60));
-console.log(`\nListening on http://127.0.0.1:${PORT}`);
+console.log(`\nListening on http://0.0.0.0:${PORT}`);
 console.log('Watching for incoming requests...\n');
 console.log('If you see NO requests while the UI is open,');
 console.log('the UI might be cached or using the wrong URL.\n');
 console.log('Press Ctrl+C to stop.\n');
 console.log('='.repeat(60) + '\n');
 
-app.listen(PORT, '127.0.0.1', () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`✓ Server ready - waiting for requests...`);
 });
 

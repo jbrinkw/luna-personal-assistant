@@ -42,10 +42,10 @@ AGENTS_ROOT = PROJECT_ROOT / "core" / "agents"
 
 app = FastAPI(title="Luna Agent API (OpenAI-compatible, No Auth)")
 
-# Add CORS for localhost - allow all local ports
+# Add CORS for localhost and network access - allow all origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
+    allow_origins=["*"],  # Allow all origins for network access
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -244,81 +244,99 @@ def _discover_agents() -> Dict[str, ModuleType]:
     """Discover agents from core/agents/*/agent.py."""
     found: Dict[str, ModuleType] = {}
     
+    print(f"[Agent API] Discovering agents from: {AGENTS_ROOT}", flush=True)
+    
     if not AGENTS_ROOT.exists():
+        print(f"[Agent API] ERROR: Agents root directory does not exist: {AGENTS_ROOT}", flush=True)
         return found
     
     # Scan for agent.py files in subdirectories
     for agent_dir in AGENTS_ROOT.iterdir():
         if not agent_dir.is_dir():
+            print(f"[Agent API] Skipping non-directory: {agent_dir.name}", flush=True)
             continue
         
         agent_file = agent_dir / "agent.py"
         if not agent_file.exists():
+            print(f"[Agent API] Skipping {agent_dir.name}: no agent.py found", flush=True)
             continue
+        
+        print(f"[Agent API] Found agent file: {agent_file}", flush=True)
         
         # Import the module
         mod = _import_module_from_path(str(agent_file))
         if not mod:
+            print(f"[Agent API] ERROR: Failed to import {agent_file}", flush=True)
             continue
+        
+        print(f"[Agent API] Successfully imported {agent_dir.name}", flush=True)
         
         # Verify it has async run_agent
         if not _is_async_run_agent(mod):
+            print(f"[Agent API] Skipping {agent_dir.name}: no async run_agent function", flush=True)
             continue
         
         # Register with agent directory name as model ID
         model_id = agent_dir.name
         found[model_id] = mod
         AGENT_PATHS[model_id] = str(agent_file.relative_to(PROJECT_ROOT))
+        print(f"[Agent API] ✓ Registered agent: {model_id}", flush=True)
     
     return found
 
 
 def _maybe_print_startup_models() -> None:
-    """Print discovered agents at startup if debug mode."""
-    if not DEBUG:
-        return
+    """Print discovered agents at startup."""
     try:
-        print("Discovered agents:")
+        print("[Agent API] ========================================", flush=True)
+        print(f"[Agent API] Discovered {len(AGENTS)} agent(s):", flush=True)
         for k, mod in AGENTS.items():
-            line = f"- {k}"
+            line = f"[Agent API]   - {k}"
             p = AGENT_PATHS.get(k)
             if p:
                 line += f" | path={p}"
-            print(line)
-        print("")
-    except Exception:
-        pass
+            print(line, flush=True)
+        print("[Agent API] ========================================", flush=True)
+    except Exception as e:
+        print(f"[Agent API] ERROR printing agents: {e}", flush=True)
 
 
 def _init_agents() -> None:
     """Initialize agent registry."""
     global AGENTS
+    print("[Agent API] Initializing agent registry...", flush=True)
     AGENTS = _discover_agents()
+    print(f"[Agent API] Agent discovery complete. Found {len(AGENTS)} agents.", flush=True)
     
     # Warm agents if they expose initialize_runtime()
     for k, mod in AGENTS.items():
         init = getattr(mod, "initialize_runtime", None)
         if callable(init):
             try:
+                print(f"[Agent API] Initializing runtime for {k}...", flush=True)
                 init()
-            except Exception:
+            except Exception as e:
                 # Warming is best-effort
-                pass
+                print(f"[Agent API] WARNING: Failed to initialize {k}: {e}", flush=True)
 
 
 # ---- Lifecycle ----
 @app.on_event("startup")
 async def _on_startup() -> None:
     """Initialize agents on startup."""
+    print("[Agent API] Agent API starting up...", flush=True)
     _init_agents()
     _maybe_print_startup_models()
     try:
         # Initialize and start extension UIs/services in background
+        print("[Agent API] Starting service manager for extensions...", flush=True)
         from core.utils.service_manager import init_and_start
         init_and_start()
-    except Exception:
+        print("[Agent API] Service manager initialized", flush=True)
+    except Exception as e:
         # Best effort; API still usable without service manager
-        pass
+        print(f"[Agent API] WARNING: Service manager failed: {e}", flush=True)
+    print("[Agent API] Agent API startup complete, ready for requests", flush=True)
 
 
 # ---- Routes ----
