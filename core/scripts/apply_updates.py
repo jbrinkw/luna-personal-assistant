@@ -125,7 +125,8 @@ def phase_3_install_operations(repo_path, operations):
                     result = subprocess.run(
                         ["git", "clone", repo_url, str(temp_clone)],
                         capture_output=True,
-                        text=True
+                        text=True,
+                        cwd="/tmp"
                     )
                     
                     if result.returncode != 0:
@@ -154,7 +155,8 @@ def phase_3_install_operations(repo_path, operations):
                     result = subprocess.run(
                         ["git", "clone", repo_url, str(target_path)],
                         capture_output=True,
-                        text=True
+                        text=True,
+                        cwd="/tmp"
                     )
                     
                     if result.returncode != 0:
@@ -233,7 +235,8 @@ def phase_4_update_operations(repo_path, operations):
                     result = subprocess.run(
                         ["git", "clone", repo_url, str(temp_clone)],
                         capture_output=True,
-                        text=True
+                        text=True,
+                        cwd="/tmp"
                     )
                     
                     if result.returncode != 0:
