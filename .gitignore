@@ -106,3 +106,8 @@ jspm_packages/
 
 # Project specific
 .pending_import/
+
+# Luna supervisor runtime files (Phase 1A)
+core/master_config.json
+core/update_queue.json
+supervisor/state.json
