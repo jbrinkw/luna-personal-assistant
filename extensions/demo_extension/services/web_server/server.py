@@ -70,9 +70,9 @@ def main():
         sys.exit(1)
     
     port = int(sys.argv[1])
-    server_address = ("127.0.0.1", port)
+    server_address = ("0.0.0.0", port)
     
-    print(f"Starting Demo Web Server on 127.0.0.1:{port}", file=sys.stderr)
+    print(f"Starting Demo Web Server on 0.0.0.0:{port}", file=sys.stderr)
     
     httpd = HTTPServer(server_address, DemoHandler)
     

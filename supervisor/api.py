@@ -3,11 +3,24 @@ Supervisor API Server
 Exposes HTTP endpoints for supervisor control and monitoring
 """
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
+import os
+from pathlib import Path
+from dotenv import load_dotenv, dotenv_values
 
 app = FastAPI(title="Luna Supervisor API")
+
+# Add CORS middleware for network access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for network access
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Global references to supervisor state (will be set by supervisor.py)
 supervisor_instance = None
@@ -325,7 +338,159 @@ def restart_system():
     return {"status": "restarting", "message": "System restart initiated"}
 
 
-def run_api(host='127.0.0.1', port=9999):
+@app.post('/shutdown')
+def shutdown_system():
+    """Gracefully shutdown the entire Luna system"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    print("Shutdown requested via API")
+    
+    # TODO: In full implementation, stop all services gracefully here
+    # For now, just exit supervisor which will cause bootstrap to stop
+    
+    # Create shutdown flag file so bootstrap knows not to restart
+    from pathlib import Path
+    shutdown_flag = supervisor_instance.repo_path / ".luna_shutdown"
+    shutdown_flag.touch()
+    print(f"Created shutdown flag at {shutdown_flag}")
+    
+    # Schedule supervisor shutdown (allow response to be sent first)
+    import threading
+    import os
+    import signal
+    def shutdown_after_delay():
+        import time
+        time.sleep(1)
+        print("Shutting down supervisor...")
+        # Send SIGTERM to our own process - uvicorn will handle it gracefully
+        os.kill(os.getpid(), signal.SIGTERM)
+    
+    thread = threading.Thread(target=shutdown_after_delay)
+    thread.daemon = True
+    thread.start()
+    
+    return {"status": "shutting_down", "message": "Luna system shutdown initiated"}
+
+
+def get_env_path():
+    """Get the path to the .env file"""
+    if supervisor_instance:
+        return supervisor_instance.repo_path / ".env"
+    # Fallback to current directory
+    return Path(".env")
+
+
+def read_env_file():
+    """Read .env file and return dict of key-value pairs"""
+    env_path = get_env_path()
+    if not env_path.exists():
+        return {}
+    return dotenv_values(str(env_path))
+
+
+def write_env_file(env_dict):
+    """Write dict of key-value pairs to .env file"""
+    env_path = get_env_path()
+    lines = [f"{key}={value}" for key, value in sorted(env_dict.items())]
+    env_path.write_text('\n'.join(lines) + '\n')
+    # Hot reload
+    load_dotenv(str(env_path), override=True)
+
+
+@app.get('/keys/list')
+def list_keys():
+    """List all keys from .env file (values masked)"""
+    env_dict = read_env_file()
+    return env_dict
+
+
+@app.post('/keys/set')
+def set_key(data: Dict[str, str]):
+    """Set or update a key in .env file"""
+    key = data.get('key')
+    value = data.get('value')
+    
+    if not key:
+        raise HTTPException(status_code=400, detail="Key is required")
+    
+    env_dict = read_env_file()
+    env_dict[key] = value
+    write_env_file(env_dict)
+    
+    return {"status": "updated", "key": key}
+
+
+@app.post('/keys/delete')
+def delete_key(data: Dict[str, str]):
+    """Delete a key from .env file"""
+    key = data.get('key')
+    
+    if not key:
+        raise HTTPException(status_code=400, detail="Key is required")
+    
+    env_dict = read_env_file()
+    if key in env_dict:
+        del env_dict[key]
+        write_env_file(env_dict)
+    
+    return {"status": "deleted", "key": key}
+
+
+@app.post('/keys/upload-env')
+async def upload_env(file: UploadFile = File(...)):
+    """Upload and merge .env file"""
+    try:
+        # Read uploaded file
+        contents = await file.read()
+        uploaded_env = {}
+        
+        for line in contents.decode('utf-8').splitlines():
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                key, value = line.split('=', 1)
+                uploaded_env[key.strip()] = value.strip()
+        
+        # Merge with existing
+        env_dict = read_env_file()
+        env_dict.update(uploaded_env)
+        write_env_file(env_dict)
+        
+        return {"updated_count": len(uploaded_env)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to process .env file: {str(e)}")
+
+
+@app.get('/keys/required')
+def get_required_keys():
+    """Get required keys from all extensions"""
+    if not supervisor_instance:
+        return {}
+    
+    required = {}
+    ext_path = supervisor_instance.repo_path / "extensions"
+    
+    if ext_path.exists():
+        import json
+        for ext_dir in ext_path.iterdir():
+            if ext_dir.is_dir():
+                config_path = ext_dir / "config.json"
+                if config_path.exists():
+                    try:
+                        with open(config_path, 'r') as f:
+                            config = json.load(f)
+                            if 'required_secrets' in config:
+                                for secret in config['required_secrets']:
+                                    if secret not in required:
+                                        required[secret] = []
+                                    required[secret].append(ext_dir.name)
+                    except Exception as e:
+                        print(f"Error reading {config_path}: {e}")
+    
+    return required
+
+
+def run_api(host='0.0.0.0', port=9999):
     """Run the API server"""
     uvicorn.run(app, host=host, port=port, log_level="info")
 

@@ -7,7 +7,7 @@ Ports:
 - UIs: 5200–5299
 - Services: 5300–5399
 
-All processes bind to 127.0.0.1.
+All processes bind to 0.0.0.0 (network accessible).
 """
 import os
 import sys
@@ -43,7 +43,7 @@ def _is_port_free(port: int) -> bool:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.settimeout(0.25)
     try:
-        return s.connect_ex(("127.0.0.1", port)) != 0
+        return s.connect_ex(("0.0.0.0", port)) != 0
     finally:
         try:
             s.close()
@@ -216,7 +216,7 @@ class ServiceManager:
             cmd = ['bash', ui['start'], str(port)]
             env = {
                 'PORT': str(port),
-                'BIND_ADDRESS': '127.0.0.1',
+                'BIND_ADDRESS': '0.0.0.0',
             }
             proc = self._popen(cmd, cwd=os.path.dirname(ui['start']), log_file=log_file, env=env)
             if proc is None:
@@ -253,7 +253,7 @@ class ServiceManager:
             env = {
                 'PORT': str(port) if port else '',
                 'AM_API_PORT': str(port) if port else '',
-                'BIND_ADDRESS': '127.0.0.1',
+                'BIND_ADDRESS': '0.0.0.0',
             }
             proc = self._popen(cmd, cwd=os.path.dirname(svc['start']), log_file=log_file, env=env)
             if proc is None:
@@ -283,34 +283,46 @@ class ServiceManager:
 
         Intended to be called once on API startup.
         """
+        print(f"[ServiceManager] Discovering extensions from: {self.extensions_root}", flush=True)
         exts = self._discover_extensions()
+        print(f"[ServiceManager] Found {len(exts)} extension(s): {', '.join(exts) if exts else 'none'}", flush=True)
+        
         with self._lock:
             for name in exts:
                 ui = self._discover_ui(name)
                 if ui:
                     self._uis[name] = ui
+                    print(f"[ServiceManager] Discovered UI for extension: {name}", flush=True)
             for name in exts:
                 for svc in self._discover_services(name):
                     self._services[(svc['ext'], svc['name'])] = svc
+                    print(f"[ServiceManager] Discovered service: {name}.{svc['name']}", flush=True)
 
+        print(f"[ServiceManager] Starting {len(self._uis)} extension UI(s)...", flush=True)
         # Start UIs first
         for ui in list(self._uis.values()):
             try:
                 self._start_ui(ui)
-            except Exception:
+            except Exception as e:
+                print(f"[ServiceManager] ERROR starting UI {ui['ext']}: {e}", flush=True)
                 continue
 
+        print(f"[ServiceManager] Starting {len(self._services)} extension service(s)...", flush=True)
         # Then services
         for svc in list(self._services.values()):
             try:
                 self._start_service(svc)
-            except Exception:
+            except Exception as e:
+                print(f"[ServiceManager] ERROR starting service {svc['ext']}.{svc['name']}: {e}", flush=True)
                 continue
 
         # Kick off monitor thread
         if not self._monitor_thread:
+            print("[ServiceManager] Starting health monitor thread...", flush=True)
             self._monitor_thread = threading.Thread(target=self._monitor_loop, name='luna-svc-monitor', daemon=True)
             self._monitor_thread.start()
+        
+        print("[ServiceManager] Extension discovery and startup complete", flush=True)
 
     def list_extensions(self) -> List[Dict[str, Any]]:
         with self._lock:
@@ -463,7 +475,7 @@ class ServiceManager:
     def _http_health_check(self, port: int, path: str) -> bool:
         import http.client
         try:
-            conn = http.client.HTTPConnection('127.0.0.1', port, timeout=2.0)
+            conn = http.client.HTTPConnection('0.0.0.0', port, timeout=2.0)
             conn.request('GET', path)
             resp = conn.getresponse()
             ok = 200 <= resp.status < 300
