@@ -1,7 +1,0 @@
-{
-  "version": "10-18-25",
-  "name": "Demo Extension",
-  "description": "Demo extension showing two different service types",
-  "required_secrets": []
-}
-

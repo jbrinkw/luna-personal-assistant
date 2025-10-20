@@ -1,7 +1,0 @@
-{
-  "name": "background_worker",
-  "requires_port": false,
-  "health_check": null,
-  "restart_on_failure": true
-}
-
