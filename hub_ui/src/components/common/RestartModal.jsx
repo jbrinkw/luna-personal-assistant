@@ -81,7 +81,7 @@ export default function RestartModal({ isOpen, onClose, onSuccess }) {
             if (onSuccess) {
               onSuccess();
             } else {
-              window.location.reload();
+              window.location.href = '/';
             }
           }, 1000);
         }
@@ -172,6 +172,7 @@ export default function RestartModal({ isOpen, onClose, onSuccess }) {
     </Modal>
   );
 }
+
 
 
 

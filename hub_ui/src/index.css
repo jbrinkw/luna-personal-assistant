@@ -212,8 +212,31 @@ body {
   box-shadow: 0 0 8px #4caf50;
 }
 
+.status-indicator.running {
+  background: #4caf50;
+  box-shadow: 0 0 8px #4caf50;
+}
+
 .status-indicator.offline {
   background: #f44336;
+}
+
+.status-indicator.stopped {
+  background: #9e9e9e;
+}
+
+.status-indicator.failed {
+  background: #f44336;
+}
+
+.status-indicator.starting {
+  background: #ff9800;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 .status-indicator.checking {

@@ -147,9 +147,42 @@ def sync_tool_config(ext_name: str, ext_path: Path, master_tools: Dict[str, Any]
     return updated
 
 
+def discover_filesystem_extensions(extensions_dir: Path) -> List[str]:
+    """
+    Discover all valid extensions in filesystem
+    
+    Returns: List of extension names
+    """
+    if not extensions_dir.exists():
+        return []
+    
+    extensions = []
+    for ext_dir in extensions_dir.iterdir():
+        if ext_dir.is_dir() and not ext_dir.name.startswith('.'):
+            # Check if it's a valid extension (has config.json or tools/ directory)
+            config_exists = (ext_dir / "config.json").exists()
+            tools_exists = (ext_dir / "tools").exists()
+            
+            if config_exists or tools_exists:
+                extensions.append(ext_dir.name)
+    
+    return sorted(extensions)
+
+
+def save_master_config(repo_path: Path, master_config: Dict[str, Any]):
+    """Save master_config.json"""
+    master_config_path = repo_path / "core" / "master_config.json"
+    
+    with open(master_config_path, 'w') as f:
+        json.dump(master_config, f, indent=2)
+
+
 def sync_all(repo_path: Path) -> Tuple[List[str], List[str]]:
     """
-    Sync all extensions
+    Sync all extensions (bidirectional)
+    
+    1. Discovers filesystem extensions and adds missing ones to master_config
+    2. Syncs existing extensions from master_config to their disk configs
     
     Returns: (synced_list, skipped_list)
     """
@@ -161,8 +194,32 @@ def sync_all(repo_path: Path) -> Tuple[List[str], List[str]]:
     
     synced = []
     skipped = []
+    added = []
     
-    # Iterate through extensions in master config
+    # Discover filesystem extensions
+    fs_extensions = set(discover_filesystem_extensions(extensions_dir))
+    config_extensions = set(master_config.get("extensions", {}).keys())
+    
+    # Find extensions that exist in filesystem but not in master_config
+    missing_extensions = fs_extensions - config_extensions
+    
+    # Add missing extensions to master_config
+    if missing_extensions:
+        print(f"\nDiscovered {len(missing_extensions)} new extension(s) in filesystem:")
+        for ext_name in sorted(missing_extensions):
+            master_config["extensions"][ext_name] = {
+                "enabled": True,
+                "source": "local",
+                "config": {}
+            }
+            added.append(ext_name)
+            print(f"  + {ext_name} (added to master_config with source=local)")
+        
+        # Save updated master config
+        save_master_config(repo_path, master_config)
+        print(f"✓ Master config updated with {len(added)} new extension(s)\n")
+    
+    # Iterate through extensions in master config (now includes newly added ones)
     for ext_name, ext_data in master_config.get("extensions", {}).items():
         ext_path = extensions_dir / ext_name
         

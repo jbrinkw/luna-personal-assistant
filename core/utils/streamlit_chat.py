@@ -104,7 +104,7 @@ def load_memories() -> Optional[str]:
 # ============================================================================
 
 def load_mcp_tools() -> Dict[str, Any]:
-    """Load all MCP-enabled tools from extensions.
+    """Load all MCP-enabled tools from enabled extensions only.
     
     Returns:
         Dict with tool metadata organized by extension
@@ -112,10 +112,29 @@ def load_mcp_tools() -> Dict[str, Any]:
     extensions = discover_extensions()
     tool_metadata = {}
     
+    # Load master_config to check enabled state
+    master_config_path = PROJECT_ROOT / 'core' / 'master_config.json'
+    enabled_extensions = set()
+    try:
+        if master_config_path.exists():
+            with open(master_config_path, 'r') as f:
+                master_config = json.load(f)
+                for ext_name, ext_config in master_config.get('extensions', {}).items():
+                    if ext_config.get('enabled', True):
+                        enabled_extensions.add(ext_name)
+    except Exception:
+        # If we can't load config, expose all extensions
+        enabled_extensions = {ext.get('name') for ext in extensions}
+    
     for ext in extensions:
+        ext_name = ext.get('name', 'unknown')
+        
+        # Skip disabled extensions
+        if ext_name not in enabled_extensions:
+            continue
+            
         tools = ext.get('tools', [])
         tool_configs = ext.get('tool_configs', {})
-        ext_name = ext.get('name', 'unknown')
         
         for tool_fn in tools:
             tool_name = getattr(tool_fn, '__name__', '')

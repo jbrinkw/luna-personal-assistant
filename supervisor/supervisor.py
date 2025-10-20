@@ -55,7 +55,55 @@ class Supervisor:
         """Check if update queue exists and trigger apply_updates if found"""
         if self.update_queue_path.exists():
             self.log("INFO", f"Update queue found at {self.update_queue_path}")
-            self.log("INFO", "Triggering apply_updates...")
+            
+            # Check retry count to prevent infinite loops
+            retry_state_path = self.core_path / "update_retry_count.json"
+            retry_count = 0
+            
+            if retry_state_path.exists():
+                try:
+                    with open(retry_state_path, 'r') as f:
+                        retry_data = json.load(f)
+                        retry_count = retry_data.get("count", 0)
+                        last_attempt = retry_data.get("last_attempt", "")
+                        self.log("INFO", f"Previous retry attempts: {retry_count}, last: {last_attempt}")
+                except Exception as e:
+                    self.log("WARNING", f"Failed to read retry state: {e}")
+            
+            # If we've tried 3 times, give up
+            if retry_count >= 3:
+                self.log("ERROR", "Update failed after 3 attempts, moving queue to failed state")
+                failed_queue_path = self.core_path / "update_queue_failed.json"
+                import shutil
+                shutil.move(str(self.update_queue_path), str(failed_queue_path))
+                
+                # Clean up retry state
+                if retry_state_path.exists():
+                    retry_state_path.unlink()
+                
+                self.log("ERROR", f"Failed queue moved to {failed_queue_path}")
+                self.log("INFO", "Continuing with normal startup (no updates will be applied)")
+                return False
+            
+            # Increment retry count
+            retry_count += 1
+            retry_data = {
+                "count": retry_count,
+                "last_attempt": datetime.now().isoformat()
+            }
+            with open(retry_state_path, 'w') as f:
+                json.dump(retry_data, f, indent=2)
+            
+            self.log("INFO", f"Triggering apply_updates (attempt {retry_count}/3)...")
+            
+            # Create flag file FIRST to signal bootstrap to wait (don't restart supervisor)
+            update_flag = self.repo_path / ".luna_updating"
+            update_flag.touch()
+            self.log("INFO", f"Created update flag: {update_flag}")
+            
+            # Gracefully shutdown all services
+            self.log("INFO", "Shutting down all services before update...")
+            self.shutdown_all_services()
             
             # Copy apply_updates.py to /tmp
             apply_updates_source = self.core_path / "scripts" / "apply_updates.py"
@@ -65,19 +113,24 @@ class Supervisor:
             shutil.copy2(apply_updates_source, apply_updates_temp)
             self.log("INFO", f"Copied apply_updates to {apply_updates_temp}")
             
-            # Spawn detached process
+            # Open log file for apply_updates output
+            apply_updates_log = self.logs_path / "apply_updates.log"
+            log_fp = open(apply_updates_log, 'a')
+            
+            # Spawn detached process with output redirected to log
             process = subprocess.Popen(
                 ["python3", str(apply_updates_temp), str(self.repo_path)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stdout=log_fp,
+                stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,
                 start_new_session=True
             )
             
             self.log("INFO", f"Spawned apply_updates process (PID: {process.pid})")
-            self.log("INFO", "Exiting supervisor to allow update process to run...")
+            self.log("INFO", f"Output redirected to {apply_updates_log}")
+            self.log("INFO", "Exiting supervisor (bootstrap will restart after update completes)...")
             
-            # Exit supervisor with code 0
+            # Exit supervisor with code 0 - bootstrap will wait for update flag to be removed
             sys.exit(0)
         
         return False
@@ -222,6 +275,40 @@ class Supervisor:
             "services": self.master_config["port_assignments"]["services"]
         }
     
+    def shutdown_all_services(self):
+        """Gracefully shutdown all tracked services"""
+        import signal
+        import time
+        
+        for service_name, process in self.processes.items():
+            if process and process.poll() is None:  # Process still running
+                self.log("INFO", f"Stopping {service_name} (PID: {process.pid})")
+                try:
+                    # Kill entire process group (this kills children too)
+                    pgid = os.getpgid(process.pid)
+                    self.log("INFO", f"  Killing process group {pgid}")
+                    os.killpg(pgid, signal.SIGTERM)  # Send SIGTERM to whole group
+                    time.sleep(0.5)
+                    
+                    # Check if process is still running
+                    if process.poll() is None:
+                        self.log("INFO", f"  Force killing process group {pgid}")
+                        os.killpg(pgid, signal.SIGKILL)  # Force kill if needed
+                except ProcessLookupError:
+                    self.log("INFO", f"  Process group already terminated")
+                except Exception as e:
+                    self.log("WARNING", f"  Error stopping {service_name}: {e}")
+                    # Fallback to individual process kill
+                    try:
+                        process.terminate()
+                        time.sleep(0.5)
+                        if process.poll() is None:
+                            process.kill()
+                    except:
+                        pass
+        
+        self.log("INFO", "All services stopped")
+    
     def _start_agent_api(self):
         """Start Agent API server on port 8080"""
         try:
@@ -248,6 +335,16 @@ class Supervisor:
             self.processes["agent_api"] = proc
             self.update_service_status("agent_api", pid=proc.pid, port=8080, status="starting")
             self.log("INFO", f"Agent API started with PID {proc.pid} on port 8080")
+            
+            # Check if process is still running after 1 second and update to running
+            import time
+            time.sleep(1)
+            if proc.poll() is None:  # Process still running
+                # Update status only, keep existing pid and port
+                if "agent_api" in self.state.get('services', {}):
+                    self.state['services']['agent_api']['status'] = 'running'
+                    self.save_state()
+                self.log("INFO", f"Agent API is running")
             
         except Exception as e:
             self.log("ERROR", f"Failed to start Agent API: {e}")
@@ -280,6 +377,16 @@ class Supervisor:
             self.processes["mcp_server"] = proc
             self.update_service_status("mcp_server", pid=proc.pid, port=8765, status="starting")
             self.log("INFO", f"MCP Server started with PID {proc.pid} on port 8765")
+            
+            # Check if process is still running after 1 second and update to running
+            import time
+            time.sleep(1)
+            if proc.poll() is None:  # Process still running
+                # Update status only, keep existing pid and port
+                if "mcp_server" in self.state.get('services', {}):
+                    self.state['services']['mcp_server']['status'] = 'running'
+                    self.save_state()
+                self.log("INFO", f"MCP Server is running")
             
         except Exception as e:
             self.log("ERROR", f"Failed to start MCP Server: {e}")
@@ -339,10 +446,214 @@ class Supervisor:
             self.update_service_status("hub_ui", pid=proc.pid, port=5173, status="starting")
             self.log("INFO", f"Hub UI started with PID {proc.pid} on port 5173")
             
+            # Check if process is still running after 1 second and update to running
+            import time
+            time.sleep(1)
+            if proc.poll() is None:  # Process still running
+                # Update status only, keep existing pid and port
+                if "hub_ui" in self.state.get('services', {}):
+                    self.state['services']['hub_ui']['status'] = 'running'
+                    self.save_state()
+                self.log("INFO", f"Hub UI is running")
+            
         except Exception as e:
             self.log("ERROR", f"Failed to start Hub UI: {e}")
             self.log("ERROR", traceback.format_exc())
             self.update_service_status("hub_ui", status="failed")
+    
+    def _start_extension_ui(self, extension_name, extension_path):
+        """Start an extension UI"""
+        try:
+            ui_dir = extension_path / "ui"
+            start_script = ui_dir / "start.sh"
+            
+            if not start_script.exists():
+                self.log("INFO", f"No UI for extension {extension_name} (no start.sh found)")
+                return
+            
+            # Assign port
+            port = self.assign_port("extension", extension_name)
+            
+            # Make start.sh executable
+            import os
+            os.chmod(start_script, 0o755)
+            
+            # Set environment variables
+            env = os.environ.copy()
+            env['LUNA_PORTS'] = json.dumps(self.get_port_mappings())
+            
+            # Open log file
+            log_file = self.logs_path / f"{extension_name}_ui.log"
+            log_fp = open(log_file, 'w')
+            
+            # Start the UI
+            proc = subprocess.Popen(
+                [str(start_script), str(port)],
+                stdout=log_fp,
+                stderr=subprocess.STDOUT,
+                cwd=str(ui_dir),
+                env=env,
+                start_new_session=True
+            )
+            
+            service_name = f"{extension_name}_ui"
+            self.processes[service_name] = proc
+            self.update_service_status(service_name, pid=proc.pid, port=port, status="starting")
+            self.log("INFO", f"Started {extension_name} UI with PID {proc.pid} on port {port}")
+            
+            # Check if process is still running after 1 second and update to running
+            import time
+            time.sleep(1)
+            if proc.poll() is None:  # Process still running
+                # Update status only, keep existing pid and port
+                if service_name in self.state.get('services', {}):
+                    self.state['services'][service_name]['status'] = 'running'
+                    self.save_state()
+                self.log("INFO", f"{extension_name} UI is running")
+            
+        except Exception as e:
+            self.log("ERROR", f"Failed to start {extension_name} UI: {e}")
+            self.log("ERROR", traceback.format_exc())
+            self.update_service_status(f"{extension_name}_ui", status="failed")
+    
+    def _start_extension_service(self, extension_name, service_name, service_path):
+        """Start an extension service"""
+        try:
+            start_script = service_path / "start.sh"
+            config_file = service_path / "service_config.json"
+            
+            if not start_script.exists():
+                self.log("WARNING", f"Service {service_name} has no start.sh, skipping")
+                return
+            
+            # Read service config
+            service_config = {}
+            if config_file.exists():
+                with open(config_file, 'r') as f:
+                    service_config = json.load(f)
+            
+            requires_port = service_config.get("requires_port", False)
+            service_key = f"{extension_name}.{service_name}"
+            
+            # Assign port if needed
+            port = None
+            if requires_port:
+                port = self.assign_port("service", service_key, requires_port=True)
+            
+            # Make start.sh executable
+            import os
+            os.chmod(start_script, 0o755)
+            
+            # Set environment variables
+            env = os.environ.copy()
+            env['LUNA_PORTS'] = json.dumps(self.get_port_mappings())
+            
+            # Open log file
+            log_file = self.logs_path / f"{extension_name}__service_{service_name}.log"
+            log_fp = open(log_file, 'w')
+            
+            # Build command
+            cmd = [str(start_script)]
+            if port:
+                cmd.append(str(port))
+            
+            # Start the service
+            proc = subprocess.Popen(
+                cmd,
+                stdout=log_fp,
+                stderr=subprocess.STDOUT,
+                cwd=str(service_path),
+                env=env,
+                start_new_session=True
+            )
+            
+            full_service_name = f"{extension_name}__service_{service_name}"
+            self.processes[full_service_name] = proc
+            self.update_service_status(full_service_name, pid=proc.pid, port=port, status="starting")
+            self.log("INFO", f"Started service {service_key} with PID {proc.pid}" + (f" on port {port}" if port else ""))
+            
+            # Check if process is still running after 1 second and update to running
+            import time
+            time.sleep(1)
+            if proc.poll() is None:  # Process still running
+                # Update status only, keep existing pid and port
+                if full_service_name in self.state.get('services', {}):
+                    self.state['services'][full_service_name]['status'] = 'running'
+                    self.save_state()
+                self.log("INFO", f"Service {service_key} is running")
+            
+        except Exception as e:
+            self.log("ERROR", f"Failed to start service {extension_name}.{service_name}: {e}")
+            self.log("ERROR", traceback.format_exc())
+            self.update_service_status(f"{extension_name}__service_{service_name}", status="failed")
+    
+    def _discover_and_start_extensions(self):
+        """Discover enabled extensions and start their UIs and services"""
+        self.log("INFO", "Discovering and starting extensions...")
+        
+        extensions_dir = self.repo_path / "extensions"
+        if not extensions_dir.exists():
+            self.log("WARNING", "No extensions directory found")
+            return
+        
+        # Get enabled extensions from master config
+        enabled_extensions = {
+            name: config 
+            for name, config in self.master_config.get("extensions", {}).items() 
+            if config.get("enabled", False)
+        }
+        
+        self.log("INFO", f"Found {len(enabled_extensions)} enabled extensions")
+        
+        for extension_name in enabled_extensions:
+            extension_path = extensions_dir / extension_name
+            
+            if not extension_path.exists():
+                self.log("WARNING", f"Extension {extension_name} not found at {extension_path}")
+                continue
+            
+            self.log("INFO", f"Processing extension: {extension_name}")
+            
+            # Start extension UI if it exists
+            self._start_extension_ui(extension_name, extension_path)
+            
+            # Start extension services if they exist
+            services_dir = extension_path / "services"
+            if services_dir.exists():
+                for service_dir in services_dir.iterdir():
+                    if service_dir.is_dir():
+                        service_name = service_dir.name
+                        self.log("INFO", f"Found service: {extension_name}.{service_name}")
+                        self._start_extension_service(extension_name, service_name, service_dir)
+    
+    def run_config_sync(self):
+        """Run config sync to discover and sync extensions"""
+        self.log("INFO", "Running config sync...")
+        
+        try:
+            # Import config_sync module
+            import sys
+            from pathlib import Path
+            
+            # Add core/scripts to path
+            scripts_path = self.core_path / "scripts"
+            if str(scripts_path) not in sys.path:
+                sys.path.insert(0, str(scripts_path))
+            
+            import config_sync
+            
+            # Run sync
+            synced, skipped = config_sync.sync_all(self.repo_path)
+            
+            self.log("INFO", f"Config sync complete: {len(synced)} synced, {len(skipped)} skipped")
+            
+            # Reload master config after sync (extensions may have been added)
+            self.load_or_create_master_config()
+            
+        except Exception as e:
+            self.log("ERROR", f"Config sync failed: {e}")
+            import traceback
+            self.log("ERROR", traceback.format_exc())
     
     def startup(self):
         """Main startup flow"""
@@ -358,16 +669,22 @@ class Supervisor:
         # Phase 2: Load or create master config
         self.load_or_create_master_config()
         
-        # Phase 3: Load or create state
+        # Phase 3: Run config sync (discovers new extensions and syncs configs)
+        self.run_config_sync()
+        
+        # Phase 4: Load or create state
         self.load_or_create_state()
         
-        # Phase 4: Start core services
+        # Phase 5: Start core services
         self.log("INFO", "Starting core services...")
         self._start_hub_ui()
         self._start_agent_api()
         self._start_mcp_server()
         
-        # Phase 5: Basic startup complete, ready for API
+        # Phase 6: Discover and start extensions
+        self._discover_and_start_extensions()
+        
+        # Phase 7: Startup complete, ready for API
         self.log("INFO", "=" * 60)
         self.log("INFO", "Supervisor startup complete")
         self.log("INFO", f"Master config: {self.master_config_path}")
