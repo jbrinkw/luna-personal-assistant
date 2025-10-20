@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useConfig } from '../context/ConfigContext';
+import { useServices } from '../context/ServicesContext';
 import Button from '../components/common/Button';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import Card from '../components/common/Card';
@@ -7,7 +8,8 @@ import Card from '../components/common/Card';
 const REGISTRY_URL = 'https://raw.githubusercontent.com/jbrinkw/luna-ext-store/main/registry.json';
 
 export default function ExtensionStore() {
-  const { currentState, updateExtension } = useConfig();
+  const { currentState, originalState, updateExtension, deleteExtension } = useConfig();
+  const { extensions } = useServices();
   const [registry, setRegistry] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -43,20 +45,69 @@ export default function ExtensionStore() {
   };
 
   const isInstalled = (extId) => {
-    return currentState?.extensions?.[extId] !== undefined;
+    // Check if extension actually exists on disk (via ServicesContext)
+    return extensions?.some(e => e.name === extId);
   };
 
   const hasUpdate = (ext) => {
-    const installed = currentState?.extensions?.[ext.id];
-    if (!installed) return false;
+    // Extension must exist on disk to check for updates
+    const onDisk = extensions?.find(e => e.name === ext.id);
+    if (!onDisk) return false;
     
-    // Simple version comparison - could be improved
-    return ext.version !== installed.version;
+    // Compare store version with actual installed version from disk
+    const installedVersion = onDisk.version;
+    const storeVersion = ext.version;
+    
+    // If versions match, no update needed
+    if (installedVersion === storeVersion) return false;
+    
+    // If either version is unknown, can't determine if update needed
+    if (!installedVersion || installedVersion === 'unknown') return false;
+    if (!storeVersion || storeVersion === 'unknown') return false;
+    
+    // Versions differ, update available
+    return true;
   };
 
-  const handleInstall = (storeExt) => {
+  const isPendingInstall = (extId) => {
+    // Check if extension is in currentState but not in originalState (new install)
+    const inCurrent = currentState?.extensions?.[extId];
+    const inOriginal = originalState?.extensions?.[extId];
+    const onDisk = isInstalled(extId);
+    
+    // Pending install only if it's NEW in current (not in original) and not yet on disk
+    return inCurrent && !inOriginal && !onDisk;
+  };
+
+  const isPendingUpdate = (extId) => {
+    // Check if extension source has changed from original
+    const inCurrent = currentState?.extensions?.[extId];
+    const inOriginal = originalState?.extensions?.[extId];
+    
+    // Pending update if in both states AND source changed
+    return inCurrent && inOriginal && inCurrent.source !== inOriginal.source;
+  };
+
+  const isPendingReinstall = (extId) => {
+    // Check if extension is marked for reinstall
+    const inCurrent = currentState?.extensions?.[extId];
+    const inOriginal = originalState?.extensions?.[extId];
+    const onDisk = isInstalled(extId);
+    
+    // Pending reinstall if on disk, in both states, and source has #reinstall marker
+    return onDisk && inCurrent && inOriginal && 
+           inCurrent.source && inCurrent.source.includes('#reinstall');
+  };
+
+  const handleInstallToggle = (storeExt) => {
+    // If already pending, remove it (undo)
+    if (isPendingInstall(storeExt.id)) {
+      deleteExtension(storeExt.id);
+      return;
+    }
+
+    // Otherwise, add it to pending
     if (isInstalled(storeExt.id)) {
-      alert('Extension is already installed');
       return;
     }
 
@@ -68,17 +119,36 @@ export default function ExtensionStore() {
       source = storeExt.source;
     }
 
+    // Check if extension exists in currentState (from master_config) but not on disk
+    const existsInConfig = currentState?.extensions?.[storeExt.id];
+    
+    if (existsInConfig && existsInConfig.source === source) {
+      // Extension is in config with same source but not on disk (reinstall scenario)
+      // Append reinstall marker to force change detection, will be cleaned by apply_updates
+      source = source + '#reinstall';
+    }
+
     // Add to currentState
     updateExtension(storeExt.id, {
       enabled: true,
       source,
-      config: {},
+      config: existsInConfig?.config || {},
     });
-
-    alert(`Added ${storeExt.name} to pending changes. Save to queue to install.`);
   };
 
-  const handleUpdate = (storeExt) => {
+  const handleUpdateToggle = (storeExt) => {
+    // If already pending update, revert to original source (undo)
+    if (isPendingUpdate(storeExt.id)) {
+      const original = originalState?.extensions?.[storeExt.id];
+      if (original) {
+        updateExtension(storeExt.id, {
+          ...original,
+        });
+      }
+      return;
+    }
+
+    // Otherwise, add update to pending
     let source;
     if (storeExt.type === 'embedded') {
       source = `github:jbrinkw/luna-ext-store:${storeExt.path}`;
@@ -91,8 +161,32 @@ export default function ExtensionStore() {
       ...existing,
       source,
     });
+  };
 
-    alert(`Added ${storeExt.name} update to pending changes. Save to queue to apply.`);
+  const handleReinstallToggle = (storeExt) => {
+    // If already pending reinstall, revert to original (undo)
+    if (isPendingReinstall(storeExt.id)) {
+      const original = originalState?.extensions?.[storeExt.id];
+      if (original) {
+        updateExtension(storeExt.id, {
+          ...original,
+        });
+      }
+      return;
+    }
+
+    // Otherwise, add reinstall marker to trigger reinstall
+    const existing = currentState.extensions[storeExt.id];
+    const currentSource = existing?.source || '';
+    
+    // Add unique reinstall marker with timestamp to force change detection
+    const timestamp = Date.now();
+    const newSource = currentSource.replace(/#reinstall-\d+/g, '') + `#reinstall-${timestamp}`;
+    
+    updateExtension(storeExt.id, {
+      ...existing,
+      source: newSource,
+    });
   };
 
   const filteredExtensions = useMemo(() => {
@@ -238,19 +332,46 @@ export default function ExtensionStore() {
                 {isInstalled(ext.id) ? (
                   <>
                     {hasUpdate(ext) ? (
-                      <Button onClick={() => handleUpdate(ext)}>
-                        🔄 Update Available
-                      </Button>
+                      isPendingUpdate(ext.id) ? (
+                        <Button 
+                          onClick={() => handleUpdateToggle(ext)}
+                          style={{ backgroundColor: '#10b981', borderColor: '#10b981' }}
+                        >
+                          ⏳ Pending Update
+                        </Button>
+                      ) : (
+                        <Button onClick={() => handleUpdateToggle(ext)}>
+                          🔄 Update Available
+                        </Button>
+                      )
                     ) : (
-                      <Button variant="secondary" disabled>
-                        ✓ Installed
-                      </Button>
+                      isPendingReinstall(ext.id) ? (
+                        <Button 
+                          onClick={() => handleReinstallToggle(ext)}
+                          style={{ backgroundColor: '#10b981', borderColor: '#10b981' }}
+                        >
+                          ⏳ Pending Reinstall
+                        </Button>
+                      ) : (
+                        <Button onClick={() => handleReinstallToggle(ext)}>
+                          🔄 Reinstall
+                        </Button>
+                      )
                     )}
                   </>
                 ) : (
-                  <Button onClick={() => handleInstall(ext)}>
-                    Install
-                  </Button>
+                  isPendingInstall(ext.id) ? (
+                    <Button 
+                      onClick={() => handleInstallToggle(ext)}
+                      style={{ backgroundColor: '#10b981', borderColor: '#10b981' }}
+                    >
+                      ⏳ Pending Install
+                    </Button>
+                  ) : (
+                    <Button onClick={() => handleInstallToggle(ext)}>
+                      Install
+                    </Button>
+                  )
                 )}
               </div>
             </Card>

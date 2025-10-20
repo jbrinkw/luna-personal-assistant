@@ -1,0 +1,59 @@
+{
+  "MEMORY_GET_all": {
+    "enabled_in_mcp": true,
+    "passthrough": false
+  },
+  "MEMORY_UPDATE_create": {
+    "enabled_in_mcp": true,
+    "passthrough": true
+  },
+  "MEMORY_UPDATE_update": {
+    "enabled_in_mcp": true,
+    "passthrough": true
+  },
+  "MEMORY_UPDATE_delete": {
+    "enabled_in_mcp": true,
+    "passthrough": true
+  },
+  "FLOW_GET_all": {
+    "enabled_in_mcp": true,
+    "passthrough": false
+  },
+  "FLOW_GET_by_name": {
+    "enabled_in_mcp": true,
+    "passthrough": false
+  },
+  "FLOW_ACTION_run": {
+    "enabled_in_mcp": true,
+    "passthrough": true
+  },
+  "FLOW_UPDATE_create": {
+    "enabled_in_mcp": true,
+    "passthrough": true
+  },
+  "FLOW_UPDATE_update": {
+    "enabled_in_mcp": true,
+    "passthrough": true
+  },
+  "FLOW_UPDATE_delete": {
+    "enabled_in_mcp": true,
+    "passthrough": true
+  },
+  "SCHEDULE_GET_all": {
+    "enabled_in_mcp": true,
+    "passthrough": false
+  },
+  "SCHEDULE_UPDATE_create": {
+    "enabled_in_mcp": true,
+    "passthrough": true
+  },
+  "SCHEDULE_UPDATE_update": {
+    "enabled_in_mcp": true,
+    "passthrough": true
+  },
+  "SCHEDULE_UPDATE_delete": {
+    "enabled_in_mcp": true,
+    "passthrough": true
+  }
+}
+

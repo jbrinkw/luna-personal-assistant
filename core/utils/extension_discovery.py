@@ -246,12 +246,33 @@ def get_mcp_tools() -> List[Callable]:
     """Get all tools that are enabled for MCP exposure.
     
     Returns:
-        List of tool functions that have enabled_in_mcp=true
+        List of tool functions that have enabled_in_mcp=true from enabled extensions only
     """
     extensions = discover_extensions()
     mcp_tools = []
     
+    # Load master_config to check enabled state
+    master_config_path = PROJECT_ROOT / 'core' / 'master_config.json'
+    enabled_extensions = set()
+    try:
+        if master_config_path.exists():
+            with open(master_config_path, 'r') as f:
+                master_config = json.load(f)
+                for ext_name, ext_config in master_config.get('extensions', {}).items():
+                    if ext_config.get('enabled', True):  # Default to True if not specified
+                        enabled_extensions.add(ext_name)
+    except Exception as e:
+        print(f"[MCP] Warning: Failed to load master_config, exposing all extensions: {e}", flush=True)
+        # If we can't load config, expose all extensions (safer default)
+        enabled_extensions = {ext.get('name') for ext in extensions}
+    
     for ext in extensions:
+        ext_name = ext.get('name', '')
+        
+        # Skip disabled extensions
+        if ext_name not in enabled_extensions:
+            continue
+            
         tools = ext.get('tools', [])
         tool_configs = ext.get('tool_configs', {})
         

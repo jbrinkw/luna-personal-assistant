@@ -327,15 +327,9 @@ async def _on_startup() -> None:
     print("[Agent API] Agent API starting up...", flush=True)
     _init_agents()
     _maybe_print_startup_models()
-    try:
-        # Initialize and start extension UIs/services in background
-        print("[Agent API] Starting service manager for extensions...", flush=True)
-        from core.utils.service_manager import init_and_start
-        init_and_start()
-        print("[Agent API] Service manager initialized", flush=True)
-    except Exception as e:
-        # Best effort; API still usable without service manager
-        print(f"[Agent API] WARNING: Service manager failed: {e}", flush=True)
+    # NOTE: Service manager is used for discovery/status only.
+    # The Supervisor is responsible for actually starting extension services.
+    # DO NOT call init_and_start() here - it would create duplicate services!
     print("[Agent API] Agent API startup complete, ready for requests", flush=True)
 
 
@@ -350,10 +344,30 @@ async def healthz() -> Dict[str, str]:
 async def list_extensions_status() -> Dict[str, Any]:
     """List discovered extensions with UI and services status."""
     try:
+        # Query supervisor API for extension status (supervisor manages all services)
+        import httpx
+        try:
+            response = httpx.get("http://localhost:9999/extensions", timeout=5.0)
+            if response.status_code == 200:
+                data = response.json()
+                extensions = data.get('extensions', [])
+                enabled_count = sum(1 for e in extensions if e.get('enabled', True))
+                disabled_count = len(extensions) - enabled_count
+                print(f"[AgentAPI] GET /extensions - Returning {len(extensions)} extensions ({enabled_count} enabled, {disabled_count} disabled): {[e['name'] for e in extensions]}", flush=True)
+                return {"extensions": extensions}
+        except Exception as e:
+            print(f"[AgentAPI] GET /extensions - Failed to query supervisor: {e}", flush=True)
+        
+        # Fallback to service_manager if supervisor is not available
         from core.utils.service_manager import get_manager
         mgr = get_manager()
-        return {"extensions": mgr.list_extensions()}
-    except Exception:
+        extensions = mgr.list_extensions()
+        enabled_count = sum(1 for e in extensions if e.get('enabled', True))
+        disabled_count = len(extensions) - enabled_count
+        print(f"[AgentAPI] GET /extensions - Returning {len(extensions)} extensions (fallback): {[e['name'] for e in extensions]}", flush=True)
+        return {"extensions": extensions}
+    except Exception as e:
+        print(f"[AgentAPI] GET /extensions - Error: {e}", flush=True)
         return {"extensions": []}
 
 

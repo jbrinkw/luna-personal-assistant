@@ -7,6 +7,7 @@ import LoadingSpinner from '../components/common/LoadingSpinner';
 
 export default function QueueManager() {
   const { 
+    originalState,
     pendingChanges, 
     queuedState, 
     saveToQueue, 
@@ -26,7 +27,6 @@ export default function QueueManager() {
     try {
       setSaving(true);
       await saveToQueue();
-      alert('Changes saved to queue successfully!');
     } catch (error) {
       console.error('Failed to save queue:', error);
       alert('Failed to save queue: ' + error.message);
@@ -204,7 +204,23 @@ export default function QueueManager() {
           <div className="queue-info">
             <div className="queue-stat">
               <span className="stat-label">Operations:</span>
-              <span className="stat-value">{queuedState.operations?.length || 0}</span>
+              <span className="stat-value">{(() => {
+                let count = queuedState.operations?.length || 0;
+                
+                // Add config changes count
+                if (queuedState.master_config && originalState) {
+                  const queuedExts = queuedState.master_config.extensions || {};
+                  const originalExts = originalState.extensions || {};
+                  
+                  Object.keys(queuedExts).forEach(extName => {
+                    if (originalExts[extName] && queuedExts[extName].enabled !== originalExts[extName].enabled) {
+                      count++;
+                    }
+                  });
+                }
+                
+                return count;
+              })()}</span>
             </div>
             {queuedState.created_at && (
               <div className="queue-stat">
@@ -226,6 +242,44 @@ export default function QueueManager() {
               ))}
             </div>
           )}
+
+          {/* Show config changes that will be applied */}
+          {queuedState.master_config && originalState && (() => {
+            const configChanges = [];
+            const queuedExts = queuedState.master_config.extensions || {};
+            const originalExts = originalState.extensions || {};
+            
+            // Find enabled/disabled changes
+            Object.keys(queuedExts).forEach(extName => {
+              const queuedExt = queuedExts[extName];
+              const originalExt = originalExts[extName];
+              
+              // Check if enabled status changed
+              if (originalExt && queuedExt.enabled !== originalExt.enabled) {
+                configChanges.push({
+                  type: 'config',
+                  target: extName,
+                  detail: `${queuedExt.enabled ? 'Enable' : 'Disable'} extension`
+                });
+              }
+            });
+            
+            if (configChanges.length > 0) {
+              return (
+                <div className="operations-list">
+                  <h3>Configuration Changes:</h3>
+                  {configChanges.map((change, index) => (
+                    <div key={`config-${index}`} className="operation-item">
+                      <span className="operation-type">CONFIG</span>
+                      <span className="operation-target">{change.target}</span>
+                      <span className="operation-source">{change.detail}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            }
+            return null;
+          })()}
         </div>
       )}
 

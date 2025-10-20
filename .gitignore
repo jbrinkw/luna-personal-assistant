@@ -110,4 +110,11 @@ jspm_packages/
 # Luna supervisor runtime files (Phase 1A)
 core/master_config.json
 core/update_queue.json
+core/update_retry_count.json
 supervisor/state.json
+.luna_shutdown
+.luna_updating
+
+extensions/*
+!extensions/automation_memory
+!extensions/automation_memory/**

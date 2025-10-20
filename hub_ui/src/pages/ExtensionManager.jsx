@@ -11,6 +11,10 @@ export default function ExtensionManager() {
   const { extensions, loading: servicesLoading } = useServices();
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
+  const [showGitModal, setShowGitModal] = useState(false);
+  const [gitUrl, setGitUrl] = useState('');
+  const [extensionName, setExtensionName] = useState('');
+  const [gitError, setGitError] = useState(null);
   const fileInputRef = useRef();
 
   const handleUploadClick = () => {
@@ -46,9 +50,6 @@ export default function ExtensionManager() {
         source: `upload:${tempFilename}`,
         config: currentState?.extensions?.[extName]?.config || {},
       });
-
-      // Show success message
-      alert(`${isUpdate ? 'Updated' : 'Installed'} ${extName} - Save to queue to apply changes`);
     } catch (error) {
       console.error('Upload failed:', error);
       setUploadError(error.message || 'Upload failed');
@@ -59,6 +60,56 @@ export default function ExtensionManager() {
         fileInputRef.current.value = '';
       }
     }
+  };
+
+  const handleGitInstall = () => {
+    setGitError(null);
+    
+    // Validate inputs
+    if (!gitUrl.trim()) {
+      setGitError('Please enter a GitHub URL');
+      return;
+    }
+    
+    if (!extensionName.trim()) {
+      setGitError('Please enter an extension name');
+      return;
+    }
+
+    // Parse Git URL to create source string
+    // Expected formats:
+    // - user/repo -> github:user/repo
+    // - user/repo:path/to/subfolder -> github:user/repo:path/to/subfolder
+    // - https://github.com/user/repo -> github:user/repo
+    // - github.com/user/repo -> github:user/repo
+    
+    let source = gitUrl.trim();
+    
+    // Remove https:// or http:// prefix
+    source = source.replace(/^https?:\/\//, '');
+    
+    // Remove github.com/ prefix if present
+    source = source.replace(/^github\.com\//, '');
+    
+    // Add github: prefix if not already there
+    if (!source.startsWith('github:')) {
+      source = `github:${source}`;
+    }
+
+    const extName = extensionName.trim();
+
+    // Add to currentState
+    updateExtension(extName, {
+      enabled: true,
+      source,
+      config: currentState?.extensions?.[extName]?.config || {},
+    });
+
+    // Close modal and reset
+    setShowGitModal(false);
+    setGitUrl('');
+    setExtensionName('');
+    setGitError(null);
   };
 
   if (configLoading || servicesLoading) {
@@ -76,7 +127,7 @@ export default function ExtensionManager() {
           <h1>Extension Manager</h1>
           <p className="page-subtitle">Manage your Luna extensions</p>
         </div>
-        <div>
+        <div style={{ display: 'flex', gap: '0.75rem' }}>
           <input
             ref={fileInputRef}
             type="file"
@@ -85,7 +136,10 @@ export default function ExtensionManager() {
             onChange={handleFileSelect}
           />
           <Button onClick={handleUploadClick} disabled={uploading}>
-            {uploading ? 'Uploading...' : '📤 Upload Extension'}
+            {uploading ? 'Uploading...' : '📤 Install by Zip'}
+          </Button>
+          <Button onClick={() => setShowGitModal(true)} variant="secondary">
+            🔗 Install by Git
           </Button>
         </div>
       </div>
@@ -100,9 +154,10 @@ export default function ExtensionManager() {
         <div className="empty-state">
           <div className="empty-state-icon">📦</div>
           <h2>No Extensions Installed</h2>
-          <p>Upload an extension or browse the store to get started</p>
+          <p>Install an extension from zip, git, or browse the store to get started</p>
           <div className="empty-state-actions">
-            <Button onClick={handleUploadClick}>Upload Extension</Button>
+            <Button onClick={handleUploadClick}>📤 Install by Zip</Button>
+            <Button onClick={() => setShowGitModal(true)}>🔗 Install by Git</Button>
             <Button variant="secondary" onClick={() => window.location.href = '/store'}>
               Browse Store
             </Button>
@@ -117,6 +172,76 @@ export default function ExtensionManager() {
               status={ext}
             />
           ))}
+        </div>
+      )}
+
+      {/* Git Install Modal */}
+      {showGitModal && (
+        <div className="modal-overlay" onClick={() => setShowGitModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Install Extension from Git</h2>
+              <button 
+                className="modal-close" 
+                onClick={() => setShowGitModal(false)}
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="modal-body">
+              {gitError && (
+                <div className="error-message" style={{ marginBottom: '1rem' }}>
+                  {gitError}
+                </div>
+              )}
+              
+              <div className="form-group">
+                <label htmlFor="gitUrl">GitHub URL</label>
+                <input
+                  id="gitUrl"
+                  type="text"
+                  className="form-input"
+                  placeholder="user/repo or user/repo:path/to/subfolder"
+                  value={gitUrl}
+                  onChange={(e) => setGitUrl(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') handleGitInstall();
+                  }}
+                />
+                <small className="form-help">
+                  Examples: <code>jbrinkw/my-extension</code> or <code>jbrinkw/monorepo:extensions/my-ext</code>
+                </small>
+              </div>
+              
+              <div className="form-group">
+                <label htmlFor="extensionName">Extension Name</label>
+                <input
+                  id="extensionName"
+                  type="text"
+                  className="form-input"
+                  placeholder="my_extension"
+                  value={extensionName}
+                  onChange={(e) => setExtensionName(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') handleGitInstall();
+                  }}
+                />
+                <small className="form-help">
+                  The name to install this extension as (use lowercase and underscores)
+                </small>
+              </div>
+            </div>
+            
+            <div className="modal-footer">
+              <Button variant="secondary" onClick={() => setShowGitModal(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleGitInstall}>
+                Install
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

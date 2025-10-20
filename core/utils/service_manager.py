@@ -75,6 +75,24 @@ class ServiceManager:
         self._uis: Dict[str, Dict[str, Any]] = {}
         # key: (ext_name, service_name)
         self._services: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        
+    def _load_master_config(self) -> Dict[str, Any]:
+        """Load master_config.json to check enabled state."""
+        master_config_path = PROJECT_ROOT / 'core' / 'master_config.json'
+        try:
+            if master_config_path.exists():
+                with open(master_config_path, 'r') as f:
+                    return json.load(f)
+        except Exception as e:
+            print(f"[ServiceManager] Warning: Failed to load master_config: {e}", flush=True)
+        return {"extensions": {}}
+    
+    def _is_extension_enabled(self, ext_name: str) -> bool:
+        """Check if extension is enabled in master_config."""
+        config = self._load_master_config()
+        ext_config = config.get("extensions", {}).get(ext_name, {})
+        enabled = ext_config.get("enabled", True)  # Default to True if not specified
+        return enabled
 
     # ---------- Discovery ----------
     def _discover_extensions(self) -> List[str]:
@@ -284,16 +302,24 @@ class ServiceManager:
         Intended to be called once on API startup.
         """
         print(f"[ServiceManager] Discovering extensions from: {self.extensions_root}", flush=True)
-        exts = self._discover_extensions()
-        print(f"[ServiceManager] Found {len(exts)} extension(s): {', '.join(exts) if exts else 'none'}", flush=True)
+        all_exts = self._discover_extensions()
+        print(f"[ServiceManager] Found {len(all_exts)} extension(s): {', '.join(all_exts) if all_exts else 'none'}", flush=True)
+        
+        # Filter by enabled state
+        enabled_exts = [name for name in all_exts if self._is_extension_enabled(name)]
+        disabled_exts = [name for name in all_exts if not self._is_extension_enabled(name)]
+        
+        if disabled_exts:
+            print(f"[ServiceManager] Skipping {len(disabled_exts)} disabled extension(s): {', '.join(disabled_exts)}", flush=True)
+        print(f"[ServiceManager] Processing {len(enabled_exts)} enabled extension(s): {', '.join(enabled_exts) if enabled_exts else 'none'}", flush=True)
         
         with self._lock:
-            for name in exts:
+            for name in enabled_exts:
                 ui = self._discover_ui(name)
                 if ui:
                     self._uis[name] = ui
                     print(f"[ServiceManager] Discovered UI for extension: {name}", flush=True)
-            for name in exts:
+            for name in enabled_exts:
                 for svc in self._discover_services(name):
                     self._services[(svc['ext'], svc['name'])] = svc
                     print(f"[ServiceManager] Discovered service: {name}.{svc['name']}", flush=True)
@@ -328,24 +354,62 @@ class ServiceManager:
         with self._lock:
             result: Dict[str, Dict[str, Any]] = {}
             for ext, ui in self._uis.items():
-                ent = result.setdefault(ext, {'name': ext, 'ui': None, 'services': [], 'tool_count': 0})
+                ent = result.setdefault(ext, {'name': ext, 'ui': None, 'services': [], 'tool_count': 0, 'enabled': True})
                 ent['ui'] = self._ui_snapshot(ui)
             for (ext, _svc), svc_data in self._services.items():
-                ent = result.setdefault(ext, {'name': ext, 'ui': None, 'services': [], 'tool_count': 0})
+                ent = result.setdefault(ext, {'name': ext, 'ui': None, 'services': [], 'tool_count': 0, 'enabled': True})
                 ent['services'].append(self._svc_snapshot(svc_data))
             
-            # Add tool counts
+            # Add ALL extensions from discovery (including tool-only and disabled extensions)
             try:
                 from core.utils.extension_discovery import discover_extensions
                 discovered_exts = discover_extensions(self.extensions_root)
                 for disc_ext in discovered_exts:
                     ext_name = disc_ext.get('name', '')
-                    if ext_name in result:
-                        tools = disc_ext.get('tools', [])
-                        result[ext_name]['tool_count'] = len(tools)
-            except Exception:
-                pass
+                    # Create entry if it doesn't exist (for tool-only extensions)
+                    is_enabled = self._is_extension_enabled(ext_name)
+                    ent = result.setdefault(ext_name, {'name': ext_name, 'ui': None, 'services': [], 'tool_count': 0, 'enabled': is_enabled})
+                    # Update tool count and enabled status
+                    tools = disc_ext.get('tools', [])
+                    ent['tool_count'] = len(tools)
+                    ent['enabled'] = is_enabled
+                    
+                    # Set synthetic status for extensions without running UI/services
+                    if ent['ui'] is None and not ent['services']:
+                        # Extension has no active UI/services
+                        # Check if it has a UI folder (should have been started but wasn't)
+                        has_ui_folder = disc_ext.get('has_ui', False)
+                        if has_ui_folder and is_enabled:
+                            # Has UI folder but not started - likely starting up or disabled
+                            ent['ui'] = {
+                                'status': 'offline',  # Show offline instead of "starting"
+                                'port': None,
+                                'pid': None,
+                                'url': None,
+                                'last_check': int(time.time()),
+                            }
+                        elif ent['tool_count'] > 0:
+                            # Tool-only extension: show as "running" if enabled and has tools
+                            ent['ui'] = {
+                                'status': 'running' if is_enabled else 'offline',
+                                'port': None,
+                                'pid': None,
+                                'url': None,
+                                'last_check': int(time.time()),
+                            }
+                        elif not is_enabled:
+                            # Disabled extension with no tools
+                            ent['ui'] = {
+                                'status': 'offline',
+                                'port': None,
+                                'pid': None,
+                                'url': None,
+                                'last_check': int(time.time()),
+                            }
+            except Exception as e:
+                print(f"[ServiceManager] Warning: Failed to discover tools: {e}", flush=True)
             
+            # Return ALL extensions (enabled and disabled) with enabled flag
             return list(result.values())
 
     def get_extension(self, name: str) -> Optional[Dict[str, Any]]:
@@ -428,6 +492,15 @@ class ServiceManager:
                         self._start_ui(ui)
                     except Exception:
                         pass
+                else:
+                    # Process is running, check health if we have a port
+                    port = ui.get('port')
+                    if port and ui.get('status') in ('starting', 'running'):
+                        # Try health check at /healthz
+                        ok = self._http_health_check(int(port), '/healthz')
+                        if ok:
+                            ui['status'] = 'running'
+                        # Don't change status on failure - UIs might not have /healthz endpoint
                 ui['last_check'] = int(time.time())
 
             # Services: if requires_port and health_check, probe; restart on failure when restart_on_failure
