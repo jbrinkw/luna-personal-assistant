@@ -116,5 +116,6 @@ supervisor/state.json
 .luna_updating
 
 extensions/*
-!extensions/automation_memory
+!extensions/automation_memory/
 !extensions/automation_memory/**
+extensions/automation_memory/**/node_modules/
