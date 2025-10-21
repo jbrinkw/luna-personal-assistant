@@ -171,8 +171,7 @@ install_python() {
         python3.11 \
         python3.11-dev \
         python3.11-venv \
-        python3.11-distutils \
-        python3-pip
+        python3.11-distutils
     
     # Set Python 3.11 as default python3
     update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
@@ -186,16 +185,28 @@ install_python() {
 create_venv() {
     log_section "Creating Virtual Environment"
     
+    # Check if venv exists and is valid
     if [ -d "$VENV_PATH" ]; then
-        log_info "Virtual environment already exists at $VENV_PATH"
-        return 0
+        if [ -f "$VENV_PATH/bin/activate" ] && [ -f "$VENV_PATH/bin/python3" ]; then
+            log_info "Valid virtual environment already exists at $VENV_PATH"
+            return 0
+        else
+            log_warn "Incomplete virtual environment found, removing and recreating..."
+            rm -rf "$VENV_PATH"
+        fi
     fi
+    
+    # Ensure python3-venv is installed
+    log_info "Ensuring python3-venv package is installed..."
+    PYTHON_VERSION=$(python3 --version | awk '{print $2}')
+    PYTHON_MAJOR_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f1,2)
+    apt-get install -y "python${PYTHON_MAJOR_MINOR}-venv" || apt-get install -y python3-venv
     
     log_info "Creating virtual environment at $VENV_PATH..."
     python3 -m venv "$VENV_PATH"
     
-    if [ -d "$VENV_PATH" ]; then
-        log_success "Virtual environment created"
+    if [ -f "$VENV_PATH/bin/activate" ] && [ -f "$VENV_PATH/bin/python3" ]; then
+        log_success "Virtual environment created successfully"
     else
         log_error "Failed to create virtual environment"
         exit 1
