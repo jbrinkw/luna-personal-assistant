@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUPERVISOR_PY="$SCRIPT_DIR/supervisor/supervisor.py"
 SHUTDOWN_FLAG="$SCRIPT_DIR/.luna_shutdown"
 UPDATE_FLAG="$SCRIPT_DIR/.luna_updating"
+RELOAD_CADDY="$SCRIPT_DIR/scripts/reload_caddy.sh"
 HEALTH_URL="http://127.0.0.1:9999/health"
 SHUTDOWN_URL="http://127.0.0.1:9999/shutdown"
 HEALTH_CHECK_INTERVAL=10
@@ -35,11 +36,17 @@ handle_shutdown() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Verifying all processes stopped..."
     sleep 2
     
-    # Double-check and force kill any remaining Luna processes
+    # Double-check and force kill any remaining Luna processes (including ngrok on shutdown)
     if pgrep -f "$SCRIPT_DIR" > /dev/null 2>&1; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Force killing remaining processes..."
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Force killing remaining processes (including ngrok)..."
         pkill -9 -f "$SCRIPT_DIR"
+        pkill -9 -f "ngrok http"
         sleep 1
+    fi
+
+    if [ -x "$RELOAD_CADDY" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Requesting Caddy reload (shutdown)..."
+        "$RELOAD_CADDY" "luna.sh-shutdown" || true
     fi
     
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Luna shutdown complete"
@@ -95,13 +102,49 @@ kill_supervisor() {
         pkill -9 -f "extensions/.*/ui"
         pkill -9 -f "extensions/.*/services"
         
-        # Also kill any remaining processes in the Luna directory
-        pkill -9 -f "$SCRIPT_DIR"
+        # Kill Caddy if running (but not ngrok - let it persist across restarts)
+        pkill -9 -f "caddy run"
+        
+        # Kill any remaining Luna processes except ngrok
+        for pid in $(pgrep -f "$SCRIPT_DIR"); do
+            # Check if this is ngrok
+            if ps -p $pid -o cmd --no-headers 2>/dev/null | grep -q "ngrok http"; then
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] Preserving ngrok tunnel (PID: $pid)"
+                continue
+            fi
+            # Kill non-ngrok processes
+            kill -9 $pid 2>/dev/null || true
+        done
     else
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] No supervisor process found"
     fi
     
+    # Kill processes on core Luna ports
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Checking core Luna ports..."
+    for port in 5173 8080 8765 9999; do
+        PID=$(lsof -ti :$port 2>/dev/null)
+        if [ ! -z "$PID" ]; then
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Killing process on port $port (PID: $PID)"
+            kill -9 $PID 2>/dev/null || true
+        fi
+    done
+    
+    # Kill processes on extension UI ports (5200-5299) and service ports (5300-5399)
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Checking extension UI and service ports..."
+    for port in $(seq 5200 5399); do
+        PID=$(lsof -ti :$port 2>/dev/null)
+        if [ ! -z "$PID" ]; then
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Killing process on port $port (PID: $PID)"
+            kill -9 $PID 2>/dev/null || true
+        fi
+    done
+    
     sleep 2
+
+    if [ -x "$RELOAD_CADDY" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Requesting Caddy reload (kill_supervisor)..."
+        "$RELOAD_CADDY" "luna.sh-kill-supervisor" || true
+    fi
 }
 
 # Rotate logs directory - keep previous run as logs.old
@@ -205,5 +248,3 @@ while true; do
     # Wait before next check
     sleep $HEALTH_CHECK_INTERVAL
 done
-
-

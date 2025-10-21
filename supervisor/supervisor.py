@@ -320,6 +320,7 @@ class Supervisor:
                         pass
         
         self.log("INFO", "All services stopped")
+        self._reload_caddy_config(reason="shutdown-all-services")
     
     def _start_caddy(self):
         """Start Caddy reverse proxy on port 8443"""
@@ -407,29 +408,36 @@ class Supervisor:
             self.log("ERROR", traceback.format_exc())
             raise
     
-    def _reload_caddy_config(self):
-        """Reload Caddy configuration without downtime"""
+    def _reload_caddy_config(self, reason: str | None = None) -> bool:
+        """Reload Caddy configuration using shared helper."""
+        context = f" ({reason})" if reason else ""
+        self.log("INFO", f"Reloading Caddy configuration{context}...")
         try:
-            self.log("INFO", "Reloading Caddy configuration...")
-            
-            # Regenerate Caddyfile
-            self._generate_caddyfile()
-            
-            # Send SIGHUP to Caddy process to reload
-            if "caddy" in self.processes and self.processes["caddy"]:
-                proc = self.processes["caddy"]
-                if proc.poll() is None:  # Process still running
-                    import signal
-                    proc.send_signal(signal.SIGHUP)
-                    self.log("INFO", "Caddy configuration reloaded")
-                else:
-                    self.log("WARNING", "Caddy process not running, cannot reload")
-            else:
-                self.log("WARNING", "Caddy process not tracked, cannot reload")
-        
-        except Exception as e:
-            self.log("ERROR", f"Failed to reload Caddy config: {e}")
+            from core.utils.caddy_control import reload_caddy as _reload_caddy
+        except ImportError as exc:
+            self.log("ERROR", f"Unable to import Caddy reload helper: {exc}")
+            return False
+
+        try:
+            success = _reload_caddy(
+                self.repo_path,
+                reason=f"supervisor{':' + reason if reason else ''}",
+                quiet=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.log("ERROR", f"Caddy reload helper failed: {exc}")
             self.log("ERROR", traceback.format_exc())
+            return False
+
+        if success:
+            self.log("INFO", "Caddy reload request completed successfully")
+        else:
+            self.log("WARNING", "Caddy reload helper reported failure")
+        return success
+
+    def reload_caddy(self, reason: str | None = None) -> bool:
+        """Public wrapper for triggering a Caddy reload."""
+        return self._reload_caddy_config(reason=reason)
     
     def _start_agent_api(self):
         """Start Agent API server on port 8080"""
@@ -632,6 +640,7 @@ class Supervisor:
                     self.state['services'][service_name]['status'] = 'running'
                     self.save_state()
                 self.log("INFO", f"{extension_name} UI is running")
+                self._reload_caddy_config(reason=f"start-ui:{extension_name}")
             
         except Exception as e:
             self.log("ERROR", f"Failed to start {extension_name} UI: {e}")
@@ -703,6 +712,7 @@ class Supervisor:
                     self.state['services'][full_service_name]['status'] = 'running'
                     self.save_state()
                 self.log("INFO", f"Service {service_key} is running")
+                self._reload_caddy_config(reason=f"start-service:{service_key}")
             
         except Exception as e:
             self.log("ERROR", f"Failed to start service {extension_name}.{service_name}: {e}")
@@ -749,7 +759,7 @@ class Supervisor:
                         self._start_extension_service(extension_name, service_name, service_dir)
         
         # Reload Caddy config now that all extensions are started
-        self._reload_caddy_config()
+        self._reload_caddy_config(reason="discover-and-start")
     
     def run_config_sync(self):
         """Run config sync to discover and sync extensions"""
@@ -958,4 +968,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

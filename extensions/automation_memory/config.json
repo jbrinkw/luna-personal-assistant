@@ -10,5 +10,9 @@
   "auto_update": false,
   "version": "10-19-25",
   "enabled": true,
-  "source": "local"
+  "source": "local",
+  "ui": {
+    "strip_prefix": false,
+    "enforce_trailing_slash": true
+  }
 }

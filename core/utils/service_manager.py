@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 import shutil
 
+from core.utils.caddy_control import reload_caddy
+
 # Ensure project root on path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -75,6 +77,13 @@ class ServiceManager:
         self._uis: Dict[str, Dict[str, Any]] = {}
         # key: (ext_name, service_name)
         self._services: Dict[Tuple[str, str], Dict[str, Any]] = {}
+
+    def _trigger_caddy_reload(self, reason: str) -> None:
+        """Best-effort request to reload Caddy after lifecycle changes."""
+        try:
+            reload_caddy(PROJECT_ROOT, reason=f"service-manager:{reason}", quiet=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[ServiceManager] Warning: Failed to reload Caddy ({reason}): {exc}", flush=True)
         
     def _load_master_config(self) -> Dict[str, Any]:
         """Load master_config.json to check enabled state."""
@@ -347,7 +356,8 @@ class ServiceManager:
             print("[ServiceManager] Starting health monitor thread...", flush=True)
             self._monitor_thread = threading.Thread(target=self._monitor_loop, name='luna-svc-monitor', daemon=True)
             self._monitor_thread.start()
-        
+
+        self._trigger_caddy_reload("start-all")
         print("[ServiceManager] Extension discovery and startup complete", flush=True)
 
     def list_extensions(self) -> List[Dict[str, Any]]:
@@ -449,6 +459,7 @@ class ServiceManager:
             ui['pid'] = None
             ui['port'] = None
         self._start_ui(ui)  # type: ignore[arg-type]
+        self._trigger_caddy_reload(f"restart-ui:{ext_name}")
         return True
 
     def restart_service(self, ext_name: str, service_name: str) -> bool:
@@ -467,6 +478,7 @@ class ServiceManager:
             if not svc.get('fixed_port'):
                 svc['port'] = None
         self._start_service(svc)  # type: ignore[arg-type]
+        self._trigger_caddy_reload(f"restart-service:{ext_name}.{service_name}")
         return True
 
     # ---------- Monitor ----------
@@ -479,6 +491,7 @@ class ServiceManager:
                 continue
 
     def _monitor_once(self) -> None:
+        reload_required = False
         with self._lock:
             # UIs: restart if process exited; health check at /healthz if port known
             for ui in self._uis.values():
@@ -490,6 +503,7 @@ class ServiceManager:
                     # restart UIs when they die
                     try:
                         self._start_ui(ui)
+                        reload_required = True
                     except Exception:
                         pass
                 else:
@@ -517,6 +531,7 @@ class ServiceManager:
                     if bool(cfg.get('restart_on_failure', True)):
                         try:
                             self._start_service(svc)
+                            reload_required = True
                         except Exception:
                             pass
                     continue
@@ -541,9 +556,12 @@ class ServiceManager:
                                 svc['port'] = None
                             try:
                                 self._start_service(svc)
+                                reload_required = True
                             except Exception:
                                 pass
                 svc['last_check'] = int(time.time())
+        if reload_required:
+            self._trigger_caddy_reload("monitor")
 
     def _http_health_check(self, port: int, path: str) -> bool:
         import http.client
@@ -597,5 +615,3 @@ def init_and_start() -> None:
     # Run discovery + startup in a thread to avoid blocking FastAPI startup
     t = threading.Thread(target=mgr.start_all, name='luna-svc-start', daemon=True)
     t.start()
-
-

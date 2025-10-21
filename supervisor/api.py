@@ -38,6 +38,16 @@ class ServiceStatusUpdate(BaseModel):
     status: Optional[str] = None
 
 
+def _trigger_caddy_reload(reason: str) -> None:
+    """Best-effort Caddy reload via supervisor helper."""
+    if not supervisor_instance:
+        return
+    try:
+        supervisor_instance.reload_caddy(reason=reason)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[SupervisorAPI] Warning: Caddy reload failed ({reason}): {exc}", flush=True)
+
+
 def init_api(supervisor):
     """Initialize API with supervisor instance"""
     global supervisor_instance
@@ -450,8 +460,9 @@ def restart_system():
     """Initiate restart and update flow with graceful shutdown"""
     if not supervisor_instance:
         raise HTTPException(status_code=500, detail="Supervisor not initialized")
-    
+
     print("Restart requested via API")
+    _trigger_caddy_reload("api-restart-requested")
     
     import shutil
     import subprocess
@@ -493,6 +504,7 @@ def restart_system():
     import signal
     def shutdown_after_delay():
         import time
+        import subprocess
         time.sleep(1)
         
         # Stop all tracked processes and their entire process groups
@@ -524,8 +536,51 @@ def restart_system():
                     except:
                         pass
         
+        # Kill processes on core Luna ports
+        print("Checking core Luna ports...")
+        for port in [5173, 8080, 8765, 9999]:
+            try:
+                result = subprocess.run(['lsof', '-ti', f':{port}'], capture_output=True, text=True)
+                if result.stdout.strip():
+                    pids = result.stdout.strip().split('\n')
+                    for pid in pids:
+                        if pid:
+                            print(f"Killing process on port {port} (PID: {pid})")
+                            try:
+                                os.kill(int(pid), signal.SIGKILL)
+                            except:
+                                pass
+            except:
+                pass
+        
+        # Kill processes on extension UI ports (5200-5299) and service ports (5300-5399)
+        print("Checking extension UI and service ports...")
+        for port in range(5200, 5400):
+            try:
+                result = subprocess.run(['lsof', '-ti', f':{port}'], capture_output=True, text=True)
+                if result.stdout.strip():
+                    pids = result.stdout.strip().split('\n')
+                    for pid in pids:
+                        if pid:
+                            print(f"Killing process on port {port} (PID: {pid})")
+                            try:
+                                os.kill(int(pid), signal.SIGKILL)
+                            except:
+                                pass
+            except:
+                pass
+        
+        # Kill Caddy but preserve ngrok tunnel across restarts
+        print("Stopping Caddy (preserving ngrok tunnel)...")
+        try:
+            subprocess.run(['pkill', '-9', '-f', 'caddy run'], capture_output=True)
+        except:
+            pass
+        
         print("All services stopped. Shutting down supervisor...")
         print("Bootstrap will restart supervisor after updates complete")
+        print("(ngrok tunnel preserved for continuity)")
+        _trigger_caddy_reload("api-restart-shutdown")
         
         # Send SIGTERM to our own process - uvicorn will handle it gracefully
         os.kill(os.getpid(), signal.SIGTERM)
@@ -544,6 +599,7 @@ def shutdown_system():
         raise HTTPException(status_code=500, detail="Supervisor not initialized")
     
     print("Shutdown requested via API")
+    _trigger_caddy_reload("api-shutdown-requested")
     
     # Create shutdown flag file so bootstrap knows not to restart
     from pathlib import Path
@@ -558,6 +614,7 @@ def shutdown_system():
     import subprocess
     def shutdown_after_delay():
         import time
+        import subprocess
         time.sleep(1)
         
         # Stop all tracked processes and their entire process groups
@@ -590,7 +647,50 @@ def shutdown_system():
                     except:
                         pass
         
+        # Kill processes on core Luna ports
+        print("Checking core Luna ports...")
+        for port in [5173, 8080, 8765, 9999]:
+            try:
+                result = subprocess.run(['lsof', '-ti', f':{port}'], capture_output=True, text=True)
+                if result.stdout.strip():
+                    pids = result.stdout.strip().split('\n')
+                    for pid in pids:
+                        if pid:
+                            print(f"Killing process on port {port} (PID: {pid})")
+                            try:
+                                os.kill(int(pid), signal.SIGKILL)
+                            except:
+                                pass
+            except:
+                pass
+        
+        # Kill processes on extension UI ports (5200-5299) and service ports (5300-5399)
+        print("Checking extension UI and service ports...")
+        for port in range(5200, 5400):
+            try:
+                result = subprocess.run(['lsof', '-ti', f':{port}'], capture_output=True, text=True)
+                if result.stdout.strip():
+                    pids = result.stdout.strip().split('\n')
+                    for pid in pids:
+                        if pid:
+                            print(f"Killing process on port {port} (PID: {pid})")
+                            try:
+                                os.kill(int(pid), signal.SIGKILL)
+                            except:
+                                pass
+            except:
+                pass
+        
+        # Kill Caddy and ngrok (full shutdown)
+        print("Stopping Caddy and ngrok...")
+        try:
+            subprocess.run(['pkill', '-9', '-f', 'caddy run'], capture_output=True)
+            subprocess.run(['pkill', '-9', '-f', 'ngrok http'], capture_output=True)
+        except:
+            pass
+        
         print("All services stopped. Shutting down supervisor...")
+        _trigger_caddy_reload("api-shutdown-thread")
         # Send SIGTERM to our own process - uvicorn will handle it gracefully
         os.kill(os.getpid(), signal.SIGTERM)
     
@@ -884,6 +984,8 @@ def start_external_service(name: str):
         # Get updated status
         registry = supervisor_instance.external_services_manager.get_registry()
         service_data = registry.get(name, {})
+
+        _trigger_caddy_reload(f"external-service-start:{name}")
         
         return {
             "success": True,
@@ -907,7 +1009,8 @@ def stop_external_service(name: str):
         
         if not success:
             raise HTTPException(status_code=500, detail=message)
-        
+
+        _trigger_caddy_reload(f"external-service-stop:{name}")
         return {
             "success": True,
             "message": message,
@@ -930,11 +1033,12 @@ def restart_external_service(name: str):
         
         if not success:
             raise HTTPException(status_code=500, detail=message)
-        
+
         # Get updated status
         registry = supervisor_instance.external_services_manager.get_registry()
         service_data = registry.get(name, {})
-        
+
+        _trigger_caddy_reload(f"external-service-restart:{name}")
         return {
             "success": True,
             "message": message,
@@ -1064,4 +1168,3 @@ def upload_external_service(request: ServiceUploadRequest):
 def run_api(host='127.0.0.1', port=9999):
     """Run the API server"""
     uvicorn.run(app, host=host, port=port, log_level="info")
-

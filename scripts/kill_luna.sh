@@ -6,6 +6,10 @@ echo "=========================================="
 echo "Luna Process Killer"
 echo "=========================================="
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+RELOAD_CADDY="${REPO_ROOT}/scripts/reload_caddy.sh"
+
 # Find and kill all Luna-related processes
 echo "Searching for Luna processes..."
 
@@ -98,7 +102,12 @@ for port in 8443 5173 8080 8765 9999; do
     fi
 done
 
+if [ -x "$RELOAD_CADDY" ]; then
+    echo ""
+    echo "Requesting Caddy reload..."
+    "$RELOAD_CADDY" "kill-luna" || true
+fi
+
 echo "=========================================="
 echo "Cleanup complete"
 echo "=========================================="
-
