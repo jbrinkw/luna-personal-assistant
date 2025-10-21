@@ -9,7 +9,13 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 REASON="${1:-shell-trigger}"
 
-if ! command -v python3 >/dev/null 2>&1; then
+# Use venv python if available
+VENV_PYTHON="${REPO_ROOT}/.venv/bin/python3"
+if [ -f "${VENV_PYTHON}" ]; then
+    PYTHON="${VENV_PYTHON}"
+elif command -v python3 >/dev/null 2>&1; then
+    PYTHON="python3"
+else
     echo "[reload_caddy] python3 not found; skipping reload." >&2
     exit 0
 fi
@@ -17,4 +23,4 @@ fi
 PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
 export PYTHONPATH
 
-python3 -m core.utils.caddy_control reload --repo "${REPO_ROOT}" --reason "${REASON}" >/dev/null 2>&1 || true
+"${PYTHON}" -m core.utils.caddy_control reload --repo "${REPO_ROOT}" --reason "${REASON}" >/dev/null 2>&1 || true
