@@ -133,3 +133,6 @@ external_services/**/node_modules/
 logs.old
 
 caddy_auth.txt
+
+# Installation config (contains sensitive data)
+install_config.json
