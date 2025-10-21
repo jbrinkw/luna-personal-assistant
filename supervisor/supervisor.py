@@ -274,6 +274,7 @@ class Supervisor:
         """Get all port mappings"""
         # Core services have fixed ports
         core_ports = {
+            "caddy": 8443,
             "hub_ui": 5173,
             "agent_api": 8080,
             "mcp_server": 8765,
@@ -319,6 +320,116 @@ class Supervisor:
                         pass
         
         self.log("INFO", "All services stopped")
+    
+    def _start_caddy(self):
+        """Start Caddy reverse proxy on port 8443"""
+        try:
+            self.log("INFO", "Starting Caddy reverse proxy...")
+            
+            # Check if Caddy is installed
+            caddy_check = subprocess.run(
+                ["which", "caddy"],
+                capture_output=True,
+                text=True
+            )
+            
+            if caddy_check.returncode != 0:
+                self.log("WARNING", "Caddy not found, attempting to install...")
+                install_script = self.core_path / "scripts" / "install_caddy.sh"
+                if install_script.exists():
+                    result = subprocess.run(
+                        ["bash", str(install_script)],
+                        capture_output=True,
+                        text=True
+                    )
+                    if result.returncode != 0:
+                        self.log("ERROR", f"Failed to install Caddy: {result.stderr}")
+                        self.update_service_status("caddy", status="failed")
+                        return
+                else:
+                    self.log("ERROR", f"Caddy installation script not found at {install_script}")
+                    self.update_service_status("caddy", status="failed")
+                    return
+            
+            # Generate Caddyfile
+            self._generate_caddyfile()
+            
+            caddyfile_path = self.repo_path / ".luna" / "Caddyfile"
+            if not caddyfile_path.exists():
+                self.log("ERROR", f"Caddyfile not found at {caddyfile_path}")
+                self.update_service_status("caddy", status="failed")
+                return
+            
+            log_file = self.logs_path / "caddy.log"
+            log_fp = open(log_file, 'w')
+            
+            # Start Caddy with generated config
+            proc = subprocess.Popen(
+                ["caddy", "run", "--config", str(caddyfile_path), "--adapter", "caddyfile"],
+                stdout=log_fp,
+                stderr=subprocess.STDOUT,
+                cwd=str(self.repo_path),
+                start_new_session=True
+            )
+            
+            self.processes["caddy"] = proc
+            self.update_service_status("caddy", pid=proc.pid, port=8443, status="starting")
+            self.log("INFO", f"Caddy started with PID {proc.pid} on port 8443")
+            
+            # Check if process is still running after 1 second and update to running
+            import time
+            time.sleep(1)
+            if proc.poll() is None:  # Process still running
+                if "caddy" in self.state.get('services', {}):
+                    self.state['services']['caddy']['status'] = 'running'
+                    self.save_state()
+                self.log("INFO", "Caddy is running")
+            else:
+                self.log("ERROR", "Caddy process died immediately after start")
+                self.update_service_status("caddy", status="failed")
+            
+        except Exception as e:
+            self.log("ERROR", f"Failed to start Caddy: {e}")
+            self.log("ERROR", traceback.format_exc())
+            self.update_service_status("caddy", status="failed")
+    
+    def _generate_caddyfile(self):
+        """Generate Caddyfile using caddy_config_generator"""
+        try:
+            from core.utils.caddy_config_generator import generate_caddyfile
+            
+            self.log("INFO", "Generating Caddyfile...")
+            content = generate_caddyfile(self.repo_path)
+            self.log("INFO", f"Caddyfile generated ({len(content)} bytes)")
+            
+        except Exception as e:
+            self.log("ERROR", f"Failed to generate Caddyfile: {e}")
+            self.log("ERROR", traceback.format_exc())
+            raise
+    
+    def _reload_caddy_config(self):
+        """Reload Caddy configuration without downtime"""
+        try:
+            self.log("INFO", "Reloading Caddy configuration...")
+            
+            # Regenerate Caddyfile
+            self._generate_caddyfile()
+            
+            # Send SIGHUP to Caddy process to reload
+            if "caddy" in self.processes and self.processes["caddy"]:
+                proc = self.processes["caddy"]
+                if proc.poll() is None:  # Process still running
+                    import signal
+                    proc.send_signal(signal.SIGHUP)
+                    self.log("INFO", "Caddy configuration reloaded")
+                else:
+                    self.log("WARNING", "Caddy process not running, cannot reload")
+            else:
+                self.log("WARNING", "Caddy process not tracked, cannot reload")
+        
+        except Exception as e:
+            self.log("ERROR", f"Failed to reload Caddy config: {e}")
+            self.log("ERROR", traceback.format_exc())
     
     def _start_agent_api(self):
         """Start Agent API server on port 8080"""
@@ -366,7 +477,7 @@ class Supervisor:
         """Start MCP Server on port 8765"""
         try:
             self.log("INFO", "Starting MCP Server...")
-            mcp_server_script = self.core_path / "utils" / "mcp_server_anthropic.py"
+            mcp_server_script = self.core_path / "utils" / "mcp_server.py"
             
             if not mcp_server_script.exists():
                 self.log("ERROR", f"MCP Server script not found at {mcp_server_script}")
@@ -376,9 +487,9 @@ class Supervisor:
             log_file = self.logs_path / "mcp_server.log"
             log_fp = open(log_file, 'w')
             
-            # Spawn mcp_server_anthropic.py process
+            # Spawn mcp_server.py process with localhost binding
             proc = subprocess.Popen(
-                ["python3", str(mcp_server_script)],
+                ["python3", str(mcp_server_script), "--host", "127.0.0.1"],
                 stdout=log_fp,
                 stderr=subprocess.STDOUT,
                 cwd=str(self.repo_path),
@@ -636,6 +747,9 @@ class Supervisor:
                         service_name = service_dir.name
                         self.log("INFO", f"Found service: {extension_name}.{service_name}")
                         self._start_extension_service(extension_name, service_name, service_dir)
+        
+        # Reload Caddy config now that all extensions are started
+        self._reload_caddy_config()
     
     def run_config_sync(self):
         """Run config sync to discover and sync extensions"""
@@ -688,6 +802,7 @@ class Supervisor:
         
         # Phase 5: Start core services
         self.log("INFO", "Starting core services...")
+        self._start_caddy()
         self._start_hub_ui()
         self._start_agent_api()
         self._start_mcp_server()
@@ -706,10 +821,15 @@ class Supervisor:
         self.log("INFO", "Supervisor startup complete")
         self.log("INFO", f"Master config: {self.master_config_path}")
         self.log("INFO", f"State file: {self.state_path}")
-        self.log("INFO", "Supervisor API available on http://0.0.0.0:9999")
-        self.log("INFO", "Hub UI available on http://0.0.0.0:5173")
-        self.log("INFO", "Agent API available on http://0.0.0.0:8080")
-        self.log("INFO", "MCP Server available on http://0.0.0.0:8765")
+        self.log("INFO", "=" * 60)
+        self.log("INFO", "MAIN ACCESS POINT:")
+        self.log("INFO", "  Caddy Reverse Proxy: http://0.0.0.0:8443")
+        self.log("INFO", "=" * 60)
+        self.log("INFO", "Direct service access (localhost only):")
+        self.log("INFO", "  Hub UI: http://127.0.0.1:5173")
+        self.log("INFO", "  Agent API: http://127.0.0.1:8080")
+        self.log("INFO", "  MCP Server: http://127.0.0.1:8765")
+        self.log("INFO", "  Supervisor API: http://127.0.0.1:9999")
         self.log("INFO", "=" * 60)
     
     def _load_external_services(self):
@@ -821,8 +941,8 @@ class Supervisor:
         api.init_api(self)
         
         # Start API server (blocking)
-        print("Starting API server on 0.0.0.0:9999...")
-        api.run_api(host='0.0.0.0', port=9999)
+        print("Starting API server on 127.0.0.1:9999...")
+        api.run_api(host='127.0.0.1', port=9999)
 
 
 def main():

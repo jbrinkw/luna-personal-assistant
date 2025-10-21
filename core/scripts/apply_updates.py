@@ -61,6 +61,13 @@ def phase_1_check_queue(repo_path):
     if not queue_path.exists():
         log("ERROR: No queue found!")
         log("This script should only be called when update_queue.json exists")
+        
+        # Remove lock file before exiting
+        update_flag = repo_path / ".luna_updating"
+        if update_flag.exists():
+            update_flag.unlink()
+            log("Removed update lock file")
+        
         sys.exit(1)
     
     log(f"Queue found: {queue_path}")

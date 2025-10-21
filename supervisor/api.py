@@ -108,7 +108,7 @@ def get_extensions():
                 'status': service_info.get('status'),
                 'port': service_info.get('port'),
                 'pid': service_info.get('pid'),
-                'url': f"http://{os.getenv('SUPERVISOR_HOST', '127.0.0.1')}:{service_info.get('port')}" if service_info.get('port') else None,
+                'url': f"/ext/{ext_name}",  # Use Caddy proxy path instead of direct port
             }
         elif '__service_' in service_key:
             # This is an extension service
@@ -166,18 +166,8 @@ def get_extensions():
         else:
             extensions_data[ext_name]['version'] = 'unknown'
     
-    # Add synthetic UI status for tool-only extensions (no UI, no services, but have tools)
-    import time
-    for ext_name, ext_data in extensions_data.items():
-        if ext_data.get('ui') is None and not ext_data.get('services') and ext_data.get('tool_count', 0) > 0:
-            # Tool-only extension: show as "running" if enabled
-            is_enabled = ext_data.get('enabled', True)
-            ext_data['ui'] = {
-                'status': 'running' if is_enabled else 'offline',
-                'port': None,
-                'pid': None,
-                'url': None,
-            }
+    # Don't add synthetic UI for tool-only extensions
+    # Only include extensions that actually have a UI or services running
     
     return {"extensions": list(extensions_data.values())}
 
@@ -1071,7 +1061,7 @@ def upload_external_service(request: ServiceUploadRequest):
         raise HTTPException(status_code=500, detail=f"Failed to upload service: {str(e)}")
 
 
-def run_api(host='0.0.0.0', port=9999):
+def run_api(host='127.0.0.1', port=9999):
     """Run the API server"""
     uvicorn.run(app, host=host, port=port, log_level="info")
 

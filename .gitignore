@@ -118,6 +118,7 @@ supervisor/state.json
 # Luna runtime data
 .luna/
 .luna/**
+.luna/Caddyfile
 
 extensions/*
 !extensions/automation_memory/

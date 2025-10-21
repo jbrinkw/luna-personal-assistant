@@ -8,9 +8,9 @@ import StatusIndicator from '../components/common/StatusIndicator';
 import Button from '../components/common/Button';
 import { formatRelativeTime, getActivities } from '../lib/utils';
 
-const API_HOST = typeof window !== 'undefined' ? window.location.hostname : '127.0.0.1';
-const AGENT_API = `http://${API_HOST}:8080`;
-const MCP_API = `http://${API_HOST}:8765`;
+// Use relative paths through Caddy reverse proxy
+const AGENT_API = '/api/agent';
+const MCP_API = '/api/mcp';
 
 export default function Dashboard() {
   const navigate = useNavigate();

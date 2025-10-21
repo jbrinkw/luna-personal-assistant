@@ -7,9 +7,10 @@ export default defineConfig(({ command, mode }) => {
   
   return {
     plugins: [react()],
+    base: '/ext/automation_memory/',
     server: {
       port: port,
-      host: '0.0.0.0',  // Allow network access
+      host: '127.0.0.1',  // Bind to localhost only
       strictPort: true,
     },
   };

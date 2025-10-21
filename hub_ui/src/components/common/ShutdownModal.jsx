@@ -9,8 +9,8 @@ export default function ShutdownModal({ isOpen, onClose }) {
     setShutdownStatus('shutting_down');
     
     try {
-      const apiHost = window.location.hostname;
-      await fetch(`http://${apiHost}:9999/shutdown`, {
+      // Use relative path through Caddy reverse proxy
+      await fetch('/api/supervisor/shutdown', {
         method: 'POST',
       });
       
