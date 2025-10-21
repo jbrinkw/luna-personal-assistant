@@ -423,6 +423,10 @@ def phase_6_install_dependencies(repo_path):
     """
     log("Phase 6: Installing dependencies...")
     
+    # Determine pip path (use venv if available)
+    venv_pip = repo_path / ".venv" / "bin" / "pip3"
+    pip_cmd = str(venv_pip) if venv_pip.exists() else "pip3"
+    
     # Core dependencies
     log("Installing core dependencies...")
     
@@ -430,7 +434,7 @@ def phase_6_install_dependencies(repo_path):
     if core_requirements.exists():
         log("Installing core Python dependencies...")
         result = subprocess.run(
-            ["pip", "install", "-r", str(core_requirements), "--break-system-packages"],
+            [pip_cmd, "install", "-r", str(core_requirements), "--break-system-packages"],
             capture_output=True,
             text=True
         )
@@ -487,7 +491,7 @@ def phase_6_install_dependencies(repo_path):
             if ext_requirements.exists():
                 log(f"Installing {ext_name} Python dependencies...")
                 result = subprocess.run(
-                    ["pip", "install", "-r", str(ext_requirements), "--break-system-packages"],
+                    [pip_cmd, "install", "-r", str(ext_requirements), "--break-system-packages"],
                     capture_output=True,
                     text=True
                 )
@@ -537,7 +541,7 @@ def phase_6_install_dependencies(repo_path):
                         service_name = service_dir.name
                         log(f"Installing {ext_name}.{service_name} dependencies...")
                         result = subprocess.run(
-                            ["pip", "install", "-r", str(service_requirements), "--break-system-packages"],
+                            [pip_cmd, "install", "-r", str(service_requirements), "--break-system-packages"],
                             capture_output=True,
                             text=True
                         )
