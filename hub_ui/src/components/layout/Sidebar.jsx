@@ -42,8 +42,8 @@ export default function Sidebar({ isOpen, onClose }) {
           className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}
           onClick={handleLinkClick}
         >
-          <span className="menu-icon">📋</span>
-          Queue
+          <span className="menu-icon">🔄</span>
+          Updates
         </NavLink>
         
         <NavLink 

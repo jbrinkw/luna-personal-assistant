@@ -5,7 +5,7 @@ import { ConfirmModal } from '../components/common/Modal';
 import RestartModal from '../components/common/RestartModal';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 
-export default function QueueManager() {
+export default function UpdateManager() {
   const { 
     originalState,
     pendingChanges, 
@@ -18,6 +18,7 @@ export default function QueueManager() {
     updateExtension,
     deleteExtension,
     updateTool,
+    addCoreUpdate,
     removeCoreUpdate,
     stageChangeToQueue,
     unstageQueueItem,
@@ -147,6 +148,20 @@ export default function QueueManager() {
     setCoreCheckError(null);
   };
 
+  const handleReinstallCore = () => {
+    if (!coreUpdateInfo || !coreUpdateInfo.current) {
+      alert('Please check for updates first to get current version info');
+      return;
+    }
+    const currentVersion = coreUpdateInfo.current.version || coreUpdateInfo.current.commit;
+    if (!currentVersion) {
+      alert('Unable to determine current version');
+      return;
+    }
+    // Add core update with current version (this will force a git reset --hard to current commit)
+    addCoreUpdate(currentVersion);
+  };
+
   const groupChangesByType = () => {
     const groups = {
       install: [],
@@ -180,8 +195,8 @@ export default function QueueManager() {
     <div className="page-container">
       <div className="page-header">
         <div>
-          <h1>Queue Manager</h1>
-          <p className="page-subtitle">Review and apply configuration changes</p>
+          <h1>Update Manager</h1>
+          <p className="page-subtitle">Manage system updates and configuration changes</p>
         </div>
       </div>
 
@@ -195,6 +210,15 @@ export default function QueueManager() {
             >
               {coreCheckLoading ? 'Checking...' : 'Check for Core Updates'}
             </Button>
+            {hasCoreUpdateData && (
+              <Button
+                variant="secondary"
+                onClick={handleReinstallCore}
+                title="Force reinstall current Luna core version (git reset --hard)"
+              >
+                🔧 Reinstall Core
+              </Button>
+            )}
             {(coreUpdateInfo || coreCheckError) && (
               <Button
                 variant="secondary"
