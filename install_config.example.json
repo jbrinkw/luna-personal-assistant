@@ -1,0 +1,11 @@
+{
+  "ngrok": {
+    "api_key": "your_ngrok_api_key_here",
+    "domain": "your-domain.ngrok-free.app"
+  },
+  "caddy": {
+    "username": "admin",
+    "password": "password"
+  }
+}
+
