@@ -3,7 +3,16 @@
 # Minimal launcher that starts supervisor and monitors its health
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_PATH="${LUNA_VENV:-$SCRIPT_DIR/.venv}"
+PYTHON_BIN="$VENV_PATH/bin/python3"
 SUPERVISOR_PY="$SCRIPT_DIR/supervisor/supervisor.py"
+
+# Check if venv exists
+if [ ! -f "$PYTHON_BIN" ]; then
+    echo "[ERROR] Virtual environment not found at $VENV_PATH"
+    echo "[ERROR] Run install.sh first to create the virtual environment"
+    exit 1
+fi
 SHUTDOWN_FLAG="$SCRIPT_DIR/.luna_shutdown"
 UPDATE_FLAG="$SCRIPT_DIR/.luna_updating"
 RELOAD_CADDY="$SCRIPT_DIR/scripts/reload_caddy.sh"
@@ -67,7 +76,7 @@ start_supervisor() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting supervisor..."
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] [Bootstrap] Starting supervisor process" >> "$BOOTSTRAP_LOG"
     cd "$SCRIPT_DIR"
-    python3 "$SUPERVISOR_PY" "$SCRIPT_DIR" > logs/supervisor.log 2>&1 &
+    "$PYTHON_BIN" "$SUPERVISOR_PY" "$SCRIPT_DIR" > logs/supervisor.log 2>&1 &
     SUPERVISOR_PID=$!
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Supervisor started with PID: $SUPERVISOR_PID"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] [Bootstrap] Supervisor started with PID: $SUPERVISOR_PID" >> "$BOOTSTRAP_LOG"

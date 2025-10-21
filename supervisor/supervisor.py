@@ -26,6 +26,10 @@ class Supervisor:
         self.logs_path = self.repo_path / "logs"
         self.luna_path = self.repo_path / ".luna"
         
+        # Virtual environment python
+        venv_python = self.repo_path / ".venv" / "bin" / "python3"
+        self.python_bin = str(venv_python) if venv_python.exists() else "python3"
+        
         self.master_config_path = self.core_path / "master_config.json"
         self.state_path = self.supervisor_path / "state.json"
         self.update_queue_path = self.core_path / "update_queue.json"
@@ -130,7 +134,7 @@ class Supervisor:
             
             # Spawn detached process with output redirected to log
             process = subprocess.Popen(
-                ["python3", str(apply_updates_temp), str(self.repo_path)],
+                [self.python_bin, str(apply_updates_temp), str(self.repo_path)],
                 stdout=log_fp,
                 stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,
@@ -455,7 +459,7 @@ class Supervisor:
             
             # Spawn agent_api.py process
             proc = subprocess.Popen(
-                ["python3", str(agent_api_script)],
+                [self.python_bin, str(agent_api_script)],
                 stdout=log_fp,
                 stderr=subprocess.STDOUT,
                 cwd=str(self.repo_path),
@@ -497,7 +501,7 @@ class Supervisor:
             
             # Spawn mcp_server.py process with localhost binding
             proc = subprocess.Popen(
-                ["python3", str(mcp_server_script), "--host", "127.0.0.1"],
+                [self.python_bin, str(mcp_server_script), "--host", "127.0.0.1"],
                 stdout=log_fp,
                 stderr=subprocess.STDOUT,
                 cwd=str(self.repo_path),
@@ -611,6 +615,10 @@ class Supervisor:
             # Set environment variables
             env = os.environ.copy()
             env['LUNA_PORTS'] = json.dumps(self.get_port_mappings())
+            env['LUNA_PYTHON'] = self.python_bin
+            # Prepend venv bin to PATH so python3/pip commands use venv
+            venv_bin = str(self.repo_path / ".venv" / "bin")
+            env['PATH'] = f"{venv_bin}:{env.get('PATH', '')}"
             
             # Open log file
             log_file = self.logs_path / f"{extension_name}_ui.log"
@@ -678,6 +686,10 @@ class Supervisor:
             # Set environment variables
             env = os.environ.copy()
             env['LUNA_PORTS'] = json.dumps(self.get_port_mappings())
+            env['LUNA_PYTHON'] = self.python_bin
+            # Prepend venv bin to PATH so python3/pip commands use venv
+            venv_bin = str(self.repo_path / ".venv" / "bin")
+            env['PATH'] = f"{venv_bin}:{env.get('PATH', '')}"
             
             # Open log file
             log_file = self.logs_path / f"{extension_name}__service_{service_name}.log"

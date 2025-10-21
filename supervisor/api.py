@@ -409,7 +409,7 @@ def check_core_updates():
     try:
         # Run the check script
         result = subprocess.run(
-            ["python3", str(check_script), str(supervisor_instance.repo_path)],
+            [supervisor_instance.python_bin, str(check_script), str(supervisor_instance.repo_path)],
             capture_output=True,
             text=True,
             cwd=str(supervisor_instance.repo_path),
@@ -488,7 +488,7 @@ def restart_system():
     
     # Spawn detached process with output redirected to log
     process = subprocess.Popen(
-        ["python3", str(apply_updates_temp), str(supervisor_instance.repo_path)],
+        [supervisor_instance.python_bin, str(apply_updates_temp), str(supervisor_instance.repo_path)],
         stdout=log_fp,
         stderr=subprocess.STDOUT,
         stdin=subprocess.DEVNULL,
