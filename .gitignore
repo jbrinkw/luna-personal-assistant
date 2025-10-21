@@ -24,8 +24,7 @@ share/python-wheels/
 MANIFEST
 
 # Virtual environments
-.env
-.venv
+.venv/
 env/
 venv/
 ENV/
@@ -88,7 +87,7 @@ jspm_packages/
 # Yarn Integrity file
 .yarn-integrity
 
-# dotenv environment variables file
+# dotenv environment variables file (but allow .venv directory for virtualenv)
 .env
 .env.local
 .env.development.local

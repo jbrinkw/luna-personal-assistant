@@ -7,6 +7,9 @@ set -e  # Exit on error
 # Script directory (Luna repository root)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Virtual environment path
+VENV_PATH="$SCRIPT_DIR/.venv"
+
 # Configuration file path
 CONFIG_FILE="$SCRIPT_DIR/install_config.json"
 
@@ -179,6 +182,35 @@ install_python() {
     log_success "Python $PYTHON_VERSION installed"
 }
 
+# Create virtual environment
+create_venv() {
+    log_section "Creating Virtual Environment"
+    
+    if [ -d "$VENV_PATH" ]; then
+        log_info "Virtual environment already exists at $VENV_PATH"
+        return 0
+    fi
+    
+    log_info "Creating virtual environment at $VENV_PATH..."
+    python3 -m venv "$VENV_PATH"
+    
+    if [ -d "$VENV_PATH" ]; then
+        log_success "Virtual environment created"
+    else
+        log_error "Failed to create virtual environment"
+        exit 1
+    fi
+}
+
+# Activate virtual environment
+activate_venv() {
+    log_info "Activating virtual environment..."
+    source "$VENV_PATH/bin/activate"
+    log_success "Virtual environment activated"
+    log_info "Python: $(which python3)"
+    log_info "Pip: $(which pip)"
+}
+
 # Install uv package manager
 install_uv() {
     log_section "Installing uv Package Manager"
@@ -189,9 +221,9 @@ install_uv() {
         return 0
     fi
     
-    log_info "Installing uv via pip..."
-    python3 -m pip install --upgrade pip
-    python3 -m pip install uv
+    log_info "Installing uv via pip (in venv)..."
+    pip install --upgrade pip
+    pip install uv
     
     # Verify installation
     if command -v uv &> /dev/null; then
@@ -485,10 +517,10 @@ start_ngrok() {
 install_luna_dependencies() {
     log_section "Installing Luna Dependencies"
     
-    log_info "Running install_deps.py..."
+    log_info "Running install_deps.py (in venv)..."
     
     cd "$SCRIPT_DIR"
-    python3 core/scripts/install_deps.py
+    "$VENV_PATH/bin/python3" core/scripts/install_deps.py
     
     if [ $? -eq 0 ]; then
         log_success "Luna dependencies installed successfully"
@@ -579,6 +611,9 @@ start_bootstrap() {
     
     cd "$SCRIPT_DIR"
     
+    # Export venv path so luna.sh can use it
+    export LUNA_VENV="$VENV_PATH"
+    
     # Start luna.sh in background
     nohup ./luna.sh > "$SCRIPT_DIR/logs/luna_startup.log" 2>&1 &
     LUNA_PID=$!
@@ -651,6 +686,8 @@ EOF
     check_system_requirements
     install_system_packages
     install_python
+    create_venv
+    activate_venv
     install_uv
     install_nodejs
     install_pnpm
