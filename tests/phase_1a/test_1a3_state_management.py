@@ -3,6 +3,7 @@
 Test Suite 1A.3: State Management Tests
 """
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -15,8 +16,9 @@ from tests.utils.process_utils import kill_process
 from tests.utils.file_utils import file_exists, read_json, has_keys
 
 
-REPO_PATH = "/root/luna/luna-personal-assistant-test"
-STATUS_URL = "http://127.0.0.1:9999/services/status"
+REPO_PATH = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) + "-test"
+SUPERVISOR_HOST = os.getenv('SUPERVISOR_HOST', '127.0.0.1')
+STATUS_URL = f"http://{SUPERVISOR_HOST}:9999/services/status"
 STATE_PATH = f"{REPO_PATH}/supervisor/state.json"
 
 
@@ -78,7 +80,7 @@ def test_1a3_2_state_updates():
     }
     
     # Update service status
-    update_url = "http://127.0.0.1:9999/services/test_service_1a3/update-status"
+    update_url = f"http://{SUPERVISOR_HOST}:9999/services/test_service_1a3/update-status"
     status_code, data = post(update_url, {
         "pid": 88888,
         "port": 5250,

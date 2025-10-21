@@ -4,15 +4,17 @@ Test direct GitHub install using Extension Manager API
 Tests: github:jbrinkw/luna_ext_coachbyte:coachbyte
 """
 import json
+import os
 import sys
 import subprocess
 import time
 import requests
 from pathlib import Path
 
-ACTIVE_DIR = "/root/luna/luna-personal-assistant"
+ACTIVE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEST_DIR = "/root/luna/luna-personal-assistant-test"
-API_BASE = "http://127.0.0.1:9999"
+SUPERVISOR_HOST = os.getenv('SUPERVISOR_HOST', '127.0.0.1')
+API_BASE = f"http://{SUPERVISOR_HOST}:9999"
 
 
 def reset_environment():

@@ -3,6 +3,7 @@
 Test Suite 1C.3: Delete and Update Operations Tests
 """
 import json
+import os
 import sys
 import shutil
 import subprocess
@@ -12,7 +13,7 @@ from zipfile import ZipFile
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-REPO_PATH = "/root/luna/luna-personal-assistant-test"
+REPO_PATH = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) + "-test"
 
 
 def test_1c3_1_delete_extension():
@@ -109,7 +110,7 @@ def test_1c3_3_update_upload():
         print(f"Created old extension at: {notes_path}")
         
         # Create new version as zip
-        test_ext_source = Path("/root/luna/test-extension-zip")
+        test_ext_source = Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) + "/test-extension-zip")
         zip_path = Path("/tmp/notes_v2.zip")
         
         with ZipFile(zip_path, 'w') as zipf:

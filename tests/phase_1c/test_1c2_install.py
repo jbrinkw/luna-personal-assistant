@@ -3,6 +3,7 @@
 Test Suite 1C.2: Install Operations Tests
 """
 import json
+import os
 import sys
 import time
 import shutil
@@ -16,12 +17,13 @@ from tests.utils.http_client import post
 from tests.utils.file_utils import file_exists
 
 REPO_PATH = "/root/luna/luna-personal-assistant-test"
-BASE_URL = "http://127.0.0.1:9999"
+SUPERVISOR_HOST = os.getenv('SUPERVISOR_HOST', '127.0.0.1')
+BASE_URL = f"http://{SUPERVISOR_HOST}:9999"
 
 
 def create_test_zip():
     """Create a test extension zip file"""
-    test_ext_source = Path("/root/luna/test-extension-zip")
+    test_ext_source = Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) + "/test-extension-zip")
     zip_path = Path("/tmp/test_extension_install.zip")
     
     # Create zip file

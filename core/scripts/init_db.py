@@ -29,7 +29,7 @@ from psycopg import sql
 
 def get_db_conninfo():
     """Get database connection string from environment."""
-    host = os.getenv('DB_HOST', os.getenv('PGHOST', '127.0.0.1'))
+    host = os.getenv('DB_HOST', os.getenv('PGHOST', os.getenv('POSTGRES_HOST', '127.0.0.1')))
     port = os.getenv('DB_PORT', os.getenv('PGPORT', '5432'))
     database = os.getenv('DB_NAME', os.getenv('PGDATABASE', 'luna'))
     user = os.getenv('DB_USER', os.getenv('PGUSER', 'postgres'))
@@ -42,7 +42,7 @@ def init_database():
     """Initialize database schema."""
     conninfo = get_db_conninfo()
     db_name = os.getenv('DB_NAME', os.getenv('PGDATABASE', 'luna'))
-    host = os.getenv('DB_HOST', os.getenv('PGHOST', '127.0.0.1'))
+    host = os.getenv('DB_HOST', os.getenv('PGHOST', os.getenv('POSTGRES_HOST', '127.0.0.1')))
     port = os.getenv('DB_PORT', os.getenv('PGPORT', '5432'))
     
     print(f"Connecting to database: {db_name} at {host}:{port}")

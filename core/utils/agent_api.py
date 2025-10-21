@@ -347,7 +347,8 @@ async def list_extensions_status() -> Dict[str, Any]:
         # Query supervisor API for extension status (supervisor manages all services)
         import httpx
         try:
-            response = httpx.get("http://localhost:9999/extensions", timeout=5.0)
+            supervisor_host = os.getenv('SUPERVISOR_HOST', '127.0.0.1')
+            response = httpx.get(f"http://{supervisor_host}:9999/extensions", timeout=5.0)
             if response.status_code == 200:
                 data = response.json()
                 extensions = data.get('extensions', [])

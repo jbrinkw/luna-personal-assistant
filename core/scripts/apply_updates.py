@@ -355,15 +355,58 @@ def phase_4_update_operations(repo_path, operations):
 
 def phase_5_core_update(repo_path, operations):
     """
-    Phase 5: Core Update Operations (stub for now)
+    Phase 5: Core Update Operations
     Update Luna core system
     """
     log("Phase 5: Processing core update operations...")
     
     for op in operations:
         if op.get("type") == "update_core":
-            log("Core update not implemented yet")
-            # Stub for future implementation
+            target_version = op.get("target_version", "latest")
+            
+            log(f"Updating Luna core to {target_version}")
+            log("Running: git fetch origin")
+            
+            # Fetch latest from origin
+            result = subprocess.run(
+                ["git", "fetch", "origin"],
+                cwd=repo_path,
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode != 0:
+                log(f"ERROR: Git fetch failed: {result.stderr}")
+                continue
+            
+            log("Fetch successful")
+            log("Running: git reset --hard origin/main")
+            
+            # Reset to origin/main
+            result = subprocess.run(
+                ["git", "reset", "--hard", "origin/main"],
+                cwd=repo_path,
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode != 0:
+                log(f"ERROR: Git reset failed: {result.stderr}")
+                continue
+            
+            log(f"Core updated successfully to {target_version}")
+            
+            # Get the new commit hash for logging
+            result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repo_path,
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                new_commit = result.stdout.strip()[:7]
+                log(f"Now at commit: {new_commit}")
 
 
 def phase_6_install_dependencies(repo_path):

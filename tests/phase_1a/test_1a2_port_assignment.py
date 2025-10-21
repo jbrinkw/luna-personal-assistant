@@ -3,6 +3,7 @@
 Test Suite 1A.2: Port Assignment Tests
 """
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -15,9 +16,10 @@ from tests.utils.process_utils import kill_process, start_bootstrap
 from tests.utils.file_utils import read_json
 
 
-REPO_PATH = "/root/luna/luna-personal-assistant-test"
-PORTS_URL = "http://127.0.0.1:9999/ports"
-ASSIGN_URL = "http://127.0.0.1:9999/ports/assign"
+REPO_PATH = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) + "-test"
+SUPERVISOR_HOST = os.getenv('SUPERVISOR_HOST', '127.0.0.1')
+PORTS_URL = f"http://{SUPERVISOR_HOST}:9999/ports"
+ASSIGN_URL = f"http://{SUPERVISOR_HOST}:9999/ports/assign"
 MASTER_CONFIG_PATH = f"{REPO_PATH}/core/master_config.json"
 
 

@@ -108,7 +108,7 @@ def get_extensions():
                 'status': service_info.get('status'),
                 'port': service_info.get('port'),
                 'pid': service_info.get('pid'),
-                'url': f"http://127.0.0.1:{service_info.get('port')}" if service_info.get('port') else None,
+                'url': f"http://{os.getenv('SUPERVISOR_HOST', '127.0.0.1')}:{service_info.get('port')}" if service_info.get('port') else None,
             }
         elif '__service_' in service_key:
             # This is an extension service
@@ -388,6 +388,47 @@ def queue_status():
         "operation_count": len(operations),
         "operations": operations
     }
+
+
+@app.post('/core/check-updates')
+def check_core_updates():
+    """Check for Luna core updates from git repository"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    import subprocess
+    import json
+    from pathlib import Path
+    
+    # Path to check_core_updates script
+    check_script = supervisor_instance.repo_path / "core" / "scripts" / "check_core_updates.py"
+    
+    if not check_script.exists():
+        raise HTTPException(status_code=500, detail="Update check script not found")
+    
+    try:
+        # Run the check script
+        result = subprocess.run(
+            ["python3", str(check_script), str(supervisor_instance.repo_path)],
+            capture_output=True,
+            text=True,
+            cwd=str(supervisor_instance.repo_path),
+            timeout=30
+        )
+        
+        if result.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"Update check failed: {result.stderr}")
+        
+        # Parse JSON output
+        update_info = json.loads(result.stdout)
+        
+        return update_info
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=500, detail="Update check timed out")
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse update check result: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Update check failed: {str(e)}")
 
 
 @app.post('/api/extensions/install-dependencies')
@@ -685,6 +726,349 @@ def get_required_keys():
                         print(f"Error reading {config_path}: {e}")
     
     return required
+
+
+# ============================================================================
+# External Services API Endpoints
+# ============================================================================
+
+class ServiceInstallRequest(BaseModel):
+    config: Dict[str, Any]
+
+
+class ServiceUninstallRequest(BaseModel):
+    remove_data: bool = True
+
+
+class ServiceStatusResponse(BaseModel):
+    status: str
+    enabled: bool
+    last_check: Optional[str]
+
+
+class ServiceUploadRequest(BaseModel):
+    service_definition: Dict[str, Any]
+
+
+@app.get('/api/external-services/available')
+def get_available_external_services():
+    """Get list of all available service definitions from external_services/"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    try:
+        services = supervisor_instance.external_services_manager.discover_available_services()
+        return {"services": services}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to discover services: {str(e)}")
+
+
+@app.get('/api/external-services/installed')
+def get_installed_external_services():
+    """Get registry contents with current statuses"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    try:
+        registry = supervisor_instance.external_services_manager.get_registry()
+        return registry
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get installed services: {str(e)}")
+
+
+@app.get('/api/external-services/{name}')
+def get_external_service_details(name: str):
+    """Get service definition + config form + installation status + saved config"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    try:
+        # Get service definition
+        service_def = supervisor_instance.external_services_manager.get_service_definition(name)
+        if not service_def:
+            raise HTTPException(status_code=404, detail=f"Service {name} not found")
+        
+        # Get config form
+        config_form = supervisor_instance.external_services_manager.get_config_form(name)
+        
+        # Check if installed
+        registry = supervisor_instance.external_services_manager.get_registry()
+        is_installed = name in registry
+        
+        # Get saved config if installed
+        saved_config = None
+        if is_installed:
+            saved_config = supervisor_instance.external_services_manager.get_service_config(name)
+        
+        return {
+            "definition": service_def.dict(),
+            "form": config_form.dict() if config_form else {"fields": []},
+            "installed": is_installed,
+            "config": saved_config,
+            "registry_entry": registry.get(name) if is_installed else None
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get service details: {str(e)}")
+
+
+@app.post('/api/external-services/{name}/install')
+def install_external_service(name: str, request: ServiceInstallRequest):
+    """Install a service with given configuration"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    try:
+        # Validate service exists
+        service_def = supervisor_instance.external_services_manager.get_service_definition(name)
+        if not service_def:
+            raise HTTPException(status_code=404, detail=f"Service {name} not found")
+        
+        # Install service
+        success, message = supervisor_instance.external_services_manager.install_service(
+            name,
+            request.config
+        )
+        
+        if not success:
+            raise HTTPException(status_code=500, detail=message)
+        
+        # Get saved config to return
+        saved_config = supervisor_instance.external_services_manager.get_service_config(name)
+        
+        # Update supervisor state
+        supervisor_instance._load_external_services()
+        
+        return {
+            "success": True,
+            "message": message,
+            "config": saved_config
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Installation failed: {str(e)}")
+
+
+@app.post('/api/external-services/{name}/uninstall')
+def uninstall_external_service(name: str, request: ServiceUninstallRequest):
+    """Uninstall a service"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    try:
+        success, message = supervisor_instance.external_services_manager.uninstall_service(
+            name,
+            request.remove_data
+        )
+        
+        if not success:
+            raise HTTPException(status_code=500, detail=message)
+        
+        # Update supervisor state
+        supervisor_instance._load_external_services()
+        
+        return {
+            "success": True,
+            "message": message
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Uninstallation failed: {str(e)}")
+
+
+@app.post('/api/external-services/{name}/start')
+def start_external_service(name: str):
+    """Start a service"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    try:
+        success, message = supervisor_instance.external_services_manager.start_service(name)
+        
+        if not success:
+            raise HTTPException(status_code=500, detail=message)
+        
+        # Get updated status
+        registry = supervisor_instance.external_services_manager.get_registry()
+        service_data = registry.get(name, {})
+        
+        return {
+            "success": True,
+            "message": message,
+            "status": service_data.get("status", "unknown")
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Start failed: {str(e)}")
+
+
+@app.post('/api/external-services/{name}/stop')
+def stop_external_service(name: str):
+    """Stop a service"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    try:
+        success, message = supervisor_instance.external_services_manager.stop_service(name)
+        
+        if not success:
+            raise HTTPException(status_code=500, detail=message)
+        
+        return {
+            "success": True,
+            "message": message,
+            "status": "stopped"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Stop failed: {str(e)}")
+
+
+@app.post('/api/external-services/{name}/restart')
+def restart_external_service(name: str):
+    """Restart a service"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    try:
+        success, message = supervisor_instance.external_services_manager.restart_service(name)
+        
+        if not success:
+            raise HTTPException(status_code=500, detail=message)
+        
+        # Get updated status
+        registry = supervisor_instance.external_services_manager.get_registry()
+        service_data = registry.get(name, {})
+        
+        return {
+            "success": True,
+            "message": message,
+            "status": service_data.get("status", "unknown")
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Restart failed: {str(e)}")
+
+
+@app.post('/api/external-services/{name}/enable')
+def enable_external_service_startup(name: str):
+    """Enable auto-start on boot"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    try:
+        success, message = supervisor_instance.external_services_manager.enable_startup(name)
+        
+        if not success:
+            raise HTTPException(status_code=500, detail=message)
+        
+        return {
+            "success": True,
+            "message": message,
+            "enabled": True
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Enable failed: {str(e)}")
+
+
+@app.post('/api/external-services/{name}/disable')
+def disable_external_service_startup(name: str):
+    """Disable auto-start on boot"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    try:
+        success, message = supervisor_instance.external_services_manager.disable_startup(name)
+        
+        if not success:
+            raise HTTPException(status_code=500, detail=message)
+        
+        return {
+            "success": True,
+            "message": message,
+            "enabled": False
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Disable failed: {str(e)}")
+
+
+@app.get('/api/external-services/{name}/status')
+def get_external_service_status(name: str):
+    """Get current status from state.json and registry"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    try:
+        registry = supervisor_instance.external_services_manager.get_registry()
+        
+        if name not in registry:
+            raise HTTPException(status_code=404, detail=f"Service {name} not installed")
+        
+        service_data = registry[name]
+        
+        return {
+            "status": service_data.get("status", "unknown"),
+            "enabled": service_data.get("enabled", False),
+            "last_check": service_data.get("last_health_check")
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get status: {str(e)}")
+
+
+@app.get('/api/external-services/{name}/logs')
+def get_external_service_logs(name: str, lines: int = 100):
+    """Get last N lines from service log file"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    try:
+        log_content = supervisor_instance.external_services_manager.tail_log(name, lines)
+        log_path = supervisor_instance.external_services_manager.get_log_path(name)
+        
+        return {
+            "logs": log_content,
+            "path": str(log_path)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get logs: {str(e)}")
+
+
+@app.post('/api/external-services/upload')
+def upload_external_service(request: ServiceUploadRequest):
+    """Upload a new external service definition"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    try:
+        # Upload service
+        success, message = supervisor_instance.external_services_manager.upload_service(
+            request.service_definition
+        )
+        
+        if not success:
+            raise HTTPException(status_code=400, detail=message)
+        
+        return {
+            "success": True,
+            "message": message,
+            "name": request.service_definition.get("name")
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload service: {str(e)}")
 
 
 def run_api(host='0.0.0.0', port=9999):

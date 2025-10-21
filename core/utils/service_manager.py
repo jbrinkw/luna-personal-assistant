@@ -563,7 +563,7 @@ class ServiceManager:
             'status': ui.get('status'),
             'port': ui.get('port'),
             'pid': ui.get('pid'),
-            'url': f"http://127.0.0.1:{ui.get('port')}" if ui.get('port') else None,
+            'url': f"http://{os.getenv('SUPERVISOR_HOST', '127.0.0.1')}:{ui.get('port')}" if ui.get('port') else None,
             'last_check': ui.get('last_check'),
         }
 

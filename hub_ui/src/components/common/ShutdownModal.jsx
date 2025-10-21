@@ -9,7 +9,8 @@ export default function ShutdownModal({ isOpen, onClose }) {
     setShutdownStatus('shutting_down');
     
     try {
-      await fetch('http://127.0.0.1:9999/shutdown', {
+      const apiHost = window.location.hostname;
+      await fetch(`http://${apiHost}:9999/shutdown`, {
         method: 'POST',
       });
       
