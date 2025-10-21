@@ -195,7 +195,11 @@ app.delete('/api/memories/:id', async (req, res) => {
 // Get available agents from Agent API
 app.get('/api/agents', async (req, res) => {
   try {
-    const agentApiUrl = `http://127.0.0.1:${process.env.AGENT_API_PORT || 8080}/v1/models`;
+    const getApiHost = () => {
+      // Try environment variable first, fallback to detecting host
+      return process.env.AGENT_API_HOST || (typeof window !== 'undefined' ? window.location.hostname : '127.0.0.1');
+    };
+    const agentApiUrl = `http://${getApiHost()}:${process.env.AGENT_API_PORT || 8080}/v1/models`;
     const response = await fetch(agentApiUrl);
     const data = await response.json();
     const agents = (data.data || []).map(m => m.id);

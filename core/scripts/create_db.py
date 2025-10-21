@@ -25,7 +25,7 @@ from psycopg import sql
 
 def get_admin_conninfo():
     """Get database connection string for connecting to postgres database."""
-    host = os.getenv('DB_HOST', os.getenv('PGHOST', '127.0.0.1'))
+    host = os.getenv('DB_HOST', os.getenv('PGHOST', os.getenv('POSTGRES_HOST', '127.0.0.1')))
     port = os.getenv('DB_PORT', os.getenv('PGPORT', '5432'))
     user = os.getenv('DB_USER', os.getenv('PGUSER', 'postgres'))
     password = os.getenv('DB_PASSWORD', os.getenv('PGPASSWORD', ''))
@@ -37,7 +37,7 @@ def create_database():
     """Create luna database if it doesn't exist."""
     conninfo = get_admin_conninfo()
     db_name = os.getenv('DB_NAME', os.getenv('PGDATABASE', 'luna'))
-    host = os.getenv('DB_HOST', os.getenv('PGHOST', '127.0.0.1'))
+    host = os.getenv('DB_HOST', os.getenv('PGHOST', os.getenv('POSTGRES_HOST', '127.0.0.1')))
     port = os.getenv('DB_PORT', os.getenv('PGPORT', '5432'))
     
     print(f"Connecting to postgres database at {host}:{port}")

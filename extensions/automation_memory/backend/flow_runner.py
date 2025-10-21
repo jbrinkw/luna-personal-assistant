@@ -27,7 +27,7 @@ from psycopg.rows import dict_row
 
 def get_db_conninfo():
     """Get database connection string from environment."""
-    host = os.getenv('DB_HOST', os.getenv('PGHOST', '127.0.0.1'))
+    host = os.getenv('DB_HOST', os.getenv('PGHOST', os.getenv('POSTGRES_HOST', '127.0.0.1')))
     port = os.getenv('DB_PORT', os.getenv('PGPORT', '5432'))
     database = os.getenv('DB_NAME', os.getenv('PGDATABASE', 'luna'))
     user = os.getenv('DB_USER', os.getenv('PGUSER', 'postgres'))
@@ -40,7 +40,8 @@ async def execute_prompt_with_agent(prompt: str, agent: str, memories: list) -> 
     """Execute a single prompt using the specified agent."""
     import aiohttp
     
-    agent_api_url = f"http://127.0.0.1:{os.getenv('AGENT_API_PORT', '8080')}/v1/chat/completions"
+    agent_api_host = os.getenv('AGENT_API_HOST', os.getenv('SUPERVISOR_HOST', '127.0.0.1'))
+    agent_api_url = f"http://{agent_api_host}:{os.getenv('AGENT_API_PORT', '8080')}/v1/chat/completions"
     
     payload = {
         "model": agent,

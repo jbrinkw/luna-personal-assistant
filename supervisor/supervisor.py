@@ -24,20 +24,31 @@ class Supervisor:
         self.core_path = self.repo_path / "core"
         self.supervisor_path = self.repo_path / "supervisor"
         self.logs_path = self.repo_path / "logs"
+        self.luna_path = self.repo_path / ".luna"
         
         self.master_config_path = self.core_path / "master_config.json"
         self.state_path = self.supervisor_path / "state.json"
         self.update_queue_path = self.core_path / "update_queue.json"
         self.log_file = self.logs_path / "supervisor.log"
+        self.external_services_registry_path = self.luna_path / "external_services.json"
         
         self.master_config = {}
-        self.state = {"services": {}}
+        self.state = {"services": {}, "external_services": {}}
         self.processes = {}  # Track spawned processes
         
         # Ensure directories exist
         self.core_path.mkdir(parents=True, exist_ok=True)
         self.supervisor_path.mkdir(parents=True, exist_ok=True)
         self.logs_path.mkdir(parents=True, exist_ok=True)
+        self.luna_path.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize external services manager (import after path setup)
+        # Add repo path to sys.path to enable imports
+        if str(self.repo_path) not in sys.path:
+            sys.path.insert(0, str(self.repo_path))
+        
+        from core.utils.external_services_manager import ExternalServicesManager
+        self.external_services_manager = ExternalServicesManager(self.repo_path)
     
     def log(self, level, message):
         """Write structured log message"""
@@ -684,7 +695,13 @@ class Supervisor:
         # Phase 6: Discover and start extensions
         self._discover_and_start_extensions()
         
-        # Phase 7: Startup complete, ready for API
+        # Phase 7: Load external services into monitoring
+        self._load_external_services()
+        
+        # Phase 8: Start health monitoring thread
+        self._start_health_monitoring()
+        
+        # Phase 9: Startup complete, ready for API
         self.log("INFO", "=" * 60)
         self.log("INFO", "Supervisor startup complete")
         self.log("INFO", f"Master config: {self.master_config_path}")
@@ -694,6 +711,98 @@ class Supervisor:
         self.log("INFO", "Agent API available on http://0.0.0.0:8080")
         self.log("INFO", "MCP Server available on http://0.0.0.0:8765")
         self.log("INFO", "=" * 60)
+    
+    def _load_external_services(self):
+        """Load external services registry into state for monitoring"""
+        try:
+            self.log("INFO", "Loading external services for monitoring...")
+            registry = self.external_services_manager.get_registry()
+            
+            # Initialize external_services in state if not present
+            if "external_services" not in self.state:
+                self.state["external_services"] = {}
+            
+            # Add each installed service to state
+            for service_name, service_data in registry.items():
+                self.state["external_services"][service_name] = {
+                    "status": service_data.get("status", "unknown"),
+                    "last_check": service_data.get("last_health_check")
+                }
+            
+            self.save_state()
+            
+            installed_count = len(registry)
+            self.log("INFO", f"Loaded {installed_count} external services for monitoring")
+            
+        except Exception as e:
+            self.log("ERROR", f"Failed to load external services: {e}")
+            self.log("ERROR", traceback.format_exc())
+    
+    def _start_health_monitoring(self):
+        """Start health monitoring thread for external services"""
+        try:
+            self.log("INFO", "Starting health monitoring thread...")
+            
+            def health_monitor_loop():
+                import time
+                while True:
+                    try:
+                        time.sleep(30)  # Check every 30 seconds
+                        self._health_check_external_services()
+                    except Exception as e:
+                        self.log("ERROR", f"Health monitoring error: {e}")
+            
+            health_thread = threading.Thread(target=health_monitor_loop, daemon=True)
+            health_thread.start()
+            
+            self.log("INFO", "Health monitoring thread started")
+            
+        except Exception as e:
+            self.log("ERROR", f"Failed to start health monitoring: {e}")
+            self.log("ERROR", traceback.format_exc())
+    
+    def _health_check_external_services(self):
+        """Run health checks for all installed external services"""
+        try:
+            registry = self.external_services_manager.get_registry()
+            
+            for service_name in registry.keys():
+                try:
+                    # Run health check
+                    status, error = self.external_services_manager.check_health(service_name)
+                    
+                    # Update registry
+                    self.external_services_manager.update_registry(service_name, {
+                        "status": status,
+                        "last_health_check": datetime.now().isoformat()
+                    })
+                    
+                    # Update state
+                    if "external_services" not in self.state:
+                        self.state["external_services"] = {}
+                    
+                    self.state["external_services"][service_name] = {
+                        "status": status,
+                        "last_check": datetime.now().isoformat()
+                    }
+                    
+                except Exception as e:
+                    self.log("ERROR", f"Health check failed for {service_name}: {e}")
+                    
+                    # Mark as unknown on error
+                    if "external_services" not in self.state:
+                        self.state["external_services"] = {}
+                    
+                    self.state["external_services"][service_name] = {
+                        "status": "unknown",
+                        "last_check": datetime.now().isoformat()
+                    }
+            
+            # Save state after all checks
+            self.save_state()
+            
+        except Exception as e:
+            self.log("ERROR", f"External services health check loop error: {e}")
     
     def run(self):
         """Run supervisor with API server"""

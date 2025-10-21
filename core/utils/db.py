@@ -30,7 +30,7 @@ class Database:
             return
         
         # Build connection string for psycopg3
-        host = os.getenv('DB_HOST', os.getenv('PGHOST', '127.0.0.1'))
+        host = os.getenv('DB_HOST', os.getenv('PGHOST', os.getenv('POSTGRES_HOST', '127.0.0.1')))
         port = os.getenv('DB_PORT', os.getenv('PGPORT', '5432'))
         database = os.getenv('DB_NAME', os.getenv('PGDATABASE', 'luna'))
         user = os.getenv('DB_USER', os.getenv('PGUSER', 'postgres'))

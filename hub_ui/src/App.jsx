@@ -13,6 +13,7 @@ import QueueManager from './pages/QueueManager';
 import ExtensionStore from './pages/ExtensionStore';
 import KeyManager from './pages/KeyManager';
 import ExtensionFrame from './pages/ExtensionFrame';
+import Infrastructure from './pages/Infrastructure';
 
 export default function App() {
   const [toasts, setToasts] = useState([]);
@@ -46,6 +47,7 @@ export default function App() {
                       <Route path="/queue" element={<QueueManager />} />
                       <Route path="/store" element={<ExtensionStore />} />
                       <Route path="/secrets" element={<KeyManager />} />
+                      <Route path="/infrastructure" element={<Infrastructure />} />
                     </Routes>
                   </Layout>
                 } />

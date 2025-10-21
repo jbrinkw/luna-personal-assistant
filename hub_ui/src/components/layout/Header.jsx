@@ -3,13 +3,13 @@ import { Link } from 'react-router-dom';
 import { useSystem } from '../../context/SystemContext';
 import { useConfig } from '../../context/ConfigContext';
 import StatusIndicator from '../common/StatusIndicator';
-import ShutdownModal from '../common/ShutdownModal';
+import RestartModal from '../common/RestartModal';
 import Button from '../common/Button';
 
 export default function Header() {
   const { health, version } = useSystem();
   const { hasChanges, pendingChanges } = useConfig();
-  const [showShutdownModal, setShowShutdownModal] = useState(false);
+  const [showRestartModal, setShowRestartModal] = useState(false);
 
   return (
     <div className="header">
@@ -40,17 +40,18 @@ export default function Header() {
 
         <Button 
           size="sm" 
-          variant="danger"
-          onClick={() => setShowShutdownModal(true)}
-          title="Shutdown Luna system"
+          variant="primary"
+          onClick={() => setShowRestartModal(true)}
+          title="Restart Luna system"
         >
-          ⚡ Shutdown
+          🔄 Restart
         </Button>
       </div>
 
-      <ShutdownModal 
-        isOpen={showShutdownModal} 
-        onClose={() => setShowShutdownModal(false)} 
+      <RestartModal 
+        isOpen={showRestartModal} 
+        onClose={() => setShowRestartModal(false)} 
+        onSuccess={() => window.location.reload()}
       />
     </div>
   );

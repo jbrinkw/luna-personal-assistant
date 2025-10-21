@@ -3,6 +3,7 @@
 Test Suite 1A.1: Supervisor Startup Tests
 """
 import json
+import os
 import sys
 import time
 import re
@@ -16,8 +17,9 @@ from tests.utils.process_utils import get_pid, is_process_running, kill_process,
 from tests.utils.file_utils import file_exists, read_json, is_valid_json, has_keys
 
 
-REPO_PATH = "/root/luna/luna-personal-assistant-test"
-HEALTH_URL = "http://127.0.0.1:9999/health"
+REPO_PATH = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) + "-test"
+SUPERVISOR_HOST = os.getenv('SUPERVISOR_HOST', '127.0.0.1')
+HEALTH_URL = f"http://{SUPERVISOR_HOST}:9999/health"
 MASTER_CONFIG_PATH = f"{REPO_PATH}/core/master_config.json"
 STATE_PATH = f"{REPO_PATH}/supervisor/state.json"
 

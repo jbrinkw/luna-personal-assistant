@@ -1,0 +1,71 @@
+{
+  "name": "postgres",
+  "display_name": "PostgreSQL (Docker)",
+  "description": "PostgreSQL database running in Docker with persistent data storage",
+  "category": "database",
+  "author": "Luna Team",
+  "version": "1.0.0",
+  "config_form": {
+    "fields": [
+      {
+        "name": "port",
+        "label": "Port",
+        "type": "number",
+        "default": 5432,
+        "required": true,
+        "help": "Port to expose PostgreSQL on"
+      },
+      {
+        "name": "database",
+        "label": "Database Name",
+        "type": "text",
+        "default": "luna_db",
+        "required": true,
+        "help": "Name of the default database to create"
+      },
+      {
+        "name": "user",
+        "label": "Username",
+        "type": "text",
+        "default": "luna_user",
+        "required": true,
+        "help": "PostgreSQL username"
+      },
+      {
+        "name": "password",
+        "label": "Password",
+        "type": "password",
+        "default": "",
+        "required": true,
+        "help": "PostgreSQL password (will be stored in .luna/external_services/postgres/config.json)"
+      }
+    ]
+  },
+  "commands": {
+    "install": "docker pull postgres:16-alpine && echo 'PostgreSQL Docker image pulled successfully'",
+    "uninstall": "docker rm -f luna_postgres 2>/dev/null || true && docker volume rm luna_postgres_data 2>/dev/null || true",
+    "start": "docker container inspect luna_postgres >/dev/null 2>&1 && docker start luna_postgres || docker run -d --name luna_postgres --restart unless-stopped -p {{port}}:5432 -e POSTGRES_DB={{database}} -e POSTGRES_USER={{user}} -e POSTGRES_PASSWORD={{password}} -v luna_postgres_data:/var/lib/postgresql/data postgres:16-alpine",
+    "stop": "docker stop luna_postgres 2>/dev/null || true",
+    "restart": "docker restart luna_postgres",
+    "health_check": "docker exec luna_postgres pg_isready -U {{user}} -d {{database}}",
+    "enable_startup": "docker update --restart=always luna_postgres",
+    "disable_startup": "docker update --restart=unless-stopped luna_postgres"
+  },
+  "health_check_expected": "accepting connections",
+  "install_timeout": 120,
+  "required_vars": [
+    "POSTGRES_HOST",
+    "POSTGRES_PORT",
+    "POSTGRES_DB",
+    "POSTGRES_USER",
+    "POSTGRES_PASSWORD"
+  ],
+  "provides_vars": [
+    "POSTGRES_HOST",
+    "POSTGRES_PORT",
+    "POSTGRES_DB",
+    "POSTGRES_USER",
+    "POSTGRES_PASSWORD",
+    "POSTGRES_URL"
+  ]
+}

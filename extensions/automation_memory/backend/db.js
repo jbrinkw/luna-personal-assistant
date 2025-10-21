@@ -8,7 +8,7 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
 
 const pool = new Pool({
-  host: process.env.DB_HOST || process.env.PGHOST || '127.0.0.1',
+  host: process.env.DB_HOST || process.env.PGHOST || process.env.POSTGRES_HOST || '127.0.0.1',
   port: Number(process.env.DB_PORT || process.env.PGPORT || 5432),
   database: process.env.DB_NAME || process.env.PGDATABASE || 'luna',
   user: process.env.DB_USER || process.env.PGUSER || 'postgres',

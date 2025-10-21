@@ -3,12 +3,13 @@
 Simple test to reset environment and download generalbyte extension from store
 """
 import json
+import os
 import sys
 import subprocess
 import shutil
 from pathlib import Path
 
-ACTIVE_DIR = "/root/luna/luna-personal-assistant"
+ACTIVE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEST_DIR = "/root/luna/luna-personal-assistant-test"
 
 def reset_environment():

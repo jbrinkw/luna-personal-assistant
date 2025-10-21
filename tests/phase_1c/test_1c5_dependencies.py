@@ -3,6 +3,7 @@
 Test Suite 1C.5: Dependency Installation Tests
 """
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -13,8 +14,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from tests.utils.http_client import get, post
 from tests.utils.process_utils import start_bootstrap
 
-REPO_PATH = "/root/luna/luna-personal-assistant-test"
-BASE_URL = "http://127.0.0.1:9999"
+REPO_PATH = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) + "-test"
+SUPERVISOR_HOST = os.getenv('SUPERVISOR_HOST', '127.0.0.1')
+BASE_URL = f"http://{SUPERVISOR_HOST}:9999"
 
 
 def setup_test_environment():

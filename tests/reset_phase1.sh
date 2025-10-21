@@ -2,7 +2,8 @@
 # Reset script for Phase 1 tests
 # Copies active dev directory to test directory
 
-ACTIVE_DIR="/root/luna/luna-personal-assistant"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ACTIVE_DIR="$(dirname "$SCRIPT_DIR")"
 TEST_DIR="/root/luna/luna-personal-assistant-test"
 
 echo "=========================================="
