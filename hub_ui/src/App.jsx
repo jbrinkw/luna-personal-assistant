@@ -9,7 +9,7 @@ import ErrorBoundary from './components/common/ErrorBoundary';
 import Dashboard from './pages/Dashboard';
 import ExtensionManager from './pages/ExtensionManager';
 import ExtensionDetail from './pages/ExtensionDetail';
-import QueueManager from './pages/QueueManager';
+import UpdateManager from './pages/QueueManager';
 import ExtensionStore from './pages/ExtensionStore';
 import KeyManager from './pages/KeyManager';
 import ExtensionFrame from './pages/ExtensionFrame';
@@ -44,7 +44,7 @@ export default function App() {
                       <Route path="/" element={<Dashboard />} />
                       <Route path="/extensions" element={<ExtensionManager />} />
                       <Route path="/extensions/:name" element={<ExtensionDetail />} />
-                      <Route path="/queue" element={<QueueManager />} />
+                      <Route path="/queue" element={<UpdateManager />} />
                       <Route path="/store" element={<ExtensionStore />} />
                       <Route path="/secrets" element={<KeyManager />} />
                       <Route path="/infrastructure" element={<Infrastructure />} />
