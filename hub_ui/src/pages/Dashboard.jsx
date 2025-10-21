@@ -142,7 +142,7 @@ export default function Dashboard() {
           </Card>
           <Card className="action-card" onClick={() => navigate('/queue')}>
             <div className="action-icon">📋</div>
-            <div className="action-label">Manage Queue</div>
+            <div className="action-label">Update Manager</div>
           </Card>
           <Card className="action-card" onClick={() => navigate('/secrets')}>
             <div className="action-icon">🔑</div>
@@ -258,7 +258,6 @@ export default function Dashboard() {
     </div>
   );
 }
-
 
 
 

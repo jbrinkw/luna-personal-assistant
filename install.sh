@@ -495,33 +495,40 @@ EOF
     log_success ".env file created at $ENV_FILE"
 }
 
-# Start ngrok tunnel
-start_ngrok() {
-    log_section "Starting ngrok Tunnel"
+# Setup ngrok systemd service
+setup_ngrok_service() {
+    log_section "Setting up ngrok Auto-Start Service"
     
     if [ -z "$NGROK_DOMAIN" ] || [ "$NGROK_DOMAIN" = "null" ]; then
-        log_warn "No ngrok domain configured, skipping ngrok startup"
+        log_warn "No ngrok domain configured, skipping ngrok service setup"
         return 0
     fi
     
-    # Check if ngrok is already running
-    if pgrep -f "ngrok http" > /dev/null 2>&1; then
-        log_info "ngrok is already running"
-        return 0
-    fi
+    log_info "Creating ngrok systemd service..."
     
-    log_info "Starting ngrok tunnel on domain: $NGROK_DOMAIN"
+    cat > /etc/systemd/system/luna-ngrok.service <<EOF
+[Unit]
+Description=Luna ngrok Tunnel
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/ngrok http --domain=$NGROK_DOMAIN 8443
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
     
-    # Start ngrok in background
-    nohup ngrok http --domain="$NGROK_DOMAIN" 8443 > "$SCRIPT_DIR/logs/ngrok.log" 2>&1 &
-    NGROK_PID=$!
+    systemctl daemon-reload
+    systemctl enable luna-ngrok
+    systemctl start luna-ngrok
     
-    log_success "ngrok started with PID: $NGROK_PID"
-    log_info "Tunnel URL: https://$NGROK_DOMAIN"
-    log_info "ngrok logs: $SCRIPT_DIR/logs/ngrok.log"
-    
-    # Wait a moment for ngrok to establish connection
-    sleep 3
+    log_success "ngrok service created and started"
+    log_info "Service: luna-ngrok.service"
+    log_info "Check status: systemctl status luna-ngrok"
 }
 
 # Install Luna dependencies
@@ -608,29 +615,40 @@ set_permissions() {
     log_success "Permissions set"
 }
 
-# Start bootstrap
-start_bootstrap() {
-    log_section "Starting Luna Bootstrap"
+# Setup Luna bootstrap systemd service
+setup_bootstrap_service() {
+    log_section "Setting up Luna Auto-Start Service"
     
-    # Check if bootstrap is already running
-    if pgrep -f "supervisor/supervisor.py" > /dev/null 2>&1; then
-        log_info "Luna is already running"
-        return 0
-    fi
+    log_info "Creating Luna bootstrap systemd service..."
     
-    log_info "Starting Luna bootstrap..."
+    cat > /etc/systemd/system/luna.service <<EOF
+[Unit]
+Description=Luna Personal Assistant
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=$SCRIPT_DIR
+Environment="LUNA_VENV=$VENV_PATH"
+ExecStart=$SCRIPT_DIR/luna.sh
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
     
-    cd "$SCRIPT_DIR"
+    systemctl daemon-reload
+    systemctl enable luna
+    systemctl start luna
     
-    # Export venv path so luna.sh can use it
-    export LUNA_VENV="$VENV_PATH"
-    
-    # Start luna.sh in background
-    nohup ./luna.sh > "$SCRIPT_DIR/logs/luna_startup.log" 2>&1 &
-    LUNA_PID=$!
-    
-    log_success "Luna bootstrap started with PID: $LUNA_PID"
-    log_info "Startup logs: $SCRIPT_DIR/logs/luna_startup.log"
+    log_success "Luna bootstrap service created and started"
+    log_info "Service: luna.service"
+    log_info "Check status: systemctl status luna"
     
     # Wait for services to start
     log_info "Waiting for services to start..."
@@ -640,7 +658,7 @@ start_bootstrap() {
     if pgrep -f "supervisor/supervisor.py" > /dev/null 2>&1; then
         log_success "Supervisor is running"
     else
-        log_warn "Supervisor may not have started. Check logs: tail -f $SCRIPT_DIR/logs/bootstrap.log"
+        log_warn "Supervisor may not have started. Check logs: journalctl -u luna -f"
     fi
 }
 
@@ -650,14 +668,53 @@ print_summary() {
     
     echo "Luna has been installed and started successfully!"
     echo ""
-    echo "Luna is now running in the background."
+    echo "Luna is now running as a systemd service and will auto-start on reboot."
     echo ""
-    echo "To stop Luna:"
-    echo "  ./scripts/kill_luna.sh"
+    echo "Service management:"
+    echo "  Start:   systemctl start luna"
+    echo "  Stop:    systemctl stop luna"
+    echo "  Restart: systemctl restart luna"
+    echo "  Status:  systemctl status luna"
+    echo "  Logs:    journalctl -u luna -f"
     echo ""
-    echo "To view logs:"
-    echo "  tail -f logs/bootstrap.log"
-    echo "  tail -f logs/supervisor.log"
+    echo "Ngrok tunnel:"
+    echo "  Status:  systemctl status luna-ngrok"
+    echo "  Logs:    journalctl -u luna-ngrok -f"
+    echo ""
+    echo "Manual commands for existing VMs:"
+    echo "----------------------------------------"
+    echo "Create ngrok service:"
+    echo "sudo bash -c 'cat > /etc/systemd/system/luna-ngrok.service <<EOF
+[Unit]
+Description=Luna ngrok Tunnel
+After=network.target
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/ngrok http --domain=$NGROK_DOMAIN 8443
+Restart=always
+RestartSec=10
+[Install]
+WantedBy=multi-user.target
+EOF' && sudo systemctl daemon-reload && sudo systemctl enable luna-ngrok && sudo systemctl start luna-ngrok"
+    echo ""
+    echo "Create Luna service:"
+    echo "sudo bash -c 'cat > /etc/systemd/system/luna.service <<EOF
+[Unit]
+Description=Luna Personal Assistant
+After=network.target
+[Service]
+Type=simple
+User=root
+WorkingDirectory=$SCRIPT_DIR
+Environment=\"LUNA_VENV=$VENV_PATH\"
+ExecStart=$SCRIPT_DIR/luna.sh
+Restart=always
+RestartSec=10
+[Install]
+WantedBy=multi-user.target
+EOF' && sudo systemctl daemon-reload && sudo systemctl enable luna && sudo systemctl start luna"
+    echo "----------------------------------------"
     echo ""
     echo "Installed components:"
     echo "  - Python $(python3 --version | awk '{print $2}')"
@@ -677,8 +734,7 @@ print_summary() {
         echo "  - Public URL: https://$NGROK_DOMAIN"
     fi
     echo ""
-    echo "Note: Luna and ngrok are running but will NOT auto-restart on reboot."
-    echo "To manually restart: cd $SCRIPT_DIR && ./luna.sh"
+    echo "Note: Luna and ngrok will auto-start on system reboot."
     echo ""
 }
 
@@ -712,9 +768,9 @@ EOF
     install_hub_ui_dependencies
     set_permissions
     
-    # Start services
-    start_ngrok
-    start_bootstrap
+    # Setup auto-start services
+    setup_ngrok_service
+    setup_bootstrap_service
     
     # Print summary
     print_summary
