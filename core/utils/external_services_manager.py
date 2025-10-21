@@ -15,6 +15,7 @@ from .external_service_schemas import (
     ConfigForm,
     RegistryEntry,
 )
+from .caddy_control import reload_caddy
 
 
 class ExternalServicesManager:
@@ -36,6 +37,13 @@ class ExternalServicesManager:
         # Ensure directories exist
         self.services_dir.mkdir(parents=True, exist_ok=True)
         self.logs_dir.mkdir(parents=True, exist_ok=True)
+    
+    def _reload_caddy(self, reason: str) -> None:
+        """Best-effort Caddy reload for external service lifecycle events."""
+        try:
+            reload_caddy(self.repo_path, reason=f"external-services:{reason}", quiet=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[ExternalServicesManager] Warning: Failed to reload Caddy ({reason}): {exc}")
     
     def discover_available_services(self) -> List[Dict[str, Any]]:
         """
@@ -674,6 +682,8 @@ class ExternalServicesManager:
             "status": status,
             "last_health_check": datetime.now().isoformat()
         })
+
+        self._reload_caddy(f"start:{service_name}")
         
         return True, f"Service started (status: {status})"
     
@@ -719,6 +729,8 @@ class ExternalServicesManager:
         if not success:
             return False, f"Stop command failed: {output}"
         
+        self._reload_caddy(f"stop:{service_name}")
+        
         return True, "Service stopped successfully"
     
     def restart_service(self, service_name: str) -> Tuple[bool, str]:
@@ -743,6 +755,8 @@ class ExternalServicesManager:
         
         if not start_success:
             return False, f"Restart failed: {start_msg}"
+        
+        self._reload_caddy(f"restart:{service_name}")
         
         return True, "Service restarted successfully"
     
@@ -877,4 +891,3 @@ class ExternalServicesManager:
             
         except Exception as e:
             return False, f"Failed to upload service: {str(e)}"
-

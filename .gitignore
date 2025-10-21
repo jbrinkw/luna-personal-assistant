@@ -130,4 +130,6 @@ external_services/*/config.json
 external_services/*/data/
 external_services/**/node_modules/
 
-.logs.old
+logs.old
+
+caddy_auth.txt

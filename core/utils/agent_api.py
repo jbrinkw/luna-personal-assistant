@@ -26,6 +26,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from core.utils.caddy_control import reload_caddy
+
 # Optional .env
 try:
     from dotenv import load_dotenv
@@ -125,6 +127,13 @@ def _make_chat_completion_payload(model: str, content: str) -> Dict[str, Any]:
         ],
         "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
     }
+
+
+def _trigger_caddy_reload(reason: str) -> None:
+    try:
+        reload_caddy(PROJECT_ROOT, reason=f"agent-api:{reason}", quiet=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[AgentAPI] Warning: Failed to reload Caddy ({reason}): {exc}", flush=True)
 
 
 async def _sse_gen(final_text: str, model_id: str) -> AsyncGenerator[str, None]:
@@ -395,6 +404,7 @@ async def restart_extension_ui(name: str) -> Dict[str, Any]:
         ok = mgr.restart_ui(name)
         if not ok:
             raise HTTPException(status_code=404, detail="ui not found")
+        _trigger_caddy_reload(f"restart-ui:{name}")
         return {"ok": True}
     except HTTPException:
         raise
@@ -410,6 +420,7 @@ async def restart_extension_service(name: str, service: str) -> Dict[str, Any]:
         ok = mgr.restart_service(name, service)
         if not ok:
             raise HTTPException(status_code=404, detail="service not found")
+        _trigger_caddy_reload(f"restart-service:{name}.{service}")
         return {"ok": True}
     except HTTPException:
         raise
@@ -535,4 +546,3 @@ if __name__ == "__main__":
     host = os.environ.get("AGENT_API_HOST", "127.0.0.1")
     port = int(os.environ.get("AGENT_API_PORT", "8080"))
     uvicorn.run(app, host=host, port=port, reload=False)
-

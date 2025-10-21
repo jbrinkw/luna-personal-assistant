@@ -100,10 +100,53 @@ def generate_caddyfile(repo_path, output_path=None):
     
     if enabled_extensions:
         lines.append("    # Extension UIs")
+        extensions_root = repo_path / "extensions"
         for ext_name, port in sorted(enabled_extensions):
+            ui_dir = extensions_root / ext_name / "ui"
+            is_vite_ui = (ui_dir / "vite.config.js").exists()
+            
+            ui_config = {}
+            ext_config_path = extensions_root / ext_name / "config.json"
+            if ext_config_path.exists():
+                try:
+                    with open(ext_config_path, 'r') as ext_cfg_fp:
+                        ext_config_data = json.load(ext_cfg_fp)
+                        ui_config = ext_config_data.get("ui", {}) or {}
+                except Exception:
+                    ui_config = {}
+            
+            strip_prefix = ui_config.get("strip_prefix")
+            if strip_prefix is None:
+                strip_prefix = not is_vite_ui
+            
+            enforce_trailing_slash = ui_config.get("enforce_trailing_slash")
+            if enforce_trailing_slash is None:
+                enforce_trailing_slash = is_vite_ui
+            
+            if enforce_trailing_slash:
+                lines.extend([
+                    f"    @{ext_name}_root {{",
+                    f"        path /ext/{ext_name}",
+                    "    }",
+                    f"    redir @{ext_name}_root /ext/{ext_name}/ 308",
+                    "    ",
+                ])
+            
             lines.extend([
-                f"    handle /ext/{ext_name}/* {{",
-                f"        uri strip_prefix /ext/{ext_name}",
+                f"    @{ext_name}_ui {{",
+            ])
+            if not enforce_trailing_slash:
+                lines.append(f"        path /ext/{ext_name}")
+            lines.extend([
+                f"        path /ext/{ext_name}/*",
+                "    }",
+                f"    handle @{ext_name}_ui {{",
+            ])
+            
+            if strip_prefix:
+                lines.append(f"        uri strip_prefix /ext/{ext_name}")
+            
+            lines.extend([
                 f"        reverse_proxy 127.0.0.1:{port}",
                 "    }",
                 "    ",
@@ -141,4 +184,3 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)
-
