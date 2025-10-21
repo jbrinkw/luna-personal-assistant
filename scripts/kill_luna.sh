@@ -15,6 +15,7 @@ PATTERNS=(
     "supervisor/supervisor.py"
     "core/utils/agent_api.py"
     "core/utils/mcp_server"
+    "caddy run"
     "hub_ui.*npm"
     "hub_ui.*vite"
     "extensions/.*/ui/.*node"
@@ -50,8 +51,8 @@ done
 
 # Also kill anything listening on Luna ports
 echo ""
-echo "Checking Luna ports (5173, 8080, 8765, 9999)..."
-for port in 5173 8080 8765 9999; do
+echo "Checking Luna ports (8443, 5173, 8080, 8765, 9999)..."
+for port in 8443 5173 8080 8765 9999; do
     PID=$(lsof -ti :$port 2>/dev/null)
     if [ ! -z "$PID" ]; then
         echo "Killing process on port $port (PID: $PID)"
@@ -60,18 +61,15 @@ for port in 5173 8080 8765 9999; do
     fi
 done
 
-# Kill any remaining processes in extension service port range (5300-5399)
+# Kill any remaining processes in extension UI port range (5200-5299) and service port range (5300-5399)
 echo ""
-echo "Checking extension service ports (5300-5399)..."
-for port in $(seq 5300 5320); do
+echo "Checking extension UI ports (5200-5299) and service ports (5300-5399)..."
+for port in $(seq 5200 5399); do
     PID=$(lsof -ti :$port 2>/dev/null)
     if [ ! -z "$PID" ]; then
-        PROCESS_INFO=$(ps -p $PID -o cmd --no-headers 2>/dev/null | grep -E "luna|extension")
-        if [ ! -z "$PROCESS_INFO" ]; then
-            echo "Killing Luna process on port $port (PID: $PID)"
-            kill -9 $PID 2>/dev/null
-            KILLED_COUNT=$((KILLED_COUNT + 1))
-        fi
+        echo "Killing process on port $port (PID: $PID)"
+        kill -9 $PID 2>/dev/null
+        KILLED_COUNT=$((KILLED_COUNT + 1))
     fi
 done
 
@@ -92,7 +90,7 @@ fi
 # Check if ports are free
 echo ""
 echo "Port status:"
-for port in 5173 8080 8765 9999; do
+for port in 8443 5173 8080 8765 9999; do
     if lsof -i :$port >/dev/null 2>&1; then
         echo "  Port $port: IN USE (⚠)"
     else

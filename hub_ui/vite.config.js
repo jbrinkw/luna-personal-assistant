@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
-    host: '0.0.0.0',  // Allow network access
+    host: '127.0.0.1',  // Localhost only - access via Caddy proxy
     strictPort: true,  // Fail if port is in use instead of trying next port
   },
 });

@@ -6,8 +6,8 @@ const getApiBase = async () => {
     // Get the current hostname (handles both localhost and network access)
     const hostname = window.location.hostname;
     
-    // Fetch port mapping from supervisor
-    const supervisorUrl = `http://${hostname}:9999/ports`;
+    // Fetch port mapping from supervisor via Caddy proxy
+    const supervisorUrl = `/api/supervisor/ports`;
     console.log('[Init] Fetching port assignments from:', supervisorUrl);
     
     const response = await fetch(supervisorUrl);
@@ -20,17 +20,18 @@ const getApiBase = async () => {
     if (!backendPort) {
       console.error('[Init] ❌ automation_memory.backend port not found in assignments');
       console.error('[Init] Available services:', Object.keys(ports.services || {}));
-      // Fallback to default port
-      return `http://${hostname}:5302`;
+      // Fallback to Caddy proxy path
+      return `/api/automation_memory`;
     }
     
-    const apiBase = `http://${hostname}:${backendPort}`;
+    // Use Caddy proxy path for backend
+    const apiBase = `/api/automation_memory`;
     console.log('[Init] ✅ Resolved backend API:', apiBase);
     return apiBase;
   } catch (e) {
     console.error('[Init] Failed to resolve backend port from supervisor:', e);
-    console.error('[Init] Falling back to default: http://127.0.0.1:5302');
-    return 'http://127.0.0.1:5302';
+    console.error('[Init] Falling back to Caddy proxy path');
+    return '/api/automation_memory';
   }
 };
 

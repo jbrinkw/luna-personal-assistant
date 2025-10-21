@@ -29,7 +29,14 @@ export const ServicesProvider = ({ children }) => {
   const refreshExtensions = async () => {
     try {
       const data = await ExtensionsAPI.list();
-      setExtensions(Array.isArray(data.extensions) ? data.extensions : []);
+      // Transform extension URLs to use Caddy paths
+      const extensionsWithCaddyUrls = Array.isArray(data.extensions)
+        ? data.extensions.map(ext => ({
+            ...ext,
+            ui: ext.ui ? { ...ext.ui, url: `/ext/${ext.name}` } : null
+          }))
+        : [];
+      setExtensions(extensionsWithCaddyUrls);
     } catch (error) {
       console.error('Failed to refresh extensions:', error);
       setExtensions([]);
