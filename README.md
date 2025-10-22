@@ -84,6 +84,8 @@ cp .env.example .env
 Required variables:
 - `DB_*` - Postgres connection details
 - `OPENAI_API_KEY` - For gpt models
+- `AGENT_API_TOKEN` - Static bearer token for the Agent API (required when Caddy injects auth headers)
+- `SUPERVISOR_API_TOKEN` - Static bearer token for the Supervisor API (required when Caddy injects auth headers)
 - `MCP_AUTH_TOKEN` - For MCP server authentication
 - `HA_URL` - Home Assistant instance URL (e.g., `http://192.168.1.100:8123`)
 - `HA_TOKEN` - Home Assistant long-lived access token
@@ -247,6 +249,11 @@ python tests/test_simple_agent.py
 - Check Agent API logs for discovery issues
 - Verify agent.py is in `core/agents/*/agent.py`
 
+### Agent/Supervisor Auth Failures
+- Confirm `AGENT_API_TOKEN` and `SUPERVISOR_API_TOKEN` are set consistently in the environment.
+- Regenerate the Caddyfile (`python -m core.utils.caddy_config_generator`) after changing tokens so reverse proxy headers are updated.
+- Inspect the Agent/Supervisor logs for `missing bearer token` or `invalid token` messages when requests are rejected.
+
 ### Extension Tools Not Loading
 - Check tool file naming: `*_tools.py`
 - Verify `TOOLS = [...]` list is exported
@@ -264,4 +271,3 @@ python tests/test_simple_agent.py
 ## Contributing
 
 [Contributing guidelines]
-

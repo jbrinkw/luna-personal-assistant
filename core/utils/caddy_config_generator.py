@@ -20,9 +20,6 @@ def generate_caddyfile(repo_path, output_path=None):
     """
     repo_path = Path(repo_path)
 
-    def sanitize_label(label: str) -> str:
-        """Convert arbitrary labels to safe matcher identifiers."""
-        return "".join(ch if ch.isalnum() else "_" for ch in label.lower())
     master_config_path = repo_path / "core" / "master_config.json"
     
     if output_path is None:
@@ -44,18 +41,10 @@ def generate_caddyfile(repo_path, output_path=None):
     deployment_mode = master_config.get("deployment_mode") or os.getenv("DEPLOYMENT_MODE", "ngrok")
     public_domain = master_config.get("public_domain") or os.getenv("PUBLIC_DOMAIN", "")
     
-    # Check if auth file exists and read hashed credentials
-    # If file doesn't exist, no auth will be enabled
-    auth_file = repo_path / "caddy_auth.txt"
-    auth_credentials = []
-    
-    if auth_file.exists():
-        with open(auth_file, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith('#'):
-                    # File should contain: username hashed_password
-                    auth_credentials.append(line)
+    # Optional shared tokens for upstream services (used when set)
+    agent_api_token = os.getenv("AGENT_API_TOKEN", "").strip()
+    supervisor_api_token = os.getenv("SUPERVISOR_API_TOKEN", "").strip()
+    mcp_auth_token = os.getenv("MCP_AUTH_TOKEN", "").strip()
     
     # Determine server address based on deployment mode
     if deployment_mode == "ngrok":
@@ -76,35 +65,34 @@ def generate_caddyfile(repo_path, output_path=None):
         f"{server_address} {{",
     ]
     
-    # Add basic auth if credentials exist
-    if auth_credentials:
-        lines.extend([
-            "    # Basic Authentication",
-            "    basic_auth {",
-        ])
-        for cred in auth_credentials:
-            lines.append(f"        {cred}")
-        lines.extend([
-            "    }",
-            "    ",
-        ])
-    
     lines.extend([
         "    # Core services",
         "    ",
         "    # API routes (order matters - more specific first)",
         "    handle /api/agent/* {",
         "        uri strip_prefix /api/agent",
+    ])
+    if agent_api_token:
+        lines.append(f'        header_up Authorization "Bearer {agent_api_token}"')
+    lines.extend([
         "        reverse_proxy 127.0.0.1:8080",
         "    }",
         "    ",
         "    handle /api/mcp/* {",
         "        uri strip_prefix /api/mcp",
+    ])
+    if mcp_auth_token:
+        lines.append(f'        header_up Authorization "Bearer {mcp_auth_token}"')
+    lines.extend([
         "        reverse_proxy 127.0.0.1:8765",
         "    }",
         "    ",
         "    handle /api/supervisor/* {",
         "        uri strip_prefix /api/supervisor",
+    ])
+    if supervisor_api_token:
+        lines.append(f'        header_up Authorization "Bearer {supervisor_api_token}"')
+    lines.extend([
         "        reverse_proxy 127.0.0.1:9999",
         "    }",
         "    ",
