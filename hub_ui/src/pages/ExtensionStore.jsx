@@ -325,12 +325,13 @@ export default function ExtensionStore() {
           onClick={() => setSelectedType('all')}
           style={{
             padding: '0.5rem 1rem',
-            backgroundColor: selectedType === 'all' ? '#3b82f6' : '#f3f4f6',
-            color: selectedType === 'all' ? 'white' : '#374151',
-            border: 'none',
+            backgroundColor: selectedType === 'all' ? '#8ab4f8' : '#303134',
+            color: selectedType === 'all' ? '#202124' : '#9aa0a6',
+            border: '2px solid ' + (selectedType === 'all' ? '#8ab4f8' : '#3c4043'),
             borderRadius: '0.375rem 0 0 0.375rem',
             cursor: 'pointer',
-            fontWeight: 500
+            fontWeight: 500,
+            transition: 'all 0.2s'
           }}
         >
           All
@@ -340,11 +341,12 @@ export default function ExtensionStore() {
           onClick={() => setSelectedType('extension')}
           style={{
             padding: '0.5rem 1rem',
-            backgroundColor: selectedType === 'extension' ? '#3b82f6' : '#f3f4f6',
-            color: selectedType === 'extension' ? 'white' : '#374151',
-            border: 'none',
+            backgroundColor: selectedType === 'extension' ? '#8ab4f8' : '#303134',
+            color: selectedType === 'extension' ? '#202124' : '#9aa0a6',
+            border: '2px solid ' + (selectedType === 'extension' ? '#8ab4f8' : '#3c4043'),
             cursor: 'pointer',
-            fontWeight: 500
+            fontWeight: 500,
+            transition: 'all 0.2s'
           }}
         >
           Extensions
@@ -354,12 +356,13 @@ export default function ExtensionStore() {
           onClick={() => setSelectedType('service')}
           style={{
             padding: '0.5rem 1rem',
-            backgroundColor: selectedType === 'service' ? '#10b981' : '#f3f4f6',
-            color: selectedType === 'service' ? 'white' : '#374151',
-            border: 'none',
+            backgroundColor: selectedType === 'service' ? '#8ab4f8' : '#303134',
+            color: selectedType === 'service' ? '#202124' : '#9aa0a6',
+            border: '2px solid ' + (selectedType === 'service' ? '#8ab4f8' : '#3c4043'),
             borderRadius: '0 0.375rem 0.375rem 0',
             cursor: 'pointer',
-            fontWeight: 500
+            fontWeight: 500,
+            transition: 'all 0.2s'
           }}
         >
           Services

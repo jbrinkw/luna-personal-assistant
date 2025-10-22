@@ -50,6 +50,34 @@ def get_remote_commit():
         return None
 
 
+def check_if_behind():
+    """Check if current branch is behind origin/main (not ahead or diverged)"""
+    try:
+        # Check if we have unpushed commits or local changes
+        result = subprocess.run(
+            ["git", "rev-list", "origin/main..HEAD"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        # If there are any commits in current that aren't in origin/main, we're ahead or diverged
+        if result.stdout.strip():
+            return False  # We have local commits, don't consider this an update
+        
+        # Check if origin/main has commits we don't have
+        result = subprocess.run(
+            ["git", "rev-list", "HEAD..origin/main"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        # If there are commits in origin/main that we don't have, we're behind
+        return bool(result.stdout.strip())
+    except subprocess.CalledProcessError:
+        # If we can't determine, assume no update needed
+        return False
+
+
 def get_commit_date(commit_hash):
     """Get the date of a commit"""
     try:
@@ -125,8 +153,9 @@ def main():
         }))
         return 1
     
-    # Check if update is available
-    update_available = current_commit != remote_commit
+    # Check if update is available (only if we're actually behind, not ahead or diverged)
+    commits_differ = current_commit != remote_commit
+    update_available = commits_differ and check_if_behind()
     
     # Get commit info
     current_date = get_commit_date(current_commit)
