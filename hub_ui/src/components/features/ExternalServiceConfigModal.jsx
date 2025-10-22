@@ -70,7 +70,7 @@ export default function ExternalServiceConfigModal({ service, onSuccess, onClose
     }
   };
 
-  const formatConfigForClipboard = (cfg) => {
+  const formatConfigForClipboard = (cfg = {}) => {
     return Object.entries(cfg)
       .map(([key, value]) => `${key}=${value}`)
       .join('\n');
@@ -173,16 +173,44 @@ export default function ExternalServiceConfigModal({ service, onSuccess, onClose
             </p>
           </div>
 
+          {installResult.env_assignments && Object.keys(installResult.env_assignments).length > 0 && (
+            <div className="bg-green-50 border border-green-200 rounded p-4 mb-4">
+              <h3 className="font-semibold mb-2">Environment variables auto-loaded into <code>.env</code>:</h3>
+              <pre className="text-sm overflow-auto max-h-40 bg-white p-2 rounded">
+                {formatConfigForClipboard(installResult.env_assignments)}
+              </pre>
+              <div className="flex justify-end mt-3">
+                <button
+                  onClick={() => copyToClipboard(formatConfigForClipboard(installResult.env_assignments))}
+                  className="px-4 py-2 bg-green-100 text-green-700 rounded hover:bg-green-200"
+                >
+                  Copy ENV block
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="bg-gray-50 rounded p-4 mb-4">
-            <h3 className="font-semibold mb-2">Configuration:</h3>
+            <h3 className="font-semibold mb-2">Saved configuration:</h3>
             <pre className="text-sm overflow-auto max-h-60 bg-white p-2 rounded">
               {JSON.stringify(installResult.config, null, 2)}
             </pre>
           </div>
 
+          {installResult.ui_route && installResult.ui_route.path && (
+            <div className="bg-purple-50 border border-purple-200 rounded p-4 mb-4">
+              <p className="text-sm text-purple-800">
+                🌐 UI available at <code>{installResult.ui_route.path_with_slash || installResult.ui_route.path}</code>.{' '}
+                {installResult.ui_route.open_mode === 'new_tab'
+                  ? 'Open it in a new tab from the infrastructure dashboard.'
+                  : 'You can open it inside the Hub from the infrastructure dashboard.'}
+              </p>
+            </div>
+          )}
+
           <div className="bg-blue-50 border border-blue-200 rounded p-4 mb-4">
             <p className="text-sm text-blue-800">
-              💡 You can add these values to your .env file if extensions require them.
+              💡 These values are already stored for you. Copy them only if you need to share config with another system.
             </p>
           </div>
 
@@ -191,7 +219,7 @@ export default function ExternalServiceConfigModal({ service, onSuccess, onClose
               onClick={() => copyToClipboard(formatConfigForClipboard(installResult.config))}
               className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
             >
-              Copy to Clipboard
+              Copy config JSON
             </button>
             <button
               onClick={onClose}
@@ -287,4 +315,3 @@ export default function ExternalServiceConfigModal({ service, onSuccess, onClose
     </div>
   );
 }
-

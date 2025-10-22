@@ -286,6 +286,7 @@ Docker-based infrastructure (Postgres, Redis) managed by Luna.
       * `health_check_expected`: Expected string output from `health_check` (e.g., "Up" or "PONG").
       * `install_timeout`: Seconds to wait (e.g., 120).
       * `provides_vars`: List of env var names this service auto-generates (e.g., `DATABASE_URL`).
+      * `post_install_env`: Optional mapping of env var names to templated values (supports `{{field}}` tokens). If omitted, raw config values are used when writing `.env`.
       * `ui`: Optional metadata to expose a proxied web UI for the service.
           * `base_path`: Root segment for generated paths (defaults to `ext_service`).
           * `slug`: Override for the path slug (defaults to the service name).
@@ -299,7 +300,7 @@ Docker-based infrastructure (Postgres, Redis) managed by Luna.
     2.  Backend validates config, saves to `config.json`.
     3.  Backend executes `install` command (with variables replaced).
     4.  Backend polls `health_check` command until `health_check_expected` is met or `install_timeout`.
-    5.  On success: Generates and adds `provides_vars` to `.env`.
+    5.  On success: Renders `post_install_env` templates (or uses raw config values) for each `provides_vars` entry and appends them to `.env`.
     6.  On failure: Executes `uninstall` command, deletes `config.json`.
   * **Uninstall Flow:**
     1.  POST `/api/external-services/{name}/uninstall`.
@@ -330,7 +331,15 @@ Docker-based infrastructure (Postgres, Redis) managed by Luna.
         "health_check": "docker ps --filter name=luna_postgres --format '{{.Status}}'"
       },
       "health_check_expected": "Up",
-      "provides_vars": ["DATABASE_URL", "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB"]
+      "provides_vars": ["DATABASE_URL", "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB"],
+      "post_install_env": {
+        "DATABASE_URL": "postgresql://{{ user }}:{{ password }}@127.0.0.1:{{ port }}/{{ database }}",
+        "POSTGRES_HOST": "127.0.0.1",
+        "POSTGRES_PORT": "{{ port }}",
+        "POSTGRES_DB": "{{ database }}",
+        "POSTGRES_USER": "{{ user }}",
+        "POSTGRES_PASSWORD": "{{ password }}"
+      }
     }
     ```
   * **Example `ui` block (Grocy snippet):**

@@ -828,7 +828,11 @@ class ExternalServicesManager:
         else:
             return "stopped", None
     
-    def install_service(self, service_name: str, config: Dict[str, Any]) -> Tuple[bool, str]:
+    def install_service(
+        self,
+        service_name: str,
+        config: Dict[str, Any],
+    ) -> Tuple[bool, str, Dict[str, str]]:
         """
         Install a service with given configuration
         
@@ -837,11 +841,11 @@ class ExternalServicesManager:
             config: User configuration dictionary
             
         Returns:
-            Tuple of (success, message)
+            Tuple of (success, message, env_assignments)
         """
         service_def = self.get_service_definition(service_name)
         if not service_def:
-            return False, f"Service {service_name} not found"
+            return False, f"Service {service_name} not found", {}
 
         user_config = dict(config)
         
@@ -892,7 +896,7 @@ class ExternalServicesManager:
         self._sync_ui_route(service_name, service_def, config)
 
         if not success:
-            return False, f"Installation command failed (exit code {exit_code}): {output}"
+            return False, f"Installation command failed (exit code {exit_code}): {output}", {}
 
         env_assignments = self._build_env_assignments(service_name, service_def, user_config)
         if env_assignments:
@@ -904,9 +908,9 @@ class ExternalServicesManager:
         if not start_success:
             # Log warning but don't fail the installation
             print(f"[ExternalServicesManager] Warning: Service installed but failed to auto-start: {start_msg}")
-            return True, f"Installation completed successfully (service failed to auto-start: {start_msg})"
+            return True, f"Installation completed successfully (service failed to auto-start: {start_msg})", env_assignments
         
-        return True, "Installation completed successfully and service started"
+        return True, "Installation completed successfully and service started", env_assignments
     
     def uninstall_service(self, service_name: str, remove_data: bool = True) -> Tuple[bool, str]:
         """

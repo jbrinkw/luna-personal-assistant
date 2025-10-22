@@ -91,6 +91,22 @@ export default function ExternalServiceDetailModal({ service, onInstall, onClose
                       <dd className="text-red-600">Sudo privileges</dd>
                     </div>
                   )}
+                  {definition.ui && (
+                    <>
+                      <div>
+                        <dt className="text-sm font-medium text-gray-500">UI Routing</dt>
+                        <dd className="text-gray-900">
+                          {definition.ui.base_path || 'ext_service'}/{definition.ui.slug || definition.name}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-sm font-medium text-gray-500">UI Launch Mode</dt>
+                        <dd className="text-gray-900">
+                          {definition.ui.open_mode === 'new_tab' ? 'Opens in new tab' : 'Embeds in Hub'}
+                        </dd>
+                      </div>
+                    </>
+                  )}
                 </dl>
               </div>
 
@@ -172,7 +188,7 @@ export default function ExternalServiceDetailModal({ service, onInstall, onClose
               <div>
                 <h3 className="font-semibold text-lg mb-2">Environment Variables Provided</h3>
                 <p className="text-gray-600 text-sm mb-4">
-                  After installation, this service makes the following variables available:
+                  After installation, Luna writes these variables into your <code>.env</code> automatically:
                 </p>
               </div>
 
@@ -183,12 +199,9 @@ export default function ExternalServiceDetailModal({ service, onInstall, onClose
                       <code className="text-sm font-mono text-green-800">{varName}</code>
                     </div>
                   ))}
-                  <div className="bg-blue-50 border border-blue-200 rounded p-4 mt-4">
-                    <p className="text-sm text-blue-800">
-                      💡 You can manually add these values to your .env file if your extensions need them.
-                      The configuration will be displayed after installation.
-                    </p>
-                  </div>
+                  <p className="text-xs text-gray-500">
+                    Need them elsewhere? Copy from the Infrastructure page after install.
+                  </p>
                 </div>
               ) : (
                 <div className="bg-gray-50 rounded p-8 text-center text-gray-600">
@@ -229,4 +242,3 @@ export default function ExternalServiceDetailModal({ service, onInstall, onClose
     </div>
   );
 }
-

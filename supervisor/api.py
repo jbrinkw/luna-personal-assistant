@@ -942,7 +942,7 @@ def install_external_service(name: str, request: ServiceInstallRequest):
             raise HTTPException(status_code=404, detail=f"Service {name} not found")
         
         # Install service
-        success, message = supervisor_instance.external_services_manager.install_service(
+        success, message, env_assignments = supervisor_instance.external_services_manager.install_service(
             name,
             request.config
         )
@@ -955,11 +955,15 @@ def install_external_service(name: str, request: ServiceInstallRequest):
         
         # Update supervisor state
         supervisor_instance._load_external_services()
+        ui_routes = supervisor_instance.external_services_manager.get_ui_routes()
+        ui_metadata = ui_routes.get(name)
         
         return {
             "success": True,
             "message": message,
-            "config": saved_config
+            "config": saved_config,
+            "env_assignments": env_assignments,
+            "ui_route": ui_metadata
         }
     except HTTPException:
         raise
