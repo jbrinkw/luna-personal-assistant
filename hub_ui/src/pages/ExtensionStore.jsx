@@ -4,6 +4,7 @@ import { useServices } from '../context/ServicesContext';
 import Button from '../components/common/Button';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import Card from '../components/common/Card';
+import { getInstalledServices, installService } from '../lib/externalServicesApi';
 
 const REGISTRY_URL = 'https://raw.githubusercontent.com/jbrinkw/luna-ext-store/main/registry.json';
 
@@ -15,12 +16,27 @@ export default function ExtensionStore() {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedType, setSelectedType] = useState('all'); // all, extension, service
   const [filterHasUI, setFilterHasUI] = useState(false);
   const [filterNoDeps, setFilterNoDeps] = useState(false);
+  const [installedServices, setInstalledServices] = useState({});
+  const [installModal, setInstallModal] = useState(null);
+  const [installConfig, setInstallConfig] = useState({});
+  const [installing, setInstalling] = useState(false);
 
   useEffect(() => {
     loadRegistry();
+    loadInstalledServices();
   }, []);
+
+  const loadInstalledServices = async () => {
+    try {
+      const data = await getInstalledServices();
+      setInstalledServices(data);
+    } catch (error) {
+      console.error('Failed to load installed services:', error);
+    }
+  };
 
   const loadRegistry = async () => {
     try {
@@ -36,9 +52,9 @@ export default function ExtensionStore() {
       setRegistry(data);
     } catch (error) {
       console.error('Failed to load registry:', error);
-      setError(error.message || 'Failed to load extension registry');
+      setError(error.message || 'Failed to load addon registry');
       // Use fallback empty registry
-      setRegistry({ version: 'unknown', extensions: [], categories: [] });
+      setRegistry({ version: 'unknown', extensions: [], external_services: [], categories: [] });
     } finally {
       setLoading(false);
     }
@@ -189,43 +205,98 @@ export default function ExtensionStore() {
     });
   };
 
-  const filteredExtensions = useMemo(() => {
-    if (!registry?.extensions) return [];
+  const isServiceInstalled = (serviceName) => {
+    return installedServices[serviceName]?.installed === true;
+  };
 
-    let filtered = [...registry.extensions];
+  const filteredAddons = useMemo(() => {
+    if (!registry) return [];
+
+    // Combine extensions and services into unified addon list
+    let addons = [];
+    
+    if (registry.extensions) {
+      addons = addons.concat(
+        registry.extensions.map(ext => ({ ...ext, addon_type: 'extension' }))
+      );
+    }
+    
+    if (registry.external_services) {
+      addons = addons.concat(
+        registry.external_services.map(svc => ({ ...svc, addon_type: 'service', id: svc.name }))
+      );
+    }
+
+    // Type filter
+    if (selectedType !== 'all') {
+      addons = addons.filter(addon => addon.addon_type === selectedType);
+    }
 
     // Search filter
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(ext =>
-        ext.name.toLowerCase().includes(term) ||
-        ext.description?.toLowerCase().includes(term) ||
-        ext.tags?.some(tag => tag.toLowerCase().includes(term))
+      addons = addons.filter(addon =>
+        addon.name?.toLowerCase().includes(term) ||
+        addon.display_name?.toLowerCase().includes(term) ||
+        addon.description?.toLowerCase().includes(term) ||
+        addon.tags?.some(tag => tag.toLowerCase().includes(term)) ||
+        addon.provides_vars?.some(v => v.toLowerCase().includes(term))
       );
     }
 
     // Category filter
     if (selectedCategory && selectedCategory !== 'all') {
-      filtered = filtered.filter(ext => ext.category === selectedCategory);
+      addons = addons.filter(addon => addon.category === selectedCategory);
     }
 
     // Has UI filter
     if (filterHasUI) {
-      filtered = filtered.filter(ext => ext.has_ui);
+      addons = addons.filter(addon => addon.has_ui);
     }
 
-    // No dependencies filter
+    // No dependencies filter (only for extensions)
     if (filterNoDeps) {
-      filtered = filtered.filter(ext => !ext.required_secrets || ext.required_secrets.length === 0);
+      addons = addons.filter(addon => 
+        addon.addon_type === 'service' || 
+        !addon.required_secrets || 
+        addon.required_secrets.length === 0
+      );
     }
 
-    return filtered;
-  }, [registry, searchTerm, selectedCategory, filterHasUI, filterNoDeps]);
+    return addons;
+  }, [registry, searchTerm, selectedCategory, selectedType, filterHasUI, filterNoDeps]);
+
+  const handleServiceInstall = async (service) => {
+    const config = installConfig;
+    setInstalling(true);
+    
+    try {
+      await installService(service.name, config);
+      await loadInstalledServices();
+      setInstallModal(null);
+      setInstallConfig({});
+    } catch (error) {
+      console.error('Failed to install service:', error);
+      alert(`Installation failed: ${error.message}`);
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  const openInstallModal = (service) => {
+    // Initialize config with defaults
+    const defaults = {};
+    service.service_definition?.config_form?.fields?.forEach(field => {
+      defaults[field.name] = field.default || '';
+    });
+    setInstallConfig(defaults);
+    setInstallModal(service);
+  };
 
   if (loading) {
     return (
       <div className="page-container">
-        <LoadingSpinner message="Loading extension store..." />
+        <LoadingSpinner message="Loading addon store..." />
       </div>
     );
   }
@@ -236,8 +307,8 @@ export default function ExtensionStore() {
     <div className="page-container">
       <div className="page-header">
         <div>
-          <h1>Extension Store</h1>
-          <p className="page-subtitle">Browse and install community extensions</p>
+          <h1>Addon Store</h1>
+          <p className="page-subtitle">Browse and install extensions and services</p>
         </div>
       </div>
 
@@ -247,12 +318,60 @@ export default function ExtensionStore() {
         </div>
       )}
 
+      {/* Type Filter Tabs */}
+      <div className="type-filter-tabs" style={{ marginBottom: '1rem' }}>
+        <button
+          className={`type-tab ${selectedType === 'all' ? 'active' : ''}`}
+          onClick={() => setSelectedType('all')}
+          style={{
+            padding: '0.5rem 1rem',
+            backgroundColor: selectedType === 'all' ? '#3b82f6' : '#f3f4f6',
+            color: selectedType === 'all' ? 'white' : '#374151',
+            border: 'none',
+            borderRadius: '0.375rem 0 0 0.375rem',
+            cursor: 'pointer',
+            fontWeight: 500
+          }}
+        >
+          All
+        </button>
+        <button
+          className={`type-tab ${selectedType === 'extension' ? 'active' : ''}`}
+          onClick={() => setSelectedType('extension')}
+          style={{
+            padding: '0.5rem 1rem',
+            backgroundColor: selectedType === 'extension' ? '#3b82f6' : '#f3f4f6',
+            color: selectedType === 'extension' ? 'white' : '#374151',
+            border: 'none',
+            cursor: 'pointer',
+            fontWeight: 500
+          }}
+        >
+          Extensions
+        </button>
+        <button
+          className={`type-tab ${selectedType === 'service' ? 'active' : ''}`}
+          onClick={() => setSelectedType('service')}
+          style={{
+            padding: '0.5rem 1rem',
+            backgroundColor: selectedType === 'service' ? '#10b981' : '#f3f4f6',
+            color: selectedType === 'service' ? 'white' : '#374151',
+            border: 'none',
+            borderRadius: '0 0.375rem 0.375rem 0',
+            cursor: 'pointer',
+            fontWeight: 500
+          }}
+        >
+          Services
+        </button>
+      </div>
+
       {/* Search and Filters */}
       <div className="store-filters">
         <input
           type="text"
           className="search-input"
-          placeholder="Search extensions..."
+          placeholder="Search addons..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
@@ -289,93 +408,210 @@ export default function ExtensionStore() {
         </label>
       </div>
 
-      {/* Extension Grid */}
-      {filteredExtensions.length === 0 ? (
+      {/* Addon Grid */}
+      {filteredAddons.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">🔍</div>
-          <h2>No Extensions Found</h2>
+          <h2>No Addons Found</h2>
           <p>Try adjusting your search or filters</p>
         </div>
       ) : (
         <div className="store-grid">
-          {filteredExtensions.map(ext => (
-            <Card key={ext.id} className="store-card">
+          {filteredAddons.map(addon => addon.addon_type === 'extension' ? (
+            // Extension Card
+            <Card key={addon.id} className="store-card">
               <div className="store-card-header">
-                <h3>{ext.name}</h3>
-                <span className="version-tag">v{ext.version}</span>
+                <div>
+                  <h3>{addon.name}</h3>
+                  <span className="badge" style={{ backgroundColor: '#3b82f6', color: 'white', padding: '0.25rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: 600 }}>
+                    Extension
+                  </span>
+                </div>
+                <span className="version-tag">v{addon.version}</span>
               </div>
 
-              <p className="store-card-author">by {ext.author || 'Unknown'}</p>
-              <p className="store-card-description">{ext.description}</p>
+              <p className="store-card-author">by {addon.author || 'Unknown'}</p>
+              <p className="store-card-description">{addon.description}</p>
 
               <div className="store-card-metadata">
-                <span>🛠️ {ext.tool_count || 0} tools</span>
-                {ext.has_ui && <span>• 🖥️ UI included</span>}
-                <span>• 📦 {ext.category}</span>
+                <span>🛠️ {addon.tool_count || 0} tools</span>
+                {addon.service_count > 0 && <span>• ⚙️ {addon.service_count} services</span>}
+                {addon.has_ui && <span>• 🖥️ UI included</span>}
+                <span>• 📦 {addon.category}</span>
               </div>
 
-              {ext.required_secrets && ext.required_secrets.length > 0 && (
+              {addon.required_secrets && addon.required_secrets.length > 0 && (
                 <div className="store-card-requirements">
-                  <strong>Requires:</strong> {ext.required_secrets.join(', ')}
+                  <strong>Requires:</strong> {addon.required_secrets.join(', ')}
                 </div>
               )}
 
-              {ext.tags && ext.tags.length > 0 && (
+              {addon.tags && addon.tags.length > 0 && (
                 <div className="store-card-tags">
-                  {ext.tags.map(tag => (
+                  {addon.tags.map(tag => (
                     <span key={tag} className="tag">{tag}</span>
                   ))}
                 </div>
               )}
 
               <div className="store-card-actions">
-                {isInstalled(ext.id) ? (
+                {isInstalled(addon.id) ? (
                   <>
-                    {hasUpdate(ext) ? (
-                      isPendingUpdate(ext.id) ? (
+                    {hasUpdate(addon) ? (
+                      isPendingUpdate(addon.id) ? (
                         <Button 
-                          onClick={() => handleUpdateToggle(ext)}
+                          onClick={() => handleUpdateToggle(addon)}
                           style={{ backgroundColor: '#10b981', borderColor: '#10b981' }}
                         >
                           ⏳ Pending Update
                         </Button>
                       ) : (
-                        <Button onClick={() => handleUpdateToggle(ext)}>
+                        <Button onClick={() => handleUpdateToggle(addon)}>
                           🔄 Update Available
                         </Button>
                       )
                     ) : (
-                      isPendingReinstall(ext.id) ? (
+                      isPendingReinstall(addon.id) ? (
                         <Button 
-                          onClick={() => handleReinstallToggle(ext)}
+                          onClick={() => handleReinstallToggle(addon)}
                           style={{ backgroundColor: '#10b981', borderColor: '#10b981' }}
                         >
                           ⏳ Pending Reinstall
                         </Button>
                       ) : (
-                        <Button onClick={() => handleReinstallToggle(ext)}>
+                        <Button onClick={() => handleReinstallToggle(addon)}>
                           🔄 Reinstall
                         </Button>
                       )
                     )}
                   </>
                 ) : (
-                  isPendingInstall(ext.id) ? (
+                  isPendingInstall(addon.id) ? (
                     <Button 
-                      onClick={() => handleInstallToggle(ext)}
+                      onClick={() => handleInstallToggle(addon)}
                       style={{ backgroundColor: '#10b981', borderColor: '#10b981' }}
                     >
                       ⏳ Pending Install
                     </Button>
                   ) : (
-                    <Button onClick={() => handleInstallToggle(ext)}>
+                    <Button onClick={() => handleInstallToggle(addon)}>
                       Install
                     </Button>
                   )
                 )}
               </div>
             </Card>
+          ) : (
+            // Service Card
+            <Card key={addon.name} className="store-card">
+              <div className="store-card-header">
+                <div>
+                  <h3>{addon.display_name || addon.name}</h3>
+                  <span className="badge" style={{ backgroundColor: '#10b981', color: 'white', padding: '0.25rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: 600 }}>
+                    Service
+                  </span>
+                </div>
+                <span className="version-tag">{addon.version}</span>
+              </div>
+
+              <p className="store-card-description">{addon.description}</p>
+
+              <div className="store-card-metadata">
+                <span>📦 {addon.category}</span>
+                {addon.has_ui && <span>• 🌐 Web UI</span>}
+                <span>• 🔌 {addon.config_fields || 0} config fields</span>
+              </div>
+
+              {addon.provides_vars && addon.provides_vars.length > 0 && (
+                <div className="store-card-requirements" style={{ borderColor: '#10b981' }}>
+                  <strong>Provides:</strong> {addon.provides_vars.slice(0, 3).join(', ')}
+                  {addon.provides_vars.length > 3 && ` +${addon.provides_vars.length - 3} more`}
+                </div>
+              )}
+
+              {addon.tags && addon.tags.length > 0 && (
+                <div className="store-card-tags">
+                  {addon.tags.map(tag => (
+                    <span key={tag} className="tag">{tag}</span>
+                  ))}
+                </div>
+              )}
+
+              <div className="store-card-actions">
+                {isServiceInstalled(addon.name) ? (
+                  <Button 
+                    style={{ backgroundColor: '#6b7280', borderColor: '#6b7280', cursor: 'default' }}
+                    disabled
+                  >
+                    ✓ Installed
+                  </Button>
+                ) : (
+                  <Button onClick={() => openInstallModal(addon)}>
+                    Install
+                  </Button>
+                )}
+              </div>
+            </Card>
           ))}
+        </div>
+      )}
+
+      {/* Install Service Modal */}
+      {installModal && (
+        <div className="modal-overlay" onClick={() => !installing && setInstallModal(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+            <div className="modal-header">
+              <h2>Install {installModal.display_name || installModal.name}</h2>
+              <button className="modal-close" onClick={() => !installing && setInstallModal(null)}>×</button>
+            </div>
+            
+            <div className="modal-body">
+              <p style={{ marginBottom: '1rem', color: '#6b7280' }}>{installModal.description}</p>
+              
+              {installModal.service_definition?.config_form?.fields?.map(field => (
+                <div key={field.name} style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', fontWeight: 500, marginBottom: '0.25rem' }}>
+                    {field.label}
+                    {field.required && <span style={{ color: '#ef4444' }}>*</span>}
+                  </label>
+                  {field.help && (
+                    <p style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.25rem' }}>{field.help}</p>
+                  )}
+                  <input
+                    type={field.type}
+                    value={installConfig[field.name] || ''}
+                    onChange={(e) => setInstallConfig({ ...installConfig, [field.name]: e.target.value })}
+                    placeholder={field.default}
+                    required={field.required}
+                    disabled={installing}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '0.375rem',
+                      fontSize: '1rem'
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+            
+            <div className="modal-footer">
+              <Button 
+                onClick={() => setInstallModal(null)} 
+                disabled={installing}
+                style={{ backgroundColor: '#6b7280', borderColor: '#6b7280' }}
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={() => handleServiceInstall(installModal)}
+                disabled={installing}
+              >
+                {installing ? 'Installing...' : 'Install'}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

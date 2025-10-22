@@ -150,7 +150,8 @@ def generate_caddyfile(repo_path, output_path=None):
             
             enforce_trailing_slash = ui_config.get("enforce_trailing_slash")
             if enforce_trailing_slash is None:
-                enforce_trailing_slash = is_vite_ui
+                # Default to True for all extensions (needed for relative paths)
+                enforce_trailing_slash = True
             
             if enforce_trailing_slash:
                 lines.extend([
@@ -203,13 +204,25 @@ def generate_caddyfile(repo_path, output_path=None):
                     "    ",
                 ])
 
-            # Use handle_path which automatically strips prefix AND rewrites Location headers
-            lines.extend([
-                f"    handle_path {base_path}/* {{",
-                f"        reverse_proxy 127.0.0.1:{port}",
-                "    }",
-                "    ",
-            ])
+            if strip_prefix:
+                # Use handle_path which automatically strips prefix AND rewrites Location headers
+                lines.extend([
+                    f"    handle_path {base_path}/* {{",
+                    f"        reverse_proxy 127.0.0.1:{port}",
+                    "    }",
+                    "    ",
+                ])
+            else:
+                # Don't strip prefix - pass full path to service
+                lines.extend([
+                    f"    @{matcher_label}_svc {{",
+                    f"        path {base_path}/*",
+                    "    }",
+                    f"    handle @{matcher_label}_svc {{",
+                    f"        reverse_proxy 127.0.0.1:{port}",
+                    "    }",
+                    "    ",
+                ])
 
     # Hub UI must be last (catch-all)
     lines.extend([

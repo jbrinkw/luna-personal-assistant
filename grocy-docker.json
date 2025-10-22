@@ -46,7 +46,7 @@
   "commands": {
     "install": "docker pull lscr.io/linuxserver/grocy:latest || docker pull linuxserver/grocy:latest",
     "uninstall": "docker rm -f luna_grocy 2>/dev/null || true && rm -rf external_services/grocy/data",
-    "start": "mkdir -p external_services/grocy/data/data && ( docker container inspect luna_grocy >/dev/null 2>&1 && docker start luna_grocy || docker run -d --name luna_grocy --restart unless-stopped -p {{port}}:80 -e PUID={{puid}} -e PGID={{pgid}} -e TZ={{timezone}} -e GROCY_BASE_URL=/ext_service/grocy -e GROCY_MODE=production -e GROCY_DISABLE_AUTH=true -v $(pwd)/external_services/grocy/data:/config lscr.io/linuxserver/grocy:latest )",
+    "start": "mkdir -p external_services/grocy/data/data && ( docker container inspect luna_grocy >/dev/null 2>&1 && docker start luna_grocy || docker run -d --name luna_grocy --restart unless-stopped -p {{port}}:80 -e PUID={{puid}} -e PGID={{pgid}} -e TZ={{timezone}} -e GROCY_BASE_URL=${PUBLIC_URL}/ext_service/grocy -e GROCY_MODE=production -e GROCY_DISABLE_AUTH=true -v $(pwd)/external_services/grocy/data:/config lscr.io/linuxserver/grocy:latest )",
     "stop": "docker stop luna_grocy 2>/dev/null || true",
     "restart": "docker restart luna_grocy",
     "health_check": "curl -sfL http://127.0.0.1:{{port}}/ | grep -qi \"grocy\" && echo 1 || echo 0",
