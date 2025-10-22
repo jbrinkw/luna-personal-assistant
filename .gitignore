@@ -130,10 +130,13 @@ extensions/automation_memory/**/node_modules/
 extensions/automation_memory/**/pnpm-lock.yaml
 extensions/automation_memory/**/__pycache__/
 
-# External services - keep service.json, ignore user data
-external_services/*/config.json
-external_services/*/data/
-external_services/**/node_modules/
+# External services - entirely user-installed, not in git
+external_services/
+
+# Extensions - ignore all user-installed extensions
+extensions/*
+# But keep bundled extensions that ship with Luna
+!extensions/automation_memory/
 
 logs.old
 

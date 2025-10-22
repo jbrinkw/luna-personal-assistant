@@ -38,15 +38,22 @@ export default function Dashboard() {
       setAgentApiStatus('offline');
     }
 
+    // MCP server doesn't expose a health endpoint, so we check via supervisor
     try {
-      const res = await fetch(`${MCP_API}/`);
-      if (res.status === 401 || res.ok) {
-        setMcpStatus('online');
+      const res = await fetch('/api/supervisor/services/status');
+      if (res.ok) {
+        const data = await res.json();
+        const mcpService = data.services?.mcp_server;
+        if (mcpService && mcpService.status === 'running') {
+          setMcpStatus('online');
+        } else {
+          setMcpStatus('offline');
+        }
       } else {
         setMcpStatus('offline');
       }
     } catch (e) {
-      setMcpStatus(agentOnline ? 'online' : 'offline');
+      setMcpStatus('offline');
     }
   };
 
