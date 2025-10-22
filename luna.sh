@@ -7,6 +7,13 @@ VENV_PATH="${LUNA_VENV:-$SCRIPT_DIR/.venv}"
 PYTHON_BIN="$VENV_PATH/bin/python3"
 SUPERVISOR_PY="$SCRIPT_DIR/supervisor/supervisor.py"
 
+# Load .env file if it exists (for deployment mode and other config)
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    set -a  # automatically export all variables
+    source "$SCRIPT_DIR/.env"
+    set +a
+fi
+
 # Check if venv exists
 if [ ! -f "$PYTHON_BIN" ]; then
     echo "[ERROR] Virtual environment not found at $VENV_PATH"

@@ -1,14 +1,15 @@
 """
 Caddy Configuration Generator
-Dynamically generates Caddyfile based on master_config.json
+Dynamically generates Caddyfile based on master_config.json and deployment mode
 """
 import json
+import os
 from pathlib import Path
 
 
 def generate_caddyfile(repo_path, output_path=None):
     """
-    Generate Caddyfile based on master_config.json
+    Generate Caddyfile based on master_config.json and deployment mode
     
     Args:
         repo_path: Path to Luna repository root
@@ -35,6 +36,10 @@ def generate_caddyfile(repo_path, output_path=None):
     with open(master_config_path, 'r') as f:
         master_config = json.load(f)
     
+    # Get deployment mode from master_config or environment
+    deployment_mode = master_config.get("deployment_mode") or os.getenv("DEPLOYMENT_MODE", "ngrok")
+    public_domain = master_config.get("public_domain") or os.getenv("PUBLIC_DOMAIN", "")
+    
     # Check if auth file exists and read hashed credentials
     # If file doesn't exist, no auth will be enabled
     auth_file = repo_path / "caddy_auth.txt"
@@ -48,9 +53,23 @@ def generate_caddyfile(repo_path, output_path=None):
                     # File should contain: username hashed_password
                     auth_credentials.append(line)
     
+    # Determine server address based on deployment mode
+    if deployment_mode == "ngrok":
+        # ngrok mode: HTTP on port 8443 (ngrok handles HTTPS)
+        server_address = ":8443"
+    elif deployment_mode == "nip_io":
+        # nip_io mode: HTTPS with auto-SSL on {IP}.nip.io
+        server_address = public_domain if public_domain else ":8443"
+    elif deployment_mode == "custom_domain":
+        # custom_domain mode: HTTPS with auto-SSL on custom domain
+        server_address = public_domain if public_domain else ":8443"
+    else:
+        # Fallback to ngrok mode
+        server_address = ":8443"
+    
     # Build Caddyfile content
     lines = [
-        ":8443 {",
+        f"{server_address} {{",
     ]
     
     # Add basic auth if credentials exist

@@ -163,12 +163,18 @@ class Supervisor:
                 self.master_config = json.load(f)
         else:
             self.log("INFO", f"Creating default master_config at {self.master_config_path}")
+            # Load deployment mode from environment (set by install.sh)
+            deployment_mode = os.getenv("DEPLOYMENT_MODE", "ngrok")
+            public_domain = os.getenv("PUBLIC_DOMAIN", "")
+            
             self.master_config = {
                 "luna": {
                     "version": self.get_current_date_version(),
                     "timezone": "UTC",
                     "default_llm": "gpt-4"
                 },
+                "deployment_mode": deployment_mode,
+                "public_domain": public_domain,
                 "extensions": {},
                 "tool_configs": {},
                 "port_assignments": {
@@ -177,6 +183,16 @@ class Supervisor:
                 }
             }
             self.save_master_config()
+        
+        # Always update deployment_mode and public_domain from environment if present
+        # This allows runtime changes without editing master_config
+        env_deployment_mode = os.getenv("DEPLOYMENT_MODE")
+        env_public_domain = os.getenv("PUBLIC_DOMAIN")
+        
+        if env_deployment_mode:
+            self.master_config["deployment_mode"] = env_deployment_mode
+        if env_public_domain:
+            self.master_config["public_domain"] = env_public_domain
     
     def save_master_config(self):
         """Save master_config to disk"""
@@ -276,9 +292,13 @@ class Supervisor:
     
     def get_port_mappings(self):
         """Get all port mappings"""
+        # Determine Caddy port based on deployment mode
+        deployment_mode = self.master_config.get("deployment_mode", "ngrok")
+        caddy_port = 8443 if deployment_mode == "ngrok" else 443
+        
         # Core services have fixed ports
         core_ports = {
-            "caddy": 8443,
+            "caddy": caddy_port,
             "hub_ui": 5173,
             "agent_api": 8080,
             "mcp_server": 8765,
@@ -327,9 +347,16 @@ class Supervisor:
         self._reload_caddy_config(reason="shutdown-all-services")
     
     def _start_caddy(self):
-        """Start Caddy reverse proxy on port 8443"""
+        """Start Caddy reverse proxy (port depends on deployment mode)"""
         try:
-            self.log("INFO", "Starting Caddy reverse proxy...")
+            # Determine Caddy port based on deployment mode
+            deployment_mode = self.master_config.get("deployment_mode", "ngrok")
+            if deployment_mode == "ngrok":
+                caddy_port = 8443  # ngrok tunnels to this port
+            else:
+                caddy_port = 443   # nip_io and custom_domain use standard HTTPS port
+            
+            self.log("INFO", f"Starting Caddy reverse proxy (deployment mode: {deployment_mode}, port: {caddy_port})...")
             
             # Check if Caddy is installed
             caddy_check = subprocess.run(
@@ -378,8 +405,8 @@ class Supervisor:
             )
             
             self.processes["caddy"] = proc
-            self.update_service_status("caddy", pid=proc.pid, port=8443, status="starting")
-            self.log("INFO", f"Caddy started with PID {proc.pid} on port 8443")
+            self.update_service_status("caddy", pid=proc.pid, port=caddy_port, status="starting")
+            self.log("INFO", f"Caddy started with PID {proc.pid} on port {caddy_port}")
             
             # Check if process is still running after 1 second and update to running
             import time
