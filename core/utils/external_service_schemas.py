@@ -83,6 +83,10 @@ class ServiceDefinition(BaseModel):
     commands: Optional[CommandsObject] = Field(None, description="Unified commands object")
     config_form: Optional["ConfigForm"] = Field(None, description="Inline configuration form")
     ui: Optional[ServiceUI] = Field(None, description="Optional UI routing metadata")
+    post_install_env: Optional[Dict[str, str]] = Field(
+        None,
+        description="Optional mapping of environment variables to template strings for .env population.",
+    )
 
     # Legacy format (optional for backward compatibility)
     install_cmd: Optional[str] = Field(
