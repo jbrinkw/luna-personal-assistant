@@ -1,6 +1,7 @@
 """
-Install all Luna dependencies using uv.
-Installs core requirements and all extension requirements.
+Install all Luna dependencies.
+- Python packages via uv (core + extensions)
+- Node.js packages via pnpm (extension UIs)
 """
 import os
 import sys
@@ -40,6 +41,41 @@ def print_status(message: str, status: str = "info"):
 
 def check_uv_installed() -> bool:
     """Check if uv is installed."""
+    # First check if uv is in the venv's bin directory (VIRTUAL_ENV)
+    venv_path = os.getenv('VIRTUAL_ENV')
+    if venv_path:
+        venv_uv = Path(venv_path) / "bin" / "uv"
+        if venv_uv.exists():
+            try:
+                result = subprocess.run(
+                    [str(venv_uv), "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    print_status(f"uv found in venv: {result.stdout.strip()}", "success")
+                    return True
+            except Exception as e:
+                print_status(f"Error checking venv uv: {e}", "error")
+    
+    # Next, check the active Python's prefix (works even if VIRTUAL_ENV is unset)
+    sys_prefix_uv = Path(sys.prefix) / "bin" / "uv"
+    if sys_prefix_uv.exists():
+        try:
+            result = subprocess.run(
+                [str(sys_prefix_uv), "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                print_status(f"uv found via sys.prefix: {result.stdout.strip()}", "success")
+                return True
+        except Exception as e:
+            print_status(f"Error checking sys.prefix uv: {e}", "error")
+    
+    # Fallback: check system PATH
     try:
         result = subprocess.run(
             ["uv", "--version"],
@@ -107,15 +143,26 @@ def install_requirements(req_file: Path, label: str) -> Tuple[bool, str]:
         print()
     
     try:
+        # Determine uv path (prefer venv, then sys.prefix, fallback to system)
+        uv_cmd = "uv"
+        venv_path = os.getenv('VIRTUAL_ENV')
+        if venv_path:
+            venv_uv = Path(venv_path) / "bin" / "uv"
+            if venv_uv.exists():
+                uv_cmd = str(venv_uv)
+        if uv_cmd == "uv":
+            sys_prefix_uv = Path(sys.prefix) / "bin" / "uv"
+            if sys_prefix_uv.exists():
+                uv_cmd = str(sys_prefix_uv)
+        
         # Use uv with --python flag to target the active Python
-        cmd = ["uv", "pip", "install", "-r", str(req_file), "--python", sys.executable]
+        cmd = [uv_cmd, "pip", "install", "-r", str(req_file), "--python", sys.executable]
         
         # Real-time streaming: show output as it happens
         print(f"{Colors.BOLD}Running: {' '.join(cmd)}{Colors.END}\n")
         print("=" * 70)
         
         # Set proper encoding
-        import os
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
         
@@ -166,9 +213,93 @@ def find_extension_requirements() -> List[Tuple[str, Path]]:
     return extension_reqs
 
 
+def find_extension_uis() -> List[Tuple[str, Path]]:
+    """
+    Find all extension UIs with package.json files.
+    
+    Returns:
+        List of (extension_name, ui_directory_path) tuples
+    """
+    extensions_dir = PROJECT_ROOT / "extensions"
+    if not extensions_dir.exists():
+        return []
+    
+    extension_uis = []
+    for ext_dir in extensions_dir.iterdir():
+        if ext_dir.is_dir():
+            ui_dir = ext_dir / "ui"
+            package_json = ui_dir / "package.json"
+            if ui_dir.exists() and package_json.exists():
+                extension_uis.append((ext_dir.name, ui_dir))
+    
+    return extension_uis
+
+
+def install_pnpm_dependencies(ui_dir: Path, label: str) -> Tuple[bool, str]:
+    """
+    Install Node.js dependencies using pnpm.
+    
+    Args:
+        ui_dir: Path to UI directory containing package.json
+        label: Human-readable label for this installation
+    
+    Returns:
+        Tuple of (success, message)
+    """
+    package_json = ui_dir / "package.json"
+    if not package_json.exists():
+        return False, f"package.json not found in {ui_dir}"
+    
+    print_status(f"Installing {label}...", "info")
+    
+    try:
+        # Check if pnpm is available
+        pnpm_check = subprocess.run(
+            ["pnpm", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if pnpm_check.returncode != 0:
+            return False, "pnpm not found"
+        
+        print(f"\n{Colors.BOLD}Running: pnpm install{Colors.END}\n")
+        print("=" * 70)
+        
+        result = subprocess.run(
+            ["pnpm", "install"],
+            cwd=str(ui_dir),
+            timeout=300  # 5 minutes timeout
+        )
+        
+        print("=" * 70)
+        
+        if result.returncode == 0:
+            print_status(f"{label} installed successfully", "success")
+            return True, "Success"
+        else:
+            print_status(f"{label} installation failed (exit code: {result.returncode})", "error")
+            return False, f"Exit code: {result.returncode}"
+    
+    except subprocess.TimeoutExpired:
+        msg = "Installation timed out (>5 min)"
+        print_status(f"{label}: {msg}", "error")
+        return False, msg
+    except FileNotFoundError:
+        msg = "pnpm not found in PATH"
+        print_status(f"{label}: {msg}", "error")
+        return False, msg
+    except Exception as e:
+        msg = str(e)
+        print_status(f"{label}: {msg}", "error")
+        return False, msg
+
+
 def install_all_dependencies() -> int:
     """
-    Install all dependencies (core + extensions) using uv.
+    Install all dependencies (core + extensions).
+    - Python packages via uv
+    - Node.js packages via pnpm
     
     Returns:
         Exit code (0 = success, 1 = failure)
@@ -202,6 +333,17 @@ def install_all_dependencies() -> int:
     
     print()
     
+    # Install Hub UI dependencies
+    hub_ui_dir = PROJECT_ROOT / "hub_ui"
+    hub_ui_package = hub_ui_dir / "package.json"
+    if hub_ui_package.exists():
+        success, msg = install_pnpm_dependencies(hub_ui_dir, "Hub UI")
+        results.append(("Hub UI", success, msg))
+    else:
+        print_status("Hub UI package.json not found", "info")
+    
+    print()
+    
     # Install extension requirements
     extension_reqs = find_extension_requirements()
     if extension_reqs:
@@ -217,6 +359,23 @@ def install_all_dependencies() -> int:
             print()
     else:
         print_status("No extension requirements.txt files found", "info")
+        print()
+    
+    # Install extension UI dependencies
+    extension_uis = find_extension_uis()
+    if extension_uis:
+        print_status(f"Found {len(extension_uis)} extension(s) with UI", "info")
+        print()
+        
+        for ext_name, ui_dir in extension_uis:
+            success, msg = install_pnpm_dependencies(
+                ui_dir,
+                f"Extension UI: {ext_name}"
+            )
+            results.append((f"{ext_name} UI", success, msg))
+            print()
+    else:
+        print_status("No extension UIs found with package.json", "info")
         print()
     
     # Summary

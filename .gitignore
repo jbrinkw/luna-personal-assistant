@@ -88,6 +88,9 @@ jspm_packages/
 # Yarn Integrity file
 .yarn-integrity
 
+# pnpm lockfiles (generate locally)
+pnpm-lock.yaml
+
 # dotenv environment variables file (but allow .venv directory for virtualenv)
 .env
 .env.local
@@ -124,6 +127,8 @@ extensions/*
 !extensions/automation_memory/
 !extensions/automation_memory/**
 extensions/automation_memory/**/node_modules/
+extensions/automation_memory/**/pnpm-lock.yaml
+extensions/automation_memory/**/__pycache__/
 
 # External services - keep service.json, ignore user data
 external_services/*/config.json
