@@ -13,7 +13,6 @@ from typing import Dict, List, Optional, Tuple, Any
 from .external_service_schemas import (
     ServiceDefinition,
     ConfigForm,
-    RegistryEntry,
 )
 from .caddy_control import reload_caddy
 
@@ -33,10 +32,182 @@ class ExternalServicesManager:
         self.luna_dir = self.repo_path / ".luna"
         self.logs_dir = self.luna_dir / "logs"
         self.registry_path = self.luna_dir / "external_services.json"
+        self.ui_routes_path = self.luna_dir / "external_service_routes.json"
         
         # Ensure directories exist
         self.services_dir.mkdir(parents=True, exist_ok=True)
         self.logs_dir.mkdir(parents=True, exist_ok=True)
+
+    def get_ui_routes(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Read persisted UI routing metadata.
+
+        Returns:
+            Mapping of service name to UI metadata dictionaries.
+        """
+        if not self.ui_routes_path.exists():
+            return {}
+
+        try:
+            with open(self.ui_routes_path, "r") as f:
+                return json.load(f)
+        except Exception as exc:
+            print(f"[ExternalServicesManager] Error reading UI routes: {exc}")
+            return {}
+
+    def save_ui_routes(self, routes: Dict[str, Dict[str, Any]]) -> None:
+        """Persist UI routing metadata to disk."""
+        try:
+            with open(self.ui_routes_path, "w") as f:
+                json.dump(routes, f, indent=2)
+        except Exception as exc:
+            print(f"[ExternalServicesManager] Error saving UI routes: {exc}")
+
+    def _normalize_slug(self, value: str) -> str:
+        """Convert arbitrary strings to a URL-safe slug."""
+        slug = value.strip().lower().replace(" ", "-")
+        slug = re.sub(r"[^a-z0-9\-]+", "-", slug)
+        slug = re.sub(r"-{2,}", "-", slug).strip("-")
+        return slug or "service"
+
+    def _assign_unique_slug(self, base_slug: str, service_name: str, routes: Dict[str, Dict[str, Any]]) -> str:
+        """Ensure slug uniqueness across all services."""
+        existing = {meta.get("slug"): name for name, meta in routes.items() if meta.get("slug")}
+        if existing.get(base_slug) in (None, service_name):
+            return base_slug
+
+        suffix = 2
+        while True:
+            candidate = f"{base_slug}-{suffix}"
+            owner = existing.get(candidate)
+            if owner is None or owner == service_name:
+                return candidate
+            suffix += 1
+
+    def _compute_ui_metadata(
+        self,
+        service_name: str,
+        service_def: ServiceDefinition,
+        config: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """Derive UI routing metadata from the service definition and config."""
+        if not service_def.ui:
+            return None
+
+        ui_cfg = service_def.ui
+        try:
+            port = ui_cfg.port
+            if port is None:
+                # Pull from config and coerce to integer
+                raw_value = config.get(ui_cfg.port_field, None)
+                if raw_value is None:
+                    print(
+                        f"[ExternalServicesManager] UI port_field '{ui_cfg.port_field}' missing in config for {service_name}"
+                    )
+                    return None
+                port = int(raw_value)
+
+            if port <= 0 or port > 65535:
+                raise ValueError("port out of range")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[ExternalServicesManager] Invalid UI port for {service_name}: {exc}")
+            return None
+
+        base_path = ui_cfg.base_path.strip("/ ")
+        base_path = base_path or "ext_service"
+        raw_slug = ui_cfg.slug or service_name
+
+        metadata: Dict[str, Any] = {
+            "service": service_name,
+            "base_path": base_path,
+            "slug": raw_slug,
+            "port": port,
+            "scheme": ui_cfg.scheme,
+            "strip_prefix": ui_cfg.strip_prefix,
+            "enforce_trailing_slash": ui_cfg.enforce_trailing_slash,
+            "open_mode": ui_cfg.open_mode,
+        }
+        return metadata
+
+    def _set_registry_ui_metadata(self, service_name: str, metadata: Optional[Dict[str, Any]]) -> None:
+        """Persist derived UI metadata inside the registry entry."""
+        registry = self.get_registry()
+        if service_name not in registry:
+            return
+
+        entry = registry[service_name]
+        if metadata is None:
+            entry.pop("ui", None)
+        else:
+            entry["ui"] = {
+                "path": metadata.get("path"),
+                "path_with_slash": metadata.get("path_with_slash"),
+                "slug": metadata.get("slug"),
+                "base_path": metadata.get("base_path"),
+                "open_mode": metadata.get("open_mode"),
+                "scheme": metadata.get("scheme"),
+            }
+
+        registry[service_name] = entry
+        self.save_registry(registry)
+
+    def _sync_ui_route(
+        self,
+        service_name: str,
+        service_def: ServiceDefinition,
+        config: Dict[str, Any],
+    ) -> None:
+        """Compute and persist UI routing metadata, then reload Caddy if changed."""
+        routes = self.get_ui_routes()
+        metadata = self._compute_ui_metadata(service_name, service_def, config)
+
+        if metadata is None:
+            if service_name in routes:
+                routes.pop(service_name, None)
+                self.save_ui_routes(routes)
+                self._set_registry_ui_metadata(service_name, None)
+                self._reload_caddy(f"ui-remove:{service_name}")
+            return
+
+        # Normalise slug and ensure uniqueness
+        base_slug = self._normalize_slug(metadata["slug"])
+        metadata["slug"] = self._assign_unique_slug(base_slug, service_name, routes)
+
+        path = f"/{metadata['base_path'].strip('/')}/{metadata['slug']}".replace("//", "/")
+        metadata["path"] = path
+        path_with_slash = f"{path.rstrip('/')}/" if metadata["enforce_trailing_slash"] else path
+        metadata["path_with_slash"] = path_with_slash
+        previous = routes.get(service_name)
+        previous_comparable = dict(previous) if previous else None
+        if previous_comparable:
+            previous_comparable.pop("last_updated", None)
+
+        current_comparable = dict(metadata)
+        current_comparable.pop("last_updated", None)
+
+        metadata["last_updated"] = datetime.now().isoformat()
+
+        if previous_comparable == current_comparable:
+            # Preserve existing last_updated to avoid unnecessary churn.
+            metadata["last_updated"] = previous.get("last_updated") if previous else metadata["last_updated"]
+            routes[service_name] = {**previous, **metadata} if previous else metadata
+            self.save_ui_routes(routes)
+            self._set_registry_ui_metadata(service_name, routes[service_name])
+            return
+
+        routes[service_name] = metadata
+        self.save_ui_routes(routes)
+        self._set_registry_ui_metadata(service_name, metadata)
+        self._reload_caddy(f"ui-sync:{service_name}")
+
+    def _remove_ui_route(self, service_name: str) -> None:
+        """Remove any persisted UI routing metadata for a service."""
+        routes = self.get_ui_routes()
+        if service_name in routes:
+            routes.pop(service_name, None)
+            self.save_ui_routes(routes)
+            self._set_registry_ui_metadata(service_name, None)
+            self._reload_caddy(f"ui-delete:{service_name}")
     
     def _reload_caddy(self, reason: str) -> None:
         """Best-effort Caddy reload for external service lifecycle events."""
@@ -243,6 +414,12 @@ class ExternalServicesManager:
                 json.dump(config, f, indent=2)
         except Exception as e:
             print(f"[ExternalServicesManager] Error saving config for {service_name}: {e}")
+            return
+
+        # Update UI routing metadata whenever configuration changes.
+        service_def = self.get_service_definition(service_name)
+        if service_def:
+            self._sync_ui_route(service_name, service_def, config)
     
     def get_log_path(self, service_name: str) -> Path:
         """
@@ -541,7 +718,10 @@ class ExternalServicesManager:
             "log_path": log_path,
             "last_health_check": None
         })
-        
+
+        # Persist any derived UI routing metadata and regenerate proxy config if needed.
+        self._sync_ui_route(service_name, service_def, config)
+
         if not success:
             return False, f"Installation command failed (exit code {exit_code}): {output}"
         
@@ -632,7 +812,10 @@ class ExternalServicesManager:
                 import shutil
                 shutil.rmtree(service_dir)
                 print(f"[ExternalServicesManager] Removed uploaded service definition: {service_dir}")
-        
+
+        # Drop any UI routing metadata associated with this service.
+        self._remove_ui_route(service_name)
+
         return True, "Service uninstalled successfully"
     
     def start_service(self, service_name: str) -> Tuple[bool, str]:
