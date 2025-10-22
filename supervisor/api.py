@@ -834,6 +834,7 @@ class ServiceStatusResponse(BaseModel):
     status: str
     enabled: bool
     last_check: Optional[str]
+    ui: Optional[Dict[str, Any]] = None
 
 
 class ServiceUploadRequest(BaseModel):
@@ -884,6 +885,8 @@ def get_external_service_details(name: str):
         # Check if installed
         registry = supervisor_instance.external_services_manager.get_registry()
         is_installed = name in registry
+        ui_routes = supervisor_instance.external_services_manager.get_ui_routes()
+        ui_metadata = ui_routes.get(name)
         
         # Get saved config if installed
         saved_config = None
@@ -895,7 +898,8 @@ def get_external_service_details(name: str):
             "form": config_form.dict() if config_form else {"fields": []},
             "installed": is_installed,
             "config": saved_config,
-            "registry_entry": registry.get(name) if is_installed else None
+            "registry_entry": registry.get(name) if is_installed else None,
+            "ui_route": ui_metadata
         }
     except HTTPException:
         raise
@@ -1113,7 +1117,8 @@ def get_external_service_status(name: str):
         return {
             "status": service_data.get("status", "unknown"),
             "enabled": service_data.get("enabled", False),
-            "last_check": service_data.get("last_health_check")
+            "last_check": service_data.get("last_health_check"),
+            "ui": service_data.get("ui")
         }
     except HTTPException:
         raise

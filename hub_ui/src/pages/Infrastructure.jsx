@@ -384,6 +384,9 @@ export default function Infrastructure() {
                 const isLoading = actionLoading[serviceName];
                 const isExpanded = expandedConfig[serviceName];
                 const config = serviceConfigs[serviceName];
+                const uiMeta = service.ui;
+                const uiHref = uiMeta?.path_with_slash || uiMeta?.path;
+                const uiOpensNewTab = uiMeta?.open_mode === 'new_tab';
 
                 return (
                   <div key={serviceName} className="service-card">
@@ -409,6 +412,12 @@ export default function Infrastructure() {
                         <span className="meta-value">
                           {new Date(service.installed_at).toLocaleDateString()}
                         </span>
+                      </div>
+                    )}
+                    {uiMeta?.path && (
+                      <div className="service-meta">
+                        <span className="meta-label">UI Path:</span>
+                        <span className="meta-value"><code>{uiMeta.path}</code></span>
                       </div>
                     )}
 
@@ -464,6 +473,17 @@ export default function Infrastructure() {
                       >
                         📄 Logs
                       </button>
+
+                      {uiHref && (
+                        <a
+                          href={uiHref}
+                          className="btn btn-primary"
+                          target={uiOpensNewTab ? '_blank' : '_self'}
+                          rel={uiOpensNewTab ? 'noreferrer noopener' : undefined}
+                        >
+                          🌐 Open UI{uiOpensNewTab ? ' ↗' : ''}
+                        </a>
+                      )}
                       
                       <button
                         onClick={() => setDeleteModal({ serviceName, removeData: true })}

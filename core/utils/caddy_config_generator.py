@@ -19,6 +19,10 @@ def generate_caddyfile(repo_path, output_path=None):
         str: Generated Caddyfile content
     """
     repo_path = Path(repo_path)
+
+    def sanitize_label(label: str) -> str:
+        """Convert arbitrary labels to safe matcher identifiers."""
+        return "".join(ch if ch.isalnum() else "_" for ch in label.lower())
     master_config_path = repo_path / "core" / "master_config.json"
     
     if output_path is None:
@@ -106,6 +110,17 @@ def generate_caddyfile(repo_path, output_path=None):
         "    ",
     ])
     
+    # Load external service UI routing metadata
+    service_routes = {}
+    ui_routes_path = repo_path / ".luna" / "external_service_routes.json"
+    if ui_routes_path.exists():
+        try:
+            with open(ui_routes_path, "r") as f:
+                service_routes = json.load(f)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[caddy] Warning: failed to read external service routes: {exc}")
+            service_routes = {}
+
     # Add extension UI routes
     extensions = master_config.get("extensions", {})
     port_assignments = master_config.get("port_assignments", {}).get("extensions", {})
@@ -170,12 +185,54 @@ def generate_caddyfile(repo_path, output_path=None):
                 "    }",
                 "    ",
             ])
-    
+
+    # Add external service UI routes
+    if service_routes:
+        lines.append("    # External service UIs")
+        for service_name, metadata in sorted(service_routes.items(), key=lambda item: item[1].get("path", item[0])):
+            port = metadata.get("port")
+            path = metadata.get("path")
+            if not port or not path:
+                continue
+
+            strip_prefix = metadata.get("strip_prefix", True)
+            enforce_trailing_slash = metadata.get("enforce_trailing_slash", True)
+            matcher_label = sanitize_label(metadata.get("slug") or service_name)
+            base_path = path.rstrip("/")
+            if enforce_trailing_slash:
+                lines.extend([
+                    f"    @{matcher_label}_svc_root {{",
+                    f"        path {base_path}",
+                    "    }",
+                    f"    redir @{matcher_label}_svc_root {base_path}/ 308",
+                    "    ",
+                ])
+
+            lines.extend([
+                f"    @{matcher_label}_svc_ui {{",
+            ])
+            if not enforce_trailing_slash:
+                lines.append(f"        path {base_path}")
+            lines.extend([
+                f"        path {base_path}/*",
+                "    }",
+                f"    handle @{matcher_label}_svc_ui {{",
+            ])
+
+            if strip_prefix:
+                lines.append(f"        uri strip_prefix {base_path}")
+
+            lines.extend([
+                f"        reverse_proxy 127.0.0.1:{port}",
+                "    }",
+                "    ",
+            ])
+
     # Hub UI must be last (catch-all)
     lines.extend([
         "    # Hub UI (catch-all, must be last)",
         "    handle /* {",
-        "        reverse_proxy 127.0.0.1:5173",
+            "        reverse_proxy 127.0.0.1:5173",
         "    }",
         "}",
         ""  # Empty line at end
