@@ -746,6 +746,20 @@ class ExternalServicesManager:
         if working_dir is None:
             working_dir = str(self.repo_path)
         
+        # Load .env variables into environment
+        env = os.environ.copy()
+        env_file = self.repo_path / ".env"
+        if env_file.exists():
+            try:
+                with open(env_file) as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#') and '=' in line:
+                            key, value = line.split('=', 1)
+                            env[key] = value
+            except Exception as e:
+                print(f"[ExternalServicesManager] Warning: Failed to load .env: {e}")
+        
         try:
             result = subprocess.run(
                 command,
@@ -753,7 +767,8 @@ class ExternalServicesManager:
                 cwd=working_dir,
                 capture_output=True,
                 text=True,
-                timeout=timeout
+                timeout=timeout,
+                env=env
             )
             
             output = result.stdout + result.stderr

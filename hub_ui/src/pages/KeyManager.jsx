@@ -90,7 +90,6 @@ export default function KeyManager() {
     setEditingKey(key);
     setSavedValue(value || '');
     setEditingValue(''); // Keep hidden initially
-    setShowValue(false);
     setShowEditModal(true);
   };
 
@@ -308,23 +307,14 @@ export default function KeyManager() {
             <strong>Key:</strong> <code>{editingKey}</code>
           </label>
           
-          <div className="input-with-toggle">
-            <input
-              type={showValue ? 'text' : 'password'}
-              className="secret-input"
-              value={showValue && !editingValue && savedValue ? savedValue : editingValue}
-              onChange={(e) => setEditingValue(e.target.value)}
-              placeholder={savedValue ? '••••••••••••' : 'Enter new secret value'}
-              autoFocus
-            />
-            <button
-              type="button"
-              className="toggle-visibility-btn"
-              onClick={() => setShowValue(!showValue)}
-            >
-              {showValue ? '👁️' : '👁️‍🗨️'}
-            </button>
-          </div>
+          <input
+            type="password"
+            className="secret-input"
+            value={editingValue}
+            onChange={(e) => setEditingValue(e.target.value)}
+            placeholder={savedValue ? '••••••••••••' : 'Enter new secret value'}
+            autoFocus
+          />
 
           <div className="modal-actions">
             <Button variant="secondary" onClick={() => setShowEditModal(false)}>
