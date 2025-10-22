@@ -3,13 +3,17 @@ Supervisor API Server
 Exposes HTTP endpoints for supervisor control and monitoring
 """
 import uvicorn
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 import os
 from pathlib import Path
 from dotenv import load_dotenv, dotenv_values
+
+SUPERVISOR_API_TOKEN = os.getenv("SUPERVISOR_API_TOKEN", "").strip()
+_SUPERVISOR_UNPROTECTED_PATHS = {"/health"}
 
 app = FastAPI(title="Luna Supervisor API")
 
@@ -21,6 +25,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+if SUPERVISOR_API_TOKEN:
+    @app.middleware("http")
+    async def _require_supervisor_token(request: Request, call_next):  # type: ignore
+        """Enforce bearer token for supervisor control endpoints when configured."""
+        if request.method == "OPTIONS" or request.url.path in _SUPERVISOR_UNPROTECTED_PATHS:
+            return await call_next(request)
+
+        auth_header = request.headers.get("authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return JSONResponse(status_code=401, content={"detail": "missing bearer token"})
+
+        token = auth_header.split(" ", 1)[1].strip()
+        if token != SUPERVISOR_API_TOKEN:
+            return JSONResponse(status_code=401, content={"detail": "invalid token"})
+
+        return await call_next(request)
 
 # Global references to supervisor state (will be set by supervisor.py)
 supervisor_instance = None

@@ -38,6 +38,8 @@ except Exception:
 # ---- Config ----
 DEBUG = os.getenv("AGENT_API_DEBUG", "true").lower() in ("1", "true", "yes", "on")
 DEFAULT_AGENT = os.getenv("DEFAULT_AGENT", "simple_agent")
+AGENT_API_TOKEN = os.getenv("AGENT_API_TOKEN", "").strip()
+_UNPROTECTED_PATHS = {"/healthz"}
 
 # Discovery: scan core/agents/*/ for agent.py files
 AGENTS_ROOT = PROJECT_ROOT / "core" / "agents"
@@ -52,6 +54,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+if AGENT_API_TOKEN:
+    @app.middleware("http")
+    async def _require_agent_token(request: Request, call_next):  # type: ignore
+        """Enforce static bearer token when configured."""
+        if request.method == "OPTIONS" or request.url.path in _UNPROTECTED_PATHS:
+            return await call_next(request)
+
+        auth_header = request.headers.get("authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return JSONResponse(status_code=401, content={"detail": "missing bearer token"})
+
+        token = auth_header.split(" ", 1)[1].strip()
+        if token != AGENT_API_TOKEN:
+            return JSONResponse(status_code=401, content={"detail": "invalid token"})
+
+        return await call_next(request)
 
 # ---- Request/Response models ----
 class ChatMessage(BaseModel):
