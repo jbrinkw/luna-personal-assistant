@@ -65,12 +65,19 @@
     "POSTGRES_PASSWORD"
   ],
   "provides_vars": [
+    "DATABASE_URL",
     "POSTGRES_HOST",
     "POSTGRES_PORT",
     "POSTGRES_DB", 
     "POSTGRES_USER",
-    "POSTGRES_PASSWORD",
-    "POSTGRES_URL"
-  ]
+    "POSTGRES_PASSWORD"
+  ],
+  "post_install_env": {
+    "DATABASE_URL": "postgresql://{{ user }}:{{ password }}@127.0.0.1:{{ port }}/{{ database }}",
+    "POSTGRES_HOST": "127.0.0.1",
+    "POSTGRES_PORT": "{{ port }}",
+    "POSTGRES_DB": "{{ database }}",
+    "POSTGRES_USER": "{{ user }}",
+    "POSTGRES_PASSWORD": "{{ password }}"
+  }
 }
-

@@ -200,6 +200,173 @@ class ExternalServicesManager:
         self._set_registry_ui_metadata(service_name, metadata)
         self._reload_caddy(f"ui-sync:{service_name}")
 
+    def _env_file_path(self) -> Path:
+        """Return the path to the repository .env file."""
+        return self.repo_path / ".env"
+
+    def _format_env_value(self, value: Any) -> str:
+        """
+        Format a value for writing into .env.
+        Quotes values containing whitespace or shell-sensitive characters.
+        """
+        text = "" if value is None else str(value)
+        if not text:
+            return ""
+
+        if re.search(r"\s|#|=|\"|'", text):
+            escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+            return f'"{escaped}"'
+        return text
+
+    def _render_template(self, template: str, context: Dict[str, Any]) -> str:
+        """Render a lightweight {{ placeholder }} template using the provided context."""
+        pattern = re.compile(r"{{\s*([^}]+)\s*}}")
+
+        def substitute(match: re.Match) -> str:
+            key = match.group(1).strip()
+            return str(context.get(key, ""))
+
+        return pattern.sub(substitute, template)
+
+    def _build_env_assignments(
+        self,
+        service_name: str,
+        service_def: ServiceDefinition,
+        config: Dict[str, Any],
+    ) -> Dict[str, str]:
+        """
+        Compute environment variable assignments for a service installation.
+
+        Prefers explicit post_install_env templates. Falls back to matching
+        config keys when templates are absent.
+        """
+        if not service_def.provides_vars:
+            return {}
+
+        # Build context with multiple casings for convenience.
+        context: Dict[str, Any] = {
+            "service_name": service_name,
+            "service_dir": str(self.services_dir / service_name),
+            "repo_root": str(self.repo_path),
+        }
+        for key, value in config.items():
+            context[key] = value
+            if isinstance(key, str):
+                context[key.lower()] = value
+                context[key.upper()] = value
+
+        resolved: Dict[str, str] = {}
+        templates = service_def.post_install_env or {}
+
+        if templates:
+            for env_key, template in templates.items():
+                if env_key not in service_def.provides_vars:
+                    continue
+                try:
+                    rendered = self._render_template(template, context)
+                except Exception as exc:  # noqa: BLE001
+                    print(
+                        f"[ExternalServicesManager] Failed to render env template for {service_name}:{env_key}: {exc}"
+                    )
+                    continue
+                resolved[env_key] = rendered
+        else:
+            for env_key in service_def.provides_vars:
+                lookup = env_key.lower()
+                if lookup in context:
+                    resolved[env_key] = "" if context[lookup] is None else str(context[lookup])
+
+        return resolved
+
+    def _write_env_assignments(self, assignments: Dict[str, str]) -> None:
+        """Write or update environment variables in the repository .env file."""
+        if not assignments:
+            return
+
+        env_path = self._env_file_path()
+        lines: List[str] = []
+        if env_path.exists():
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    lines = f.read().splitlines()
+            except Exception as exc:  # noqa: BLE001
+                print(f"[ExternalServicesManager] Warning: Failed to read .env file: {exc}")
+                lines = []
+
+        used_keys: set[str] = set()
+        updated_lines: List[str] = []
+        for line in lines:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                updated_lines.append(line)
+                continue
+
+            key, sep, _ = line.partition("=")
+            if not sep:
+                updated_lines.append(line)
+                continue
+
+            key = key.strip()
+            if key in assignments:
+                used_keys.add(key)
+                updated_lines.append(line)
+            else:
+                updated_lines.append(line)
+
+        for key, value in assignments.items():
+            if key not in used_keys:
+                formatted_value = self._format_env_value(value)
+                updated_lines.append(f"{key}={formatted_value}")
+
+        try:
+            with open(env_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(updated_lines).rstrip() + "\n")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[ExternalServicesManager] Warning: Failed to update .env file: {exc}")
+
+    def _remove_env_vars(self, keys: List[str]) -> None:
+        """Remove specified keys from the repository .env file."""
+        if not keys:
+            return
+
+        env_path = self._env_file_path()
+        if not env_path.exists():
+            return
+
+        try:
+            with open(env_path, "r", encoding="utf-8") as f:
+                lines = f.read().splitlines()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[ExternalServicesManager] Warning: Failed to read .env for removal: {exc}")
+            return
+
+        keys_set = set(keys)
+        updated_lines = []
+        for line in lines:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                updated_lines.append(line)
+                continue
+
+            key, sep, _ = line.partition("=")
+            if not sep:
+                updated_lines.append(line)
+                continue
+
+            if key.strip() in keys_set:
+                continue
+
+            updated_lines.append(line)
+
+        try:
+            with open(env_path, "w", encoding="utf-8") as f:
+                if updated_lines:
+                    f.write("\n".join(updated_lines).rstrip() + "\n")
+                else:
+                    f.write("")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[ExternalServicesManager] Warning: Failed to write .env after removal: {exc}")
+
     def _remove_ui_route(self, service_name: str) -> None:
         """Remove any persisted UI routing metadata for a service."""
         routes = self.get_ui_routes()
@@ -675,6 +842,8 @@ class ExternalServicesManager:
         service_def = self.get_service_definition(service_name)
         if not service_def:
             return False, f"Service {service_name} not found"
+
+        user_config = dict(config)
         
         # Create service directory
         service_dir = self.services_dir / service_name
@@ -724,6 +893,10 @@ class ExternalServicesManager:
 
         if not success:
             return False, f"Installation command failed (exit code {exit_code}): {output}"
+
+        env_assignments = self._build_env_assignments(service_name, service_def, user_config)
+        if env_assignments:
+            self._write_env_assignments(env_assignments)
         
         # Auto-start the service after successful installation
         print(f"[ExternalServicesManager] Auto-starting service after installation: {service_name}")
@@ -812,9 +985,10 @@ class ExternalServicesManager:
                 import shutil
                 shutil.rmtree(service_dir)
                 print(f"[ExternalServicesManager] Removed uploaded service definition: {service_dir}")
-
+        
         # Drop any UI routing metadata associated with this service.
         self._remove_ui_route(service_name)
+        self._remove_env_vars(service_def.provides_vars)
 
         return True, "Service uninstalled successfully"
     
