@@ -524,7 +524,7 @@ export default function Infrastructure() {
                                 }
                               </div>
                               <div className="config-help">
-                                💡 These values can be exported as environment variables for extensions
+                                💡 Luna already writes these values into <code>.env</code>; copy them only if another system needs them.
                               </div>
                               <button
                                 onClick={() => copyToClipboard(config)}

@@ -214,6 +214,42 @@ def test_install_service():
         
         result = response.json()
         log_json(result, "Install response: ")
+
+        env_assignments = result.get("env_assignments", {})
+        ui_route = result.get("ui_route")
+
+        if env_assignments:
+            log("✓ Environment variables were provisioned automatically", "SUCCESS")
+            log_json(env_assignments, "Env assignments: ")
+
+            env_path = REPO_PATH / ".env"
+            if env_path.exists():
+                env_text = env_path.read_text()
+                missing = [key for key in env_assignments if f"{key}=" not in env_text]
+                if missing:
+                    log(f"✗ Missing env keys in .env: {missing}", "ERROR")
+                    return False
+                log("✓ .env contains all assigned variables", "SUCCESS")
+            else:
+                log("✗ .env file not found after installation", "ERROR")
+                return False
+        else:
+            log("⚠ No environment variables provisioned by installer", "WARNING")
+
+        if ui_route:
+            log("✓ UI route registered", "SUCCESS")
+            log_json(ui_route, "UI route: ")
+            routes_file = LUNA_DIR / "external_service_routes.json"
+            if routes_file.exists():
+                routes = json.loads(routes_file.read_text())
+                if SERVICE_NAME in routes:
+                    log("✓ UI route persisted to .luna/external_service_routes.json", "SUCCESS")
+                else:
+                    log("✗ UI route missing from routes file", "ERROR")
+                    return False
+            else:
+                log("✗ Routes file not created", "ERROR")
+                return False
         
         # Verify config file was created
         config_file = SERVICE_DATA_DIR / "config.json"
@@ -620,4 +656,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-

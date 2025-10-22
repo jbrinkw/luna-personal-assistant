@@ -37,12 +37,24 @@
     "enable_startup": "echo 'Auto-start not implemented for demo server' >> .luna/logs/demo_http_server.log",
     "disable_startup": "echo 'Auto-start disabled for demo server' >> .luna/logs/demo_http_server.log"
   },
+  "ui": {
+    "slug": "demo-http",
+    "base_path": "ext_service",
+    "port_field": "port",
+    "scheme": "http",
+    "strip_prefix": true,
+    "enforce_trailing_slash": true,
+    "open_mode": "iframe"
+  },
   
   "health_check_expected": "healthy",
   "install_timeout": 30,
   "working_dir": "/root/luna/luna-personal-assistant",
   
   "required_vars": ["DEMO_SERVER_PORT"],
-  "provides_vars": ["DEMO_SERVER_URL", "DEMO_SERVER_PORT"]
+  "provides_vars": ["DEMO_SERVER_URL", "DEMO_SERVER_PORT"],
+  "post_install_env": {
+    "DEMO_SERVER_URL": "http://127.0.0.1:{{ port }}",
+    "DEMO_SERVER_PORT": "{{ port }}"
+  }
 }
-
