@@ -37,14 +37,14 @@
         "type": "password",
         "default": "",
         "required": true,
-        "help": "PostgreSQL password (will be stored in .luna/external_services/postgres/config.json)"
+        "help": "PostgreSQL password (will be stored in external_services/postgres/config.json)"
       }
     ]
   },
   "commands": {
-    "install": "docker pull postgres:16-alpine && echo 'PostgreSQL Docker image pulled successfully'",
+    "install": "docker pull postgres:16-alpine || docker pull postgres:16 || docker pull postgres:latest",
     "uninstall": "docker rm -f luna_postgres 2>/dev/null || true && docker volume rm luna_postgres_data 2>/dev/null || true",
-    "start": "docker container inspect luna_postgres >/dev/null 2>&1 && docker start luna_postgres || docker run -d --name luna_postgres --restart unless-stopped -p {{port}}:5432 -e POSTGRES_DB={{database}} -e POSTGRES_USER={{user}} -e POSTGRES_PASSWORD={{password}} -v luna_postgres_data:/var/lib/postgresql/data postgres:16-alpine",
+    "start": "docker run -d --name luna_postgres --restart unless-stopped -p {{port}}:5432 -e POSTGRES_DB={{database}} -e POSTGRES_USER={{user}} -e POSTGRES_PASSWORD={{password}} -v luna_postgres_data:/var/lib/postgresql/data postgres:16",
     "stop": "docker stop luna_postgres 2>/dev/null || true",
     "restart": "docker restart luna_postgres",
     "health_check": "docker exec luna_postgres pg_isready -U {{user}} -d {{database}}",
@@ -54,26 +54,26 @@
   "health_check_expected": "accepting connections",
   "install_timeout": 120,
   "required_vars": [
-    "POSTGRES_HOST",
-    "POSTGRES_PORT",
-    "POSTGRES_DB",
-    "POSTGRES_USER",
-    "POSTGRES_PASSWORD"
+    "DB_HOST",
+    "DB_PORT",
+    "DB_NAME",
+    "DB_USER",
+    "DB_PASSWORD"
   ],
   "provides_vars": [
     "DATABASE_URL",
-    "POSTGRES_HOST",
-    "POSTGRES_PORT",
-    "POSTGRES_DB",
-    "POSTGRES_USER",
-    "POSTGRES_PASSWORD"
+    "DB_HOST",
+    "DB_PORT",
+    "DB_NAME",
+    "DB_USER",
+    "DB_PASSWORD"
   ],
   "post_install_env": {
     "DATABASE_URL": "postgresql://{{ user }}:{{ password }}@127.0.0.1:{{ port }}/{{ database }}",
-    "POSTGRES_HOST": "127.0.0.1",
-    "POSTGRES_PORT": "{{ port }}",
-    "POSTGRES_DB": "{{ database }}",
-    "POSTGRES_USER": "{{ user }}",
-    "POSTGRES_PASSWORD": "{{ password }}"
+    "DB_HOST": "127.0.0.1",
+    "DB_PORT": "{{ port }}",
+    "DB_NAME": "{{ database }}",
+    "DB_USER": "{{ user }}",
+    "DB_PASSWORD": "{{ password }}"
   }
 }

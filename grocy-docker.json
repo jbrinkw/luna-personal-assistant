@@ -1,0 +1,79 @@
+{
+  "name": "grocy",
+  "display_name": "Grocy (Docker)",
+  "description": "Grocy household management dashboard served via the LinuxServer.io container image.",
+  "category": "productivity",
+  "author": "Luna Team",
+  "version": "linuxserver-latest",
+
+  "config_form": {
+    "fields": [
+      {
+        "name": "port",
+        "label": "HTTP Port",
+        "type": "number",
+        "default": 9283,
+        "required": true,
+        "help": "Host port that will forward to Grocy's internal port 80."
+      },
+      {
+        "name": "timezone",
+        "label": "Timezone",
+        "type": "text",
+        "default": "Etc/UTC",
+        "required": true,
+        "help": "TZ database name passed through to the container (e.g. America/New_York)."
+      },
+      {
+        "name": "puid",
+        "label": "PUID",
+        "type": "number",
+        "default": 1000,
+        "required": true,
+        "help": "Host user ID that should own the Grocy config directory."
+      },
+      {
+        "name": "pgid",
+        "label": "PGID",
+        "type": "number",
+        "default": 1000,
+        "required": true,
+        "help": "Host group ID that should own the Grocy config directory."
+      }
+    ]
+  },
+
+  "commands": {
+    "install": "docker pull lscr.io/linuxserver/grocy:latest || docker pull linuxserver/grocy:latest",
+    "uninstall": "docker rm -f luna_grocy 2>/dev/null || true && rm -rf external_services/grocy/data",
+    "start": "mkdir -p external_services/grocy/data/data && ( docker container inspect luna_grocy >/dev/null 2>&1 && docker start luna_grocy || docker run -d --name luna_grocy --restart unless-stopped -p {{port}}:80 -e PUID={{puid}} -e PGID={{pgid}} -e TZ={{timezone}} -e GROCY_BASE_URL=/ext_service/grocy -e GROCY_MODE=production -e GROCY_DISABLE_AUTH=true -v $(pwd)/external_services/grocy/data:/config lscr.io/linuxserver/grocy:latest )",
+    "stop": "docker stop luna_grocy 2>/dev/null || true",
+    "restart": "docker restart luna_grocy",
+    "health_check": "curl -sfL http://127.0.0.1:{{port}}/ | grep -qi \"grocy\" && echo 1 || echo 0",
+    "enable_startup": "docker update --restart=always luna_grocy",
+    "disable_startup": "docker update --restart=unless-stopped luna_grocy"
+  },
+
+  "health_check_expected": "1",
+  "install_timeout": 180,
+
+  "required_vars": [],
+  "provides_vars": [
+    "GROCY_URL",
+    "GROCY_PORT"
+  ],
+  "post_install_env": {
+    "GROCY_URL": "http://127.0.0.1:{{ port }}",
+    "GROCY_PORT": "{{ port }}"
+  },
+
+  "ui": {
+    "base_path": "ext_service",
+    "slug": "grocy",
+    "port_field": "port",
+    "scheme": "http",
+    "strip_prefix": true,
+    "enforce_trailing_slash": true,
+    "open_mode": "iframe"
+  }
+}
