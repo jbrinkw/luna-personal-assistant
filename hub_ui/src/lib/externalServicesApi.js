@@ -3,17 +3,8 @@
  * Handles all API calls for external services management
  */
 
-// Use the same host as the Hub UI to allow network access
-const getApiHost = () => {
-  // If we're in a browser, use window.location.hostname
-  if (typeof window !== 'undefined') {
-    return window.location.hostname;
-  }
-  // Fallback for server-side rendering
-  return '127.0.0.1';
-};
-
-const API_BASE = `http://${getApiHost()}:9999`;
+// Use relative paths - all requests go through Caddy reverse proxy
+const API_BASE = '/api/supervisor';
 
 /**
  * Generic API call handler with error handling
