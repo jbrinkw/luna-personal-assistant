@@ -1,5 +1,5 @@
 #!/bin/bash
-# Luna Initial Installation Script
+# Luna Initial Installation Script (Fixed Version)
 # Installs all dependencies, configures services, and prepares Luna for first run
 
 set -e  # Exit on error
@@ -13,23 +13,11 @@ VENV_PATH="$SCRIPT_DIR/.venv"
 # Configuration file path
 CONFIG_FILE="$SCRIPT_DIR/install_config.json"
 
-# Log functions
-log_info() {
-    echo "[INFO] $1"
-}
-
-log_success() {
-    echo "[OK] $1"
-}
-
-log_warn() {
-    echo "[WARN] $1"
-}
-
-log_error() {
-    echo "[ERROR] $1"
-}
-
+# --- Log Functions ---
+log_info() { echo "[INFO] $1"; }
+log_success() { echo "[OK] $1"; }
+log_warn() { echo "[WARN] $1"; }
+log_error() { echo "[ERROR] $1"; }
 log_section() {
     echo ""
     echo "========================================"
@@ -38,38 +26,29 @@ log_section() {
     echo ""
 }
 
-# Check if running as root
+# --- Check Functions ---
 check_root() {
     if [ "$EUID" -ne 0 ]; then
         log_error "This script must be run as root (use sudo)"
         exit 1
     fi
-    log_success "Running as root"
+    if [ -z "$SUDO_USER" ]; then
+        log_error "This script must be run with sudo, not directly as root."
+        log_error "Please run as: sudo ./install.sh"
+        exit 1
+    fi
+    log_success "Running as root (called by $SUDO_USER)"
 }
 
-# Load configuration from install_config.json
 load_config() {
     log_section "Loading Configuration"
     
     if [ ! -f "$CONFIG_FILE" ]; then
         log_error "Configuration file not found: $CONFIG_FILE"
-        log_info "Please create install_config.json with the following structure:"
-        cat <<EOF
-{
-  "ngrok": {
-    "api_key": "your_ngrok_api_key",
-    "domain": "your-domain.ngrok-free.app"
-  },
-  "caddy": {
-    "username": "admin",
-    "password": "your_secure_password"
-  }
-}
-EOF
+        log_info "Please create install_config.json with the required structure."
         exit 1
     fi
     
-    # Parse JSON (requires jq)
     if ! command -v jq &> /dev/null; then
         log_info "Installing jq for JSON parsing..."
         apt-get install -y jq
@@ -85,11 +64,9 @@ EOF
     log_info "Caddy username: $CADDY_USERNAME"
 }
 
-# Check system requirements
 check_system_requirements() {
     log_section "Checking System Requirements"
     
-    # Check OS
     if [ -f /etc/os-release ]; then
         . /etc/os-release
         log_info "OS: $NAME $VERSION"
@@ -97,14 +74,12 @@ check_system_requirements() {
         log_warn "Cannot detect OS version"
     fi
     
-    # Check available disk space (need at least 5GB)
     AVAILABLE_SPACE=$(df -BG "$SCRIPT_DIR" | awk 'NR==2 {print $4}' | sed 's/G//')
     log_info "Available disk space: ${AVAILABLE_SPACE}GB"
     if [ "$AVAILABLE_SPACE" -lt 5 ]; then
         log_warn "Low disk space (< 5GB). Installation may fail."
     fi
     
-    # Check memory (recommend at least 2GB)
     TOTAL_MEM=$(free -g | awk 'NR==2 {print $2}')
     log_info "Total memory: ${TOTAL_MEM}GB"
     if [ "$TOTAL_MEM" -lt 2 ]; then
@@ -114,55 +89,32 @@ check_system_requirements() {
     log_success "System requirements checked"
 }
 
-# Install basic system packages
+# --- Installation Functions ---
 install_system_packages() {
     log_section "Installing System Packages"
-    
     log_info "Updating package lists..."
     apt-get update -qq
     
     log_info "Installing essential packages..."
     apt-get install -y \
-        curl \
-        wget \
-        git \
-        build-essential \
-        lsof \
-        jq \
-        unzip \
-        ca-certificates \
-        gnupg \
-        debian-keyring \
-        debian-archive-keyring \
-        apt-transport-https
+        curl wget git build-essential lsof jq unzip \
+        ca-certificates gnupg debian-keyring debian-archive-keyring apt-transport-https \
+        software-properties-common
     
     log_success "System packages installed"
 }
 
-# Install Python 3.11.2+
 install_python() {
-    log_section "Installing Python"
+    log_section "Installing Python 3.11"
     
-    # Check if Python 3.11+ is already installed
-    if command -v python3 &> /dev/null; then
-        PYTHON_VERSION=$(python3 --version | awk '{print $2}')
-        PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
-        PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
-        
-        log_info "Found Python $PYTHON_VERSION"
-        
-        if [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -ge 11 ]; then
-            log_success "Python $PYTHON_VERSION meets requirements (3.11.2+)"
-            return 0
-        else
-            log_warn "Python $PYTHON_VERSION is too old (need 3.11.2+)"
-        fi
+    if command -v python3.11 &> /dev/null; then
+        log_success "Python 3.11 is already installed."
+        return 0
     fi
-    
+
     log_info "Installing Python 3.11..."
     
     # Add deadsnakes PPA for newer Python versions
-    apt-get install -y software-properties-common
     add-apt-repository -y ppa:deadsnakes/ppa
     apt-get update -qq
     
@@ -173,37 +125,27 @@ install_python() {
         python3.11-venv \
         python3.11-distutils
     
-    # Set Python 3.11 as default python3
-    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
+    # *** CRITICAL FIX: ***
+    # We DO NOT run `update-alternatives`.
+    # This leaves the system's `python3` (3.10) as the default to protect `apt`.
     
-    # Verify installation
-    PYTHON_VERSION=$(python3 --version | awk '{print $2}')
-    log_success "Python $PYTHON_VERSION installed"
+    PYTHON_VERSION=$(python3.11 --version | awk '{print $2}')
+    log_success "Python $PYTHON_VERSION installed successfully."
 }
 
-# Create virtual environment
 create_venv() {
     log_section "Creating Virtual Environment"
     
-    # Check if venv exists and is valid
     if [ -d "$VENV_PATH" ]; then
-        if [ -f "$VENV_PATH/bin/activate" ] && [ -f "$VENV_PATH/bin/python3" ]; then
-            log_info "Valid virtual environment already exists at $VENV_PATH"
-            return 0
-        else
-            log_warn "Incomplete virtual environment found, removing and recreating..."
-            rm -rf "$VENV_PATH"
-        fi
+        log_info "Virtual environment already exists. Removing and recreating..."
+        rm -rf "$VENV_PATH"
     fi
     
-    # Ensure python3-venv is installed
-    log_info "Ensuring python3-venv package is installed..."
-    PYTHON_VERSION=$(python3 --version | awk '{print $2}')
-    PYTHON_MAJOR_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f1,2)
-    apt-get install -y "python${PYTHON_MAJOR_MINOR}-venv" || apt-get install -y python3-venv
-    
     log_info "Creating virtual environment at $VENV_PATH..."
-    python3 -m venv "$VENV_PATH"
+    
+    # *** CRITICAL FIX: ***
+    # We explicitly use `python3.11` to create the venv.
+    python3.11 -m venv "$VENV_PATH"
     
     if [ -f "$VENV_PATH/bin/activate" ] && [ -f "$VENV_PATH/bin/python3" ]; then
         log_success "Virtual environment created successfully"
@@ -211,113 +153,75 @@ create_venv() {
         log_error "Failed to create virtual environment"
         exit 1
     fi
+    
+    # Set permissions for the venv now
+    chown -R "$SUDO_USER:$SUDO_USER" "$VENV_PATH"
 }
 
-# Activate virtual environment
-activate_venv() {
-    log_info "Activating virtual environment..."
-    source "$VENV_PATH/bin/activate"
-    log_success "Virtual environment activated"
-    log_info "Python: $(which python3)"
-    log_info "Pip: $(which pip)"
-}
-
-# Install uv package manager
-install_uv() {
+activate_venv_and_install_uv() {
     log_section "Installing uv Package Manager"
     
-    if command -v uv &> /dev/null; then
-        UV_VERSION=$(uv --version)
-        log_success "uv already installed: $UV_VERSION"
-        return 0
-    fi
-    
     log_info "Installing uv via pip (in venv)..."
-    pip install --upgrade pip
-    pip install uv
+    # Run pip as the $SUDO_USER to ensure correct permissions inside the venv
+    sudo -u "$SUDO_USER" "$VENV_PATH/bin/pip" install --upgrade pip
+    sudo -u "$SUDO_USER" "$VENV_PATH/bin/pip" install uv
     
-    # Verify installation
-    if command -v uv &> /dev/null; then
-        UV_VERSION=$(uv --version)
-        log_success "uv installed: $UV_VERSION"
+    if sudo -u "$SUDO_USER" "$VENV_PATH/bin/pip" show uv &> /dev/null; then
+        log_success "uv installed in venv"
     else
         log_error "uv installation failed"
         exit 1
     fi
 }
 
-# Install Node.js and npm
 install_nodejs() {
     log_section "Installing Node.js and npm"
     
-    if command -v node &> /dev/null; then
+    if command -v node &> /dev/null && command -v npm &> /dev/null; then
         NODE_VERSION=$(node --version)
-        log_info "Found Node.js $NODE_VERSION"
-    else
-        log_info "Installing Node.js..."
-        
-        # Install Node.js 20.x LTS
-        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-        apt-get install -y nodejs
-        
-        NODE_VERSION=$(node --version)
-        log_success "Node.js $NODE_VERSION installed"
+        if [[ "$NODE_VERSION" == "v20"* ]]; then
+            log_success "Node.js $NODE_VERSION and npm $(npm --version) already installed."
+            return 0
+        else
+            log_warn "Found wrong Node.js version ($NODE_VERSION). Reinstalling v20..."
+        fi
     fi
     
-    # Verify npm is installed
-    if command -v npm &> /dev/null; then
-        NPM_VERSION=$(npm --version)
-        log_success "npm $NPM_VERSION installed"
-    else
-        log_error "npm installation failed"
-        exit 1
-    fi
+    log_info "Installing Node.js v20 (LTS)..."
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    apt-get install -y nodejs
+    
+    log_success "Node.js $(node --version) and npm $(npm --version) installed"
 }
 
-# Install pnpm
 install_pnpm() {
     log_section "Installing pnpm"
     
     if command -v pnpm &> /dev/null; then
-        PNPM_VERSION=$(pnpm --version)
-        log_success "pnpm already installed: $PNPM_VERSION"
+        log_success "pnpm already installed: $(pnpm --version)"
         return 0
     fi
     
     log_info "Installing pnpm via npm..."
     npm install -g pnpm
     
-    # Verify installation
-    if command -v pnpm &> /dev/null; then
-        PNPM_VERSION=$(pnpm --version)
-        log_success "pnpm $PNPM_VERSION installed"
-    else
-        log_error "pnpm installation failed"
-        exit 1
-    fi
+    log_success "pnpm $(pnpm --version) installed"
 }
 
-# Install ngrok
 install_ngrok() {
     log_section "Installing ngrok"
     
     if command -v ngrok &> /dev/null; then
-        NGROK_VERSION=$(ngrok version)
-        log_success "ngrok already installed: $NGROK_VERSION"
-        return 0
+        log_success "ngrok already installed: $(ngrok version | head -n1)"
+    else
+        log_info "Installing ngrok..."
+        curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+        echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | tee /etc/apt/sources.list.d/ngrok.list
+        apt-get update -qq
+        apt-get install -y ngrok
+        log_success "ngrok $(ngrok version | head -n1) installed"
     fi
     
-    log_info "Installing ngrok..."
-    
-    # Download and install ngrok
-    curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | \
-        tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
-    echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | \
-        tee /etc/apt/sources.list.d/ngrok.list
-    apt-get update -qq
-    apt-get install -y ngrok
-    
-    # Configure ngrok with API key
     if [ -n "$NGROK_API_KEY" ] && [ "$NGROK_API_KEY" != "null" ]; then
         log_info "Configuring ngrok with API key..."
         ngrok config add-authtoken "$NGROK_API_KEY"
@@ -325,53 +229,25 @@ install_ngrok() {
     else
         log_warn "No ngrok API key provided, skipping authtoken setup"
     fi
-    
-    # Verify installation
-    if command -v ngrok &> /dev/null; then
-        NGROK_VERSION=$(ngrok version)
-        log_success "ngrok $NGROK_VERSION installed"
-    else
-        log_error "ngrok installation failed"
-        exit 1
-    fi
 }
 
-# Install Caddy
 install_caddy() {
     log_section "Installing Caddy"
     
     if command -v caddy &> /dev/null; then
-        CADDY_VERSION=$(caddy version)
-        log_success "Caddy already installed: $CADDY_VERSION"
+        log_success "Caddy already installed: $(caddy version | head -n1)"
         return 0
     fi
     
     log_info "Installing Caddy..."
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+    apt-get update -qq
+    apt-get install -y caddy
     
-    # Use existing install_caddy.sh script if available
-    if [ -f "$SCRIPT_DIR/core/scripts/install_caddy.sh" ]; then
-        bash "$SCRIPT_DIR/core/scripts/install_caddy.sh"
-    else
-        # Install Caddy manually
-        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | \
-            gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | \
-            tee /etc/apt/sources.list.d/caddy-stable.list
-        apt-get update -qq
-        apt-get install -y caddy
-    fi
-    
-    # Verify installation
-    if command -v caddy &> /dev/null; then
-        CADDY_VERSION=$(caddy version)
-        log_success "Caddy $CADDY_VERSION installed"
-    else
-        log_error "Caddy installation failed"
-        exit 1
-    fi
+    log_success "Caddy $(caddy version | head -n1) installed"
 }
 
-# Setup Caddy authentication
 setup_caddy_auth() {
     log_section "Setting up Caddy Authentication"
     
@@ -381,8 +257,6 @@ setup_caddy_auth() {
     fi
     
     log_info "Generating bcrypt hash for password..."
-    
-    # Generate bcrypt hash using caddy hash-password
     CADDY_HASH=$(caddy hash-password --plaintext "$CADDY_PASSWORD" 2>/dev/null)
     
     if [ -z "$CADDY_HASH" ]; then
@@ -391,87 +265,47 @@ setup_caddy_auth() {
     fi
     
     log_info "Creating Caddy auth file..."
-    
-    # Create caddy_auth.txt with username and hash
     echo "$CADDY_USERNAME $CADDY_HASH" > "$SCRIPT_DIR/caddy_auth.txt"
     echo "" >> "$SCRIPT_DIR/caddy_auth.txt"
-    
-    # Set proper permissions
     chmod 600 "$SCRIPT_DIR/caddy_auth.txt"
     
-    log_success "Caddy authentication configured"
-    log_info "Username: $CADDY_USERNAME"
+    log_success "Caddy authentication configured (Username: $CADDY_USERNAME)"
 }
 
-# Install Docker
 install_docker() {
     log_section "Installing Docker"
     
     if command -v docker &> /dev/null; then
-        DOCKER_VERSION=$(docker --version | awk '{print $3}' | sed 's/,//')
-        log_success "Docker already installed: $DOCKER_VERSION"
-        
-        # Check if service is running
-        if systemctl is-active --quiet docker; then
-            log_success "Docker service is running"
-        else
-            log_info "Starting Docker service..."
-            systemctl start docker
-            systemctl enable docker
-        fi
-        return 0
+        log_success "Docker already installed: $(docker --version | awk '{print $3}' | sed 's/,//')"
+    else
+        log_info "Installing Docker..."
+        apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+        echo \
+          "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
+          $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+        apt-get update -qq
+        apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+        log_success "Docker installed"
     fi
     
-    log_info "Installing Docker..."
+    if systemctl is-active --quiet docker; then
+        log_success "Docker service is running"
+    else
+        log_info "Starting and enabling Docker service..."
+        systemctl start docker
+        systemctl enable docker
+    fi
     
-    # Remove old versions if any
-    apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true
-    
-    # Install prerequisites
-    apt-get install -y \
-        apt-transport-https \
-        ca-certificates \
-        curl \
-        gnupg \
-        lsb-release
-    
-    # Add Docker's official GPG key
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-    
-    # Set up the stable repository
-    echo \
-      "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
-      $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-    
-    # Install Docker Engine
-    apt-get update -qq
-    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-    
-    # Start and enable service
-    systemctl start docker
-    systemctl enable docker
-    
-    # Add current user to docker group if not root
     if [ -n "$SUDO_USER" ]; then
         log_info "Adding $SUDO_USER to docker group..."
         usermod -aG docker "$SUDO_USER"
         log_warn "You may need to log out and back in for docker group membership to take effect"
     fi
-    
-    # Verify installation
-    if command -v docker &> /dev/null; then
-        DOCKER_VERSION=$(docker --version | awk '{print $3}' | sed 's/,//')
-        log_success "Docker $DOCKER_VERSION installed and running"
-    else
-        log_error "Docker installation failed"
-        exit 1
-    fi
 }
 
-# Create .env file
 create_env_file() {
     log_section "Creating .env File"
-    
     ENV_FILE="$SCRIPT_DIR/.env"
     
     if [ -f "$ENV_FILE" ]; then
@@ -480,7 +314,6 @@ create_env_file() {
     fi
     
     log_info "Creating .env file..."
-    
     cat > "$ENV_FILE" <<EOF
 # Luna Environment Configuration
 # Generated by install.sh on $(date)
@@ -491,11 +324,9 @@ TUNNEL_HOST=$NGROK_DOMAIN
 EOF
     
     chmod 600 "$ENV_FILE"
-    
     log_success ".env file created at $ENV_FILE"
 }
 
-# Setup ngrok systemd service
 setup_ngrok_service() {
     log_section "Setting up ngrok Auto-Start Service"
     
@@ -514,7 +345,7 @@ After=network.target
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/bin/ngrok http --domain=$NGROK_DOMAIN 8443
+ExecStart=/usr/local/bin/ngrok http --domain=$NGROK_DOMAIN 8443
 Restart=always
 RestartSec=10
 
@@ -527,61 +358,34 @@ EOF
     systemctl start luna-ngrok
     
     log_success "ngrok service created and started"
-    log_info "Service: luna-ngrok.service"
     log_info "Check status: systemctl status luna-ngrok"
 }
 
-# Install Luna dependencies
 install_luna_dependencies() {
-    log_section "Installing Luna Dependencies"
+    log_section "Installing All Dependencies"
     
-    log_info "Running install_deps.py (in venv)..."
+    log_info "Running install_deps.py (in venv as $SUDO_USER)..."
+    log_info "This will install:"
+    log_info "  - Core Python packages (uv)"
+    log_info "  - Hub UI Node.js packages (pnpm)"
+    log_info "  - Extension Python packages (uv)"
+    log_info "  - Extension UI Node.js packages (pnpm)"
+    echo ""
     
     cd "$SCRIPT_DIR"
-    "$VENV_PATH/bin/python3" core/scripts/install_deps.py
+    sudo -u "$SUDO_USER" "$VENV_PATH/bin/python3" core/scripts/install_deps.py
     
     if [ $? -eq 0 ]; then
-        log_success "Luna dependencies installed successfully"
+        log_success "All dependencies installed successfully"
     else
-        log_error "Luna dependency installation failed"
+        log_error "Dependency installation failed"
         exit 1
     fi
 }
 
-# Install Hub UI dependencies
-install_hub_ui_dependencies() {
-    log_section "Installing Hub UI Dependencies"
-    
-    HUB_UI_DIR="$SCRIPT_DIR/hub_ui"
-    
-    if [ ! -d "$HUB_UI_DIR" ]; then
-        log_warn "hub_ui directory not found, skipping"
-        return 0
-    fi
-    
-    if [ ! -f "$HUB_UI_DIR/package.json" ]; then
-        log_warn "hub_ui/package.json not found, skipping"
-        return 0
-    fi
-    
-    log_info "Installing Hub UI dependencies with pnpm..."
-    cd "$HUB_UI_DIR"
-    pnpm install
-    
-    if [ $? -eq 0 ]; then
-        log_success "Hub UI dependencies installed"
-    else
-        log_error "Hub UI dependency installation failed"
-        exit 1
-    fi
-    
-    cd "$SCRIPT_DIR"
-}
 
-# Create necessary directories
 create_directories() {
     log_section "Creating Directories"
-    
     log_info "Creating Luna directories..."
     
     mkdir -p "$SCRIPT_DIR/logs"
@@ -594,33 +398,30 @@ create_directories() {
     log_success "Directories created"
 }
 
-# Set file permissions
 set_permissions() {
     log_section "Setting Permissions"
     
     log_info "Setting executable permissions..."
-    
-    # Make shell scripts executable
     find "$SCRIPT_DIR" -name "*.sh" -type f -exec chmod +x {} \;
-    
-    # Make luna.sh executable
     chmod +x "$SCRIPT_DIR/luna.sh"
     
-    # Set proper ownership (assuming running as root, set to calling user)
+    # Set proper ownership for the entire app directory
     if [ -n "$SUDO_USER" ]; then
-        log_info "Setting ownership to $SUDO_USER..."
+        log_info "Setting ownership of all files to $SUDO_USER..."
         chown -R "$SUDO_USER:$SUDO_USER" "$SCRIPT_DIR"
     fi
     
     log_success "Permissions set"
 }
 
-# Setup Luna bootstrap systemd service
 setup_bootstrap_service() {
     log_section "Setting up Luna Auto-Start Service"
     
     log_info "Creating Luna bootstrap systemd service..."
     
+    # *** CRITICAL FIX: ***
+    # Run the service as the non-root user who ran `sudo`.
+    # This prevents all file permission errors during runtime.
     cat > /etc/systemd/system/luna.service <<EOF
 [Unit]
 Description=Luna Personal Assistant
@@ -629,7 +430,8 @@ Wants=network.target
 
 [Service]
 Type=simple
-User=root
+User=$SUDO_USER
+Group=$SUDO_USER
 WorkingDirectory=$SCRIPT_DIR
 Environment="LUNA_VENV=$VENV_PATH"
 ExecStart=$SCRIPT_DIR/luna.sh
@@ -650,11 +452,9 @@ EOF
     log_info "Service: luna.service"
     log_info "Check status: systemctl status luna"
     
-    # Wait for services to start
-    log_info "Waiting for services to start..."
+    log_info "Waiting 5s for services to start..."
     sleep 5
     
-    # Check if supervisor is running
     if pgrep -f "supervisor/supervisor.py" > /dev/null 2>&1; then
         log_success "Supervisor is running"
     else
@@ -662,7 +462,6 @@ EOF
     fi
 }
 
-# Print summary
 print_summary() {
     log_section "Installation Complete!"
     
@@ -681,49 +480,14 @@ print_summary() {
     echo "  Status:  systemctl status luna-ngrok"
     echo "  Logs:    journalctl -u luna-ngrok -f"
     echo ""
-    echo "Manual commands for existing VMs:"
-    echo "----------------------------------------"
-    echo "Create ngrok service:"
-    echo "sudo bash -c 'cat > /etc/systemd/system/luna-ngrok.service <<EOF
-[Unit]
-Description=Luna ngrok Tunnel
-After=network.target
-[Service]
-Type=simple
-User=root
-ExecStart=/usr/bin/ngrok http --domain=$NGROK_DOMAIN 8443
-Restart=always
-RestartSec=10
-[Install]
-WantedBy=multi-user.target
-EOF' && sudo systemctl daemon-reload && sudo systemctl enable luna-ngrok && sudo systemctl start luna-ngrok"
-    echo ""
-    echo "Create Luna service:"
-    echo "sudo bash -c 'cat > /etc/systemd/system/luna.service <<EOF
-[Unit]
-Description=Luna Personal Assistant
-After=network.target
-[Service]
-Type=simple
-User=root
-WorkingDirectory=$SCRIPT_DIR
-Environment=\"LUNA_VENV=$VENV_PATH\"
-ExecStart=$SCRIPT_DIR/luna.sh
-Restart=always
-RestartSec=10
-[Install]
-WantedBy=multi-user.target
-EOF' && sudo systemctl daemon-reload && sudo systemctl enable luna && sudo systemctl start luna"
-    echo "----------------------------------------"
-    echo ""
     echo "Installed components:"
-    echo "  - Python $(python3 --version | awk '{print $2}')"
-    echo "  - uv $(uv --version 2>/dev/null || echo 'package manager')"
-    echo "  - Node.js $(node --version)"
-    echo "  - pnpm $(pnpm --version)"
-    echo "  - ngrok $(ngrok version | head -n1)"
-    echo "  - Caddy $(caddy version | head -n1)"
-    echo "  - Docker $(docker --version | awk '{print $3}' | sed 's/,//')"
+    echo "  - System Python: $(python3 --version | awk '{print $2}')"
+    echo "  - Venv Python:   $($VENV_PATH/bin/python3 --version | awk '{print $2}')"
+    echo "  - Node.js:       $(node --version)"
+    echo "  - pnpm:          $(pnpm --version)"
+    echo "  - ngrok:         $(ngrok version | head -n1)"
+    echo "  - Caddy:         $(caddy version | head -n1)"
+    echo "  - Docker:        $(docker --version | awk '{print $3}' | sed 's/,//')"
     echo ""
     echo "Service URLs (when running):"
     echo "  - Hub UI:     http://127.0.0.1:5173"
@@ -734,16 +498,14 @@ EOF' && sudo systemctl daemon-reload && sudo systemctl enable luna && sudo syste
         echo "  - Public URL: https://$NGROK_DOMAIN"
     fi
     echo ""
-    echo "Note: Luna and ngrok will auto-start on system reboot."
-    echo ""
 }
 
 # Main installation flow
 main() {
     cat <<'EOF'
 ==============================================================
-              Luna Personal Assistant
-              Initial Installation Script
+            Luna Personal Assistant
+            Initial Installation Script
 ==============================================================
 EOF
     
@@ -754,8 +516,7 @@ EOF
     install_system_packages
     install_python
     create_venv
-    activate_venv
-    install_uv
+    activate_venv_and_install_uv
     install_nodejs
     install_pnpm
     install_ngrok
@@ -764,9 +525,11 @@ EOF
     install_docker
     create_directories
     create_env_file
-    install_luna_dependencies
-    install_hub_ui_dependencies
+    
+    # Set permissions *before* installing dependencies as the user
     set_permissions
+    
+    install_luna_dependencies
     
     # Setup auto-start services
     setup_ngrok_service
@@ -778,4 +541,3 @@ EOF
 
 # Run main installation
 main
-
