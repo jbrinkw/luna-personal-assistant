@@ -5,10 +5,17 @@ export default defineConfig(({ mode }) => {
   // Load .env file from parent directory (repo root)
   const env = loadEnv(mode, '../', '');
   
-  // Build allowed hosts list
+  // Build allowed hosts list - support all deployment modes
   const allowedHosts = [];
+  
+  // ngrok mode: TUNNEL_HOST
   if (env.TUNNEL_HOST) {
     allowedHosts.push(env.TUNNEL_HOST);
+  }
+  
+  // nip_io or custom_domain mode: PUBLIC_DOMAIN
+  if (env.PUBLIC_DOMAIN) {
+    allowedHosts.push(env.PUBLIC_DOMAIN);
   }
   
   return {
