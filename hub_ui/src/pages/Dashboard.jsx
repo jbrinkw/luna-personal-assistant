@@ -120,6 +120,7 @@ export default function Dashboard() {
   const activeUIs = getActiveUIs();
   const totalToolCount = getTotalToolCount();
   const relevantExtensions = getRelevantExtensions();
+  const totalToolsIconClass = totalToolCount > 0 ? 'icon-warning' : 'icon-success';
 
   return (
     <div className="dashboard-page">
@@ -151,23 +152,23 @@ export default function Dashboard() {
       </div>
 
       {/* Main Content: Two Column Layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
+      <div className="dashboard-main-grid">
         
         {/* Left Column */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
+        <div className="dashboard-column">
           
           {/* Active UIs */}
           <Card>
             <CardTitle>ACTIVE UIs</CardTitle>
             <CardContent>
               {activeUIs.length === 0 ? (
-                <p style={{ color: '#9aa0a6' }}>No UIs available</p>
+                <p className="text-muted">No UIs available</p>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div className="dashboard-stack">
                   {activeUIs.map(item => (
-                    <div key={`${item.type}-${item.name}`} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div key={`${item.type}-${item.name}`} className="dashboard-row">
                       <StatusIndicator status={item.status} />
-                      <span style={{ color: '#e8eaed', flex: 1 }}>{item.name}</span>
+                      <span className="text-strong flex-1">{item.name}</span>
                       <Button 
                         variant="secondary" 
                         onClick={() => {
@@ -177,7 +178,7 @@ export default function Dashboard() {
                             window.open(item.url, '_blank');
                           }
                         }}
-                        style={{ padding: '4px 12px', fontSize: '12px' }}
+                        size="sm"
                       >
                         View UI
                       </Button>
@@ -193,18 +194,18 @@ export default function Dashboard() {
             <CardTitle>DISCOVERED AGENTS</CardTitle>
             <CardContent>
               {agents.length === 0 ? (
-                <p style={{ color: '#9aa0a6' }}>No agents discovered</p>
+                <p className="text-muted">No agents discovered</p>
               ) : (
                 <>
-                  <p style={{ color: '#9aa0a6', marginBottom: '12px' }}>Available Agents:</p>
-                  <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                  <p className="dashboard-section-note">Available Agents:</p>
+                  <ul className="list-unstyled">
                     {agents.map(agent => (
-                      <li key={agent} style={{ padding: '6px 0', color: '#e8eaed' }}>
+                      <li key={agent} className="list-item">
                         • {agent}
                       </li>
                     ))}
                   </ul>
-                  <p style={{ color: '#9aa0a6', marginTop: '12px', fontSize: '14px' }}>
+                  <p className="text-muted text-sm mt-sm">
                     Total: {agents.length} Active
                   </p>
                 </>
@@ -218,26 +219,26 @@ export default function Dashboard() {
           <Card>
             <CardTitle>HEALTH MONITOR</CardTitle>
             <CardContent>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="dashboard-stack-lg">
                 
                 {/* System Status */}
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                    <span style={{ color: '#81c995' }}>✓</span>
-                    <span style={{ color: '#e8eaed', fontWeight: 600 }}>System Status</span>
+                  <div className="dashboard-row-tight mb-xs">
+                    <span className="icon-success">✓</span>
+                    <span className="text-strong fw-semibold">System Status</span>
                   </div>
-                  <div style={{ paddingLeft: '24px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div className="dashboard-indented">
+                    <div className="dashboard-row-tight">
                       <StatusIndicator status={agentApiStatus} />
-                      <span style={{ color: '#e8eaed' }}>Agent API</span>
-                      <span style={{ color: '#9aa0a6', fontSize: '12px' }}>{AGENT_API}</span>
+                      <span className="text-strong">Agent API</span>
+                      <span className="text-muted text-xs">{AGENT_API}</span>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div className="dashboard-row-tight">
                       <StatusIndicator status={mcpStatus} />
-                      <span style={{ color: '#e8eaed' }}>MCP Server</span>
-                      <span style={{ color: '#9aa0a6', fontSize: '12px' }}>{MCP_API}</span>
+                      <span className="text-strong">MCP Server</span>
+                      <span className="text-muted text-xs">{MCP_API}</span>
                     </div>
-                    <div style={{ color: '#9aa0a6', fontSize: '14px', marginTop: '4px' }}>
+                    <div className="text-muted text-sm mt-xs">
                       {agents.length} Active Agents
                     </div>
                   </div>
@@ -246,25 +247,25 @@ export default function Dashboard() {
                 {/* Extensions */}
                 {relevantExtensions.length > 0 && (
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                      <span style={{ color: totalToolCount > 0 ? '#ff9800' : '#81c995' }}>
+                    <div className="dashboard-row-tight mb-xs">
+                      <span className={totalToolsIconClass}>
                         {totalToolCount > 0 ? '⚠️' : '✓'}
                       </span>
-                      <span style={{ color: '#e8eaed', fontWeight: 600 }}>
+                      <span className="text-strong fw-semibold">
                         Extensions {totalToolCount > 0 && `(${totalToolCount} tools)`}
                       </span>
                     </div>
-                    <div style={{ paddingLeft: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div className="dashboard-indented-lg">
                       {relevantExtensions.map(ext => {
                         const hasNested = (ext.ui?.url) || (ext.services && ext.services.length > 0);
                         
                         return (
-                          <div key={ext.name} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div key={ext.name} className="dashboard-stack-tight">
+                            <div className="dashboard-row-tight">
                               <StatusIndicator status={ext.ui?.status || (ext.tool_count > 0 ? 'online' : 'unknown')} />
-                              <span style={{ color: '#e8eaed' }}>{ext.name}</span>
+                              <span className="text-strong">{ext.name}</span>
                               {ext.tool_count > 0 && (
-                                <span style={{ color: '#9aa0a6', fontSize: '12px' }}>
+                                <span className="text-muted text-xs">
                                   ({ext.tool_count} tool{ext.tool_count > 1 ? 's' : ''})
                                 </span>
                               )}
@@ -272,17 +273,17 @@ export default function Dashboard() {
                             
                             {/* Nested items for UI and Services */}
                             {hasNested && (
-                              <div style={{ paddingLeft: '24px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <div className="dashboard-indented-tight">
                                 {ext.ui?.url && (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <div className="dashboard-row-tight">
                                     <StatusIndicator status={ext.ui.status || 'unknown'} />
-                                    <span style={{ color: '#9aa0a6', fontSize: '13px' }}>UI</span>
+                                    <span className="dashboard-secondary-text">UI</span>
                                   </div>
                                 )}
                                 {ext.services && ext.services.map(svc => (
-                                  <div key={svc.name} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <div key={svc.name} className="dashboard-row-tight">
                                     <StatusIndicator status={svc.status || 'unknown'} />
-                                    <span style={{ color: '#9aa0a6', fontSize: '13px' }}>{svc.name}</span>
+                                    <span className="dashboard-secondary-text">{svc.name}</span>
                                   </div>
                                 ))}
                               </div>
@@ -297,15 +298,15 @@ export default function Dashboard() {
                 {/* External Services */}
                 {Object.keys(externalServices).length > 0 && (
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                      <span style={{ color: '#81c995' }}>✓</span>
-                      <span style={{ color: '#e8eaed', fontWeight: 600 }}>External</span>
+                    <div className="dashboard-row-tight mb-xs">
+                      <span className="icon-success">✓</span>
+                      <span className="text-strong fw-semibold">External</span>
                     </div>
-                    <div style={{ paddingLeft: '24px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div className="dashboard-indented">
                       {Object.entries(externalServices).map(([name, service]) => (
-                        <div key={name} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div key={name} className="dashboard-row-tight">
                           <StatusIndicator status={service.status || 'unknown'} />
-                          <span style={{ color: '#e8eaed' }}>{name}</span>
+                          <span className="text-strong">{name}</span>
                         </div>
                       ))}
                     </div>

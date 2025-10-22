@@ -127,7 +127,7 @@ export default function ExtensionManager() {
           <h1>Extension Manager</h1>
           <p className="page-subtitle">Manage your Luna extensions</p>
         </div>
-        <div style={{ display: 'flex', gap: '0.75rem' }}>
+        <div className="page-header-actions">
           <input
             ref={fileInputRef}
             type="file"
@@ -191,7 +191,7 @@ export default function ExtensionManager() {
             
             <div className="modal-body">
               {gitError && (
-                <div className="error-message" style={{ marginBottom: '1rem' }}>
+                <div className="error-message mb-md">
                   {gitError}
                 </div>
               )}
