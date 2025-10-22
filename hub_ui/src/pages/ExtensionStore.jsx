@@ -319,51 +319,22 @@ export default function ExtensionStore() {
       )}
 
       {/* Type Filter Tabs */}
-      <div className="type-filter-tabs" style={{ marginBottom: '1rem' }}>
+      <div className="type-filter-tabs">
         <button
           className={`type-tab ${selectedType === 'all' ? 'active' : ''}`}
           onClick={() => setSelectedType('all')}
-          style={{
-            padding: '0.5rem 1rem',
-            backgroundColor: selectedType === 'all' ? '#8ab4f8' : '#303134',
-            color: selectedType === 'all' ? '#202124' : '#9aa0a6',
-            border: '2px solid ' + (selectedType === 'all' ? '#8ab4f8' : '#3c4043'),
-            borderRadius: '0.375rem 0 0 0.375rem',
-            cursor: 'pointer',
-            fontWeight: 500,
-            transition: 'all 0.2s'
-          }}
         >
           All
         </button>
         <button
           className={`type-tab ${selectedType === 'extension' ? 'active' : ''}`}
           onClick={() => setSelectedType('extension')}
-          style={{
-            padding: '0.5rem 1rem',
-            backgroundColor: selectedType === 'extension' ? '#8ab4f8' : '#303134',
-            color: selectedType === 'extension' ? '#202124' : '#9aa0a6',
-            border: '2px solid ' + (selectedType === 'extension' ? '#8ab4f8' : '#3c4043'),
-            cursor: 'pointer',
-            fontWeight: 500,
-            transition: 'all 0.2s'
-          }}
         >
           Extensions
         </button>
         <button
           className={`type-tab ${selectedType === 'service' ? 'active' : ''}`}
           onClick={() => setSelectedType('service')}
-          style={{
-            padding: '0.5rem 1rem',
-            backgroundColor: selectedType === 'service' ? '#8ab4f8' : '#303134',
-            color: selectedType === 'service' ? '#202124' : '#9aa0a6',
-            border: '2px solid ' + (selectedType === 'service' ? '#8ab4f8' : '#3c4043'),
-            borderRadius: '0 0.375rem 0.375rem 0',
-            cursor: 'pointer',
-            fontWeight: 500,
-            transition: 'all 0.2s'
-          }}
         >
           Services
         </button>
@@ -426,7 +397,7 @@ export default function ExtensionStore() {
               <div className="store-card-header">
                 <div>
                   <h3>{addon.name}</h3>
-                  <span className="badge" style={{ backgroundColor: '#3b82f6', color: 'white', padding: '0.25rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: 600 }}>
+                  <span className="store-badge store-badge-extension">
                     Extension
                   </span>
                 </div>
@@ -464,7 +435,7 @@ export default function ExtensionStore() {
                       isPendingUpdate(addon.id) ? (
                         <Button 
                           onClick={() => handleUpdateToggle(addon)}
-                          style={{ backgroundColor: '#10b981', borderColor: '#10b981' }}
+                          variant="success"
                         >
                           ⏳ Pending Update
                         </Button>
@@ -477,7 +448,7 @@ export default function ExtensionStore() {
                       isPendingReinstall(addon.id) ? (
                         <Button 
                           onClick={() => handleReinstallToggle(addon)}
-                          style={{ backgroundColor: '#10b981', borderColor: '#10b981' }}
+                          variant="success"
                         >
                           ⏳ Pending Reinstall
                         </Button>
@@ -488,16 +459,16 @@ export default function ExtensionStore() {
                       )
                     )}
                   </>
-                ) : (
-                  isPendingInstall(addon.id) ? (
-                    <Button 
-                      onClick={() => handleInstallToggle(addon)}
-                      style={{ backgroundColor: '#10b981', borderColor: '#10b981' }}
-                    >
-                      ⏳ Pending Install
-                    </Button>
                   ) : (
-                    <Button onClick={() => handleInstallToggle(addon)}>
+                    isPendingInstall(addon.id) ? (
+                      <Button 
+                        onClick={() => handleInstallToggle(addon)}
+                        variant="success"
+                      >
+                        ⏳ Pending Install
+                      </Button>
+                    ) : (
+                      <Button onClick={() => handleInstallToggle(addon)}>
                       Install
                     </Button>
                   )
@@ -510,7 +481,7 @@ export default function ExtensionStore() {
               <div className="store-card-header">
                 <div>
                   <h3>{addon.display_name || addon.name}</h3>
-                  <span className="badge" style={{ backgroundColor: '#10b981', color: 'white', padding: '0.25rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: 600 }}>
+                  <span className="store-badge store-badge-service">
                     Service
                   </span>
                 </div>
@@ -526,7 +497,7 @@ export default function ExtensionStore() {
               </div>
 
               {addon.provides_vars && addon.provides_vars.length > 0 && (
-                <div className="store-card-requirements" style={{ borderColor: '#10b981' }}>
+                <div className="store-card-requirements store-card-requirements--provides">
                   <strong>Provides:</strong> {addon.provides_vars.slice(0, 3).join(', ')}
                   {addon.provides_vars.length > 3 && ` +${addon.provides_vars.length - 3} more`}
                 </div>
@@ -543,7 +514,7 @@ export default function ExtensionStore() {
               <div className="store-card-actions">
                 {isServiceInstalled(addon.name) ? (
                   <Button 
-                    style={{ backgroundColor: '#6b7280', borderColor: '#6b7280', cursor: 'default' }}
+                    variant="muted"
                     disabled
                   >
                     ✓ Installed
@@ -562,23 +533,23 @@ export default function ExtensionStore() {
       {/* Install Service Modal */}
       {installModal && (
         <div className="modal-overlay" onClick={() => !installing && setInstallModal(null)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+          <div className="modal-content store-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Install {installModal.display_name || installModal.name}</h2>
               <button className="modal-close" onClick={() => !installing && setInstallModal(null)}>×</button>
             </div>
             
             <div className="modal-body">
-              <p style={{ marginBottom: '1rem', color: '#6b7280' }}>{installModal.description}</p>
+              <p className="store-modal-description">{installModal.description}</p>
               
               {installModal.service_definition?.config_form?.fields?.map(field => (
-                <div key={field.name} style={{ marginBottom: '1rem' }}>
-                  <label style={{ display: 'block', fontWeight: 500, marginBottom: '0.25rem' }}>
+                <div key={field.name} className="store-modal-field">
+                  <label className="store-modal-label">
                     {field.label}
-                    {field.required && <span style={{ color: '#ef4444' }}>*</span>}
+                    {field.required && <span className="store-modal-required">*</span>}
                   </label>
                   {field.help && (
-                    <p style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.25rem' }}>{field.help}</p>
+                    <p className="store-modal-help">{field.help}</p>
                   )}
                   <input
                     type={field.type}
@@ -587,13 +558,7 @@ export default function ExtensionStore() {
                     placeholder={field.default}
                     required={field.required}
                     disabled={installing}
-                    style={{
-                      width: '100%',
-                      padding: '0.5rem',
-                      border: '1px solid #d1d5db',
-                      borderRadius: '0.375rem',
-                      fontSize: '1rem'
-                    }}
+                    className="store-modal-input"
                   />
                 </div>
               ))}
@@ -603,7 +568,7 @@ export default function ExtensionStore() {
               <Button 
                 onClick={() => setInstallModal(null)} 
                 disabled={installing}
-                style={{ backgroundColor: '#6b7280', borderColor: '#6b7280' }}
+                variant="muted"
               >
                 Cancel
               </Button>

@@ -34,16 +34,16 @@ export default function ShutdownModal({ isOpen, onClose }) {
     <Modal isOpen={isOpen} onClose={shutdownStatus === 'confirm' ? handleClose : null} title="Shutdown System" size="sm">
       {shutdownStatus === 'confirm' && (
         <div className="shutdown-confirm">
-          <div className="warning-icon" style={{ fontSize: '48px', textAlign: 'center', marginBottom: '16px' }}>
+          <div className="shutdown-icon shutdown-warning-icon">
             ⚠️
           </div>
-          <p style={{ textAlign: 'center', marginBottom: '8px' }}>
+          <p className="shutdown-text">
             Are you sure you want to shut down Luna?
           </p>
-          <p style={{ textAlign: 'center', fontSize: '14px', color: '#666', marginBottom: '24px' }}>
+          <p className="shutdown-text-muted">
             All services will stop and you'll need to manually restart the system.
           </p>
-          <div className="modal-actions">
+          <div className="modal-actions shutdown-actions">
             <Button variant="secondary" onClick={handleClose}>
               Cancel
             </Button>
@@ -56,11 +56,11 @@ export default function ShutdownModal({ isOpen, onClose }) {
 
       {shutdownStatus === 'shutting_down' && (
         <div className="shutdown-progress">
-          <div className="spinner" style={{ margin: '0 auto 16px' }}></div>
-          <p style={{ textAlign: 'center', fontSize: '16px', fontWeight: '600' }}>
+          <div className="spinner spinner-centered"></div>
+          <p className="shutdown-text fw-semibold">
             Shutting down Luna...
           </p>
-          <p style={{ textAlign: 'center', fontSize: '14px', color: '#666' }}>
+          <p className="shutdown-text-muted mb-0">
             All services are stopping
           </p>
         </div>
@@ -68,16 +68,16 @@ export default function ShutdownModal({ isOpen, onClose }) {
 
       {shutdownStatus === 'complete' && (
         <div className="shutdown-complete">
-          <div className="success-icon" style={{ fontSize: '48px', textAlign: 'center', marginBottom: '16px' }}>
+          <div className="shutdown-icon shutdown-success-icon">
             ✅
           </div>
-          <p style={{ textAlign: 'center', fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>
+          <p className="shutdown-text fw-semibold">
             System Shutdown Complete
           </p>
-          <p style={{ textAlign: 'center', fontSize: '14px', color: '#666', marginBottom: '24px' }}>
+          <p className="shutdown-text-muted">
             You can close this browser tab. To restart Luna, run <code>./luna.sh</code> on the server.
           </p>
-          <div style={{ textAlign: 'center' }}>
+          <div className="shutdown-close">
             <Button onClick={handleClose}>
               Close
             </Button>
@@ -87,6 +87,3 @@ export default function ShutdownModal({ isOpen, onClose }) {
     </Modal>
   );
 }
-
-
-
