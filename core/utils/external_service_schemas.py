@@ -3,7 +3,7 @@ Pydantic schemas for external service definitions and configuration forms
 """
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, root_validator, validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class CommandsObject(BaseModel):
@@ -32,7 +32,7 @@ class ServiceUI(BaseModel):
     base_path: str = Field(
         "ext_service",
         description="Base path segment for all external service UIs (without leading slash).",
-        regex=r"^[A-Za-z0-9_\-\/]+$",
+        pattern=r"^[A-Za-z0-9_\-\/]+$",
     )
     port: Optional[int] = Field(
         None,
@@ -61,14 +61,12 @@ class ServiceUI(BaseModel):
         description="Default Hub UI open behaviour for the link/button.",
     )
 
-    @root_validator
-    def _ensure_port_source(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+    @model_validator(mode='after')
+    def _ensure_port_source(self) -> 'ServiceUI':
         """Either a literal port or a reference to a config field must be provided."""
-        port = values.get("port")
-        port_field = values.get("port_field")
-        if (port is None) == (port_field is None):
+        if (self.port is None) == (self.port_field is None):
             raise ValueError("Exactly one of 'port' or 'port_field' must be provided in ui configuration.")
-        return values
+        return self
 
 
 class ServiceDefinition(BaseModel):
@@ -117,16 +115,14 @@ class ServiceDefinition(BaseModel):
     requires_sudo: bool = Field(False, description="Whether service requires sudo")
     install_timeout: int = Field(120, description="Installation timeout in seconds")
 
-    @validator("commands", "install_cmd", always=True)
-    def validate_commands_present(cls, v, values):
+    @model_validator(mode='after')
+    def validate_commands_present(self) -> 'ServiceDefinition':
         """Ensure either commands object or legacy command fields are present"""
-        if v is None and "commands" not in values:
-            # Check if legacy fields are present
-            if not values.get("install_cmd"):
-                raise ValueError(
-                    "Either 'commands' object or legacy command fields (install_cmd, etc.) must be present"
-                )
-        return v
+        if self.commands is None and self.install_cmd is None:
+            raise ValueError(
+                "Either 'commands' object or legacy command fields (install_cmd, etc.) must be present"
+            )
+        return self
 
 
 class ConfigFormField(BaseModel):

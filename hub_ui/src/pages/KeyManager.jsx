@@ -16,7 +16,9 @@ export default function KeyManager() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingKey, setEditingKey] = useState(null);
   const [editingValue, setEditingValue] = useState('');
+  const [savedValue, setSavedValue] = useState('');
   const [showValue, setShowValue] = useState(false);
+  const [showNewValue, setShowNewValue] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
   const [newKeyValue, setNewKeyValue] = useState('');
   const fileInputRef = useRef();
@@ -86,16 +88,20 @@ export default function KeyManager() {
 
   const handleEditClick = (key, value) => {
     setEditingKey(key);
-    setEditingValue(value || '');
+    setSavedValue(value || '');
+    setEditingValue(''); // Keep hidden initially
     setShowValue(false);
     setShowEditModal(true);
   };
 
   const handleSaveSecret = async () => {
     try {
-      await KeysAPI.set(editingKey, editingValue);
+      // Use saved value if editing value is empty (user didn't change it)
+      const valueToSave = editingValue || savedValue;
+      await KeysAPI.set(editingKey, valueToSave);
       alert('Secret updated successfully!');
       setShowEditModal(false);
+      setSavedValue('');
       await loadSecrets();
     } catch (error) {
       console.error('Failed to save secret:', error);
@@ -134,6 +140,7 @@ export default function KeyManager() {
       alert('Secret added successfully!');
       setNewKeyName('');
       setNewKeyValue('');
+      setShowNewValue(false);
       await loadSecrets();
     } catch (error) {
       console.error('Failed to add secret:', error);
@@ -268,13 +275,22 @@ export default function KeyManager() {
             value={newKeyName}
             onChange={(e) => setNewKeyName(e.target.value.toUpperCase())}
           />
-          <input
-            type="password"
-            className="secret-input"
-            placeholder="Secret value"
-            value={newKeyValue}
-            onChange={(e) => setNewKeyValue(e.target.value)}
-          />
+          <div className="input-with-toggle">
+            <input
+              type={showNewValue ? 'text' : 'password'}
+              className="secret-input"
+              placeholder="Secret value"
+              value={newKeyValue}
+              onChange={(e) => setNewKeyValue(e.target.value)}
+            />
+            <button
+              type="button"
+              className="toggle-visibility-btn"
+              onClick={() => setShowNewValue(!showNewValue)}
+            >
+              {showNewValue ? '👁️' : '👁️‍🗨️'}
+            </button>
+          </div>
           <Button onClick={handleAddSecret}>
             Add Secret
           </Button>
@@ -296,8 +312,9 @@ export default function KeyManager() {
             <input
               type={showValue ? 'text' : 'password'}
               className="secret-input"
-              value={editingValue}
+              value={showValue && !editingValue && savedValue ? savedValue : editingValue}
               onChange={(e) => setEditingValue(e.target.value)}
+              placeholder={savedValue ? '••••••••••••' : 'Enter new secret value'}
               autoFocus
             />
             <button

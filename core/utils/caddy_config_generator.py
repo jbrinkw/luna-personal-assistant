@@ -4,7 +4,14 @@ Dynamically generates Caddyfile based on master_config.json and deployment mode
 """
 import json
 import os
+import re
 from pathlib import Path
+
+
+def sanitize_label(label: str) -> str:
+    """Sanitize a string to make it safe for use as a Caddy matcher label"""
+    # Replace non-alphanumeric characters with underscores
+    return re.sub(r'[^a-zA-Z0-9_]', '_', label)
 
 
 def generate_caddyfile(repo_path, output_path=None):
@@ -196,21 +203,9 @@ def generate_caddyfile(repo_path, output_path=None):
                     "    ",
                 ])
 
+            # Use handle_path which automatically strips prefix AND rewrites Location headers
             lines.extend([
-                f"    @{matcher_label}_svc_ui {{",
-            ])
-            if not enforce_trailing_slash:
-                lines.append(f"        path {base_path}")
-            lines.extend([
-                f"        path {base_path}/*",
-                "    }",
-                f"    handle @{matcher_label}_svc_ui {{",
-            ])
-
-            if strip_prefix:
-                lines.append(f"        uri strip_prefix {base_path}")
-
-            lines.extend([
+                f"    handle_path {base_path}/* {{",
                 f"        reverse_proxy 127.0.0.1:{port}",
                 "    }",
                 "    ",
