@@ -558,22 +558,29 @@ def restart_system():
                     except:
                         pass
         
-        # Kill processes on core Luna ports
+        # Kill processes on core Luna ports and verify they're gone
         print("Checking core Luna ports...")
         for port in [5173, 8080, 8765, 9999]:
-            try:
-                result = subprocess.run(['lsof', '-ti', f':{port}'], capture_output=True, text=True)
-                if result.stdout.strip():
-                    pids = result.stdout.strip().split('\n')
-                    for pid in pids:
-                        if pid:
-                            print(f"Killing process on port {port} (PID: {pid})")
-                            try:
-                                os.kill(int(pid), signal.SIGKILL)
-                            except:
-                                pass
-            except:
-                pass
+            max_retries = 5
+            for attempt in range(max_retries):
+                try:
+                    result = subprocess.run(['lsof', '-ti', f':{port}'], capture_output=True, text=True)
+                    if result.stdout.strip():
+                        pids = result.stdout.strip().split('\n')
+                        for pid in pids:
+                            if pid:
+                                print(f"Killing process on port {port} (PID: {pid}, attempt {attempt + 1}/{max_retries})")
+                                try:
+                                    os.kill(int(pid), signal.SIGKILL)
+                                except:
+                                    pass
+                        time.sleep(0.3)  # Wait for process to fully die and release port
+                    else:
+                        # Port is clear
+                        print(f"Port {port} cleared")
+                        break
+                except:
+                    break
         
         # Kill processes on extension UI ports (5200-5299) and service ports (5300-5399)
         print("Checking extension UI and service ports...")
@@ -589,6 +596,7 @@ def restart_system():
                                 os.kill(int(pid), signal.SIGKILL)
                             except:
                                 pass
+                    time.sleep(0.2)  # Brief wait to ensure port release
             except:
                 pass
         
@@ -669,22 +677,29 @@ def shutdown_system():
                     except:
                         pass
         
-        # Kill processes on core Luna ports
+        # Kill processes on core Luna ports and verify they're gone
         print("Checking core Luna ports...")
         for port in [5173, 8080, 8765, 9999]:
-            try:
-                result = subprocess.run(['lsof', '-ti', f':{port}'], capture_output=True, text=True)
-                if result.stdout.strip():
-                    pids = result.stdout.strip().split('\n')
-                    for pid in pids:
-                        if pid:
-                            print(f"Killing process on port {port} (PID: {pid})")
-                            try:
-                                os.kill(int(pid), signal.SIGKILL)
-                            except:
-                                pass
-            except:
-                pass
+            max_retries = 5
+            for attempt in range(max_retries):
+                try:
+                    result = subprocess.run(['lsof', '-ti', f':{port}'], capture_output=True, text=True)
+                    if result.stdout.strip():
+                        pids = result.stdout.strip().split('\n')
+                        for pid in pids:
+                            if pid:
+                                print(f"Killing process on port {port} (PID: {pid}, attempt {attempt + 1}/{max_retries})")
+                                try:
+                                    os.kill(int(pid), signal.SIGKILL)
+                                except:
+                                    pass
+                        time.sleep(0.3)  # Wait for process to fully die and release port
+                    else:
+                        # Port is clear
+                        print(f"Port {port} cleared")
+                        break
+                except:
+                    break
         
         # Kill processes on extension UI ports (5200-5299) and service ports (5300-5399)
         print("Checking extension UI and service ports...")
@@ -700,6 +715,7 @@ def shutdown_system():
                                 os.kill(int(pid), signal.SIGKILL)
                             except:
                                 pass
+                    time.sleep(0.2)  # Brief wait to ensure port release
             except:
                 pass
         

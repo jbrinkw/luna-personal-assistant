@@ -18,17 +18,30 @@ const pool = new Pool({
 // Task Flows
 async function listFlows() {
   const result = await pool.query('SELECT id, call_name, prompts, agent FROM task_flows ORDER BY id DESC');
-  return result.rows;
+  return result.rows.map(row => ({
+    ...row,
+    prompts: typeof row.prompts === 'string' ? JSON.parse(row.prompts) : row.prompts
+  }));
 }
 
 async function getFlow(id) {
   const result = await pool.query('SELECT id, call_name, prompts, agent FROM task_flows WHERE id = $1', [id]);
-  return result.rows[0] || null;
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    ...row,
+    prompts: typeof row.prompts === 'string' ? JSON.parse(row.prompts) : row.prompts
+  };
 }
 
 async function getFlowByName(callName) {
   const result = await pool.query('SELECT id, call_name, prompts, agent FROM task_flows WHERE call_name = $1', [callName]);
-  return result.rows[0] || null;
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    ...row,
+    prompts: typeof row.prompts === 'string' ? JSON.parse(row.prompts) : row.prompts
+  };
 }
 
 async function createFlow(callName, prompts, agent = 'simple_agent') {
@@ -63,12 +76,20 @@ async function deleteFlow(id) {
 // Scheduled Prompts
 async function listSchedules() {
   const result = await pool.query('SELECT id, time_of_day, days_of_week, prompt, agent, enabled FROM scheduled_prompts ORDER BY id DESC');
-  return result.rows;
+  return result.rows.map(row => ({
+    ...row,
+    days_of_week: typeof row.days_of_week === 'string' ? JSON.parse(row.days_of_week) : row.days_of_week
+  }));
 }
 
 async function getSchedule(id) {
   const result = await pool.query('SELECT id, time_of_day, days_of_week, prompt, agent, enabled FROM scheduled_prompts WHERE id = $1', [id]);
-  return result.rows[0] || null;
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    ...row,
+    days_of_week: typeof row.days_of_week === 'string' ? JSON.parse(row.days_of_week) : row.days_of_week
+  };
 }
 
 async function createSchedule(timeOfDay, daysOfWeek, prompt, agent = 'simple_agent', enabled = true) {
@@ -138,7 +159,12 @@ async function getExecution(id) {
     'SELECT id, flow_id, status, current_prompt_index, total_prompts, started_at, completed_at, error, prompt_results FROM flow_executions WHERE id = $1',
     [id]
   );
-  return result.rows[0] || null;
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    ...row,
+    prompt_results: typeof row.prompt_results === 'string' ? JSON.parse(row.prompt_results) : row.prompt_results
+  };
 }
 
 async function listActiveExecutions() {
@@ -150,7 +176,11 @@ async function listActiveExecutions() {
      WHERE e.status = 'running'
      ORDER BY e.started_at DESC`
   );
-  return result.rows;
+  return result.rows.map(row => ({
+    ...row,
+    prompt_results: typeof row.prompt_results === 'string' ? JSON.parse(row.prompt_results) : row.prompt_results,
+    prompts: typeof row.prompts === 'string' ? JSON.parse(row.prompts) : row.prompts
+  }));
 }
 
 async function listRecentExecutions(limit = 20) {
@@ -163,14 +193,17 @@ async function listRecentExecutions(limit = 20) {
      LIMIT $1`,
     [limit]
   );
-  return result.rows;
+  return result.rows.map(row => ({
+    ...row,
+    prompt_results: typeof row.prompt_results === 'string' ? JSON.parse(row.prompt_results) : row.prompt_results
+  }));
 }
 
 async function updateExecutionProgress(id, promptIndex, promptResult) {
   const execution = await getExecution(id);
   if (!execution) return false;
 
-  const results = execution.prompt_results || [];
+  const results = Array.isArray(execution.prompt_results) ? execution.prompt_results : [];
   results.push(promptResult);
 
   await pool.query(

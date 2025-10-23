@@ -84,7 +84,7 @@ cp .env.example .env
 Required variables:
 - `DB_*` - Postgres connection details
 - `OPENAI_API_KEY` - For gpt models
-- `AGENT_API_TOKEN` - Static bearer token for the Agent API (required when Caddy injects auth headers)
+- `AGENT_API_KEY` - Static bearer token for the Agent API (auto-generated if not set, required for authentication)
 - `SUPERVISOR_API_TOKEN` - Static bearer token for the Supervisor API (required when Caddy injects auth headers)
 - `MCP_AUTH_TOKEN` - For MCP server authentication
 - `HA_URL` - Home Assistant instance URL (e.g., `http://192.168.1.100:8123`)

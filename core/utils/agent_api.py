@@ -10,12 +10,14 @@ import uuid
 import json
 import glob
 import inspect
+import secrets
 import importlib.util
 from types import ModuleType
 from typing import List, Optional, Literal, Dict, Any, Tuple, AsyncGenerator
 from pathlib import Path
 
-from fastapi import FastAPI, Response, HTTPException, Request, Header
+from fastapi import FastAPI, Response, HTTPException, Request, Header, Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import StreamingResponse
@@ -30,21 +32,64 @@ from core.utils.caddy_control import reload_caddy
 
 # Optional .env
 try:
-    from dotenv import load_dotenv
+    from dotenv import load_dotenv, set_key, find_dotenv
     load_dotenv()
 except Exception:
-    pass
+    print("Warning: python-dotenv not fully available")
+    set_key = None
+    find_dotenv = None
+
+# ---- Auth Setup ----
+def get_or_generate_api_key() -> str:
+    """Get API key from environment or generate and save a new one"""
+    api_key = os.getenv("AGENT_API_KEY")
+    
+    if api_key:
+        print(f"[Agent API] Using existing AGENT_API_KEY from environment")
+        return api_key
+    
+    # Generate new API key
+    api_key = f"sk-luna-{secrets.token_urlsafe(32)}"
+    print(f"[Agent API] No AGENT_API_KEY found, generated new key: {api_key}")
+    
+    # Try to save to .env file
+    if set_key and find_dotenv:
+        try:
+            env_file = find_dotenv()
+            if not env_file:
+                # Create .env file if it doesn't exist
+                env_file = PROJECT_ROOT / ".env"
+                env_file.touch()
+                env_file = str(env_file)
+            
+            set_key(env_file, "AGENT_API_KEY", api_key, quote_mode="never")
+            print(f"[Agent API] Saved AGENT_API_KEY to {env_file}")
+        except Exception as e:
+            print(f"[Agent API] Warning: Could not save API key to .env file: {e}")
+            print(f"[Agent API] Please manually add to .env: AGENT_API_KEY={api_key}")
+    else:
+        print(f"[Agent API] Please manually add to .env: AGENT_API_KEY={api_key}")
+    
+    return api_key
+
+# Initialize API key
+API_KEY = get_or_generate_api_key()
+
+# Get public URL from environment
+PUBLIC_URL = os.getenv("PUBLIC_URL", "http://localhost:8080")
+
+# Security scheme
+security = HTTPBearer()
 
 # ---- Config ----
 DEBUG = os.getenv("AGENT_API_DEBUG", "true").lower() in ("1", "true", "yes", "on")
 DEFAULT_AGENT = os.getenv("DEFAULT_AGENT", "simple_agent")
-AGENT_API_TOKEN = os.getenv("AGENT_API_TOKEN", "").strip()
-_UNPROTECTED_PATHS = {"/healthz"}
+_UNPROTECTED_PATHS = {"/", "/healthz"}
 
 # Discovery: scan core/agents/*/ for agent.py files
 AGENTS_ROOT = PROJECT_ROOT / "core" / "agents"
 
-app = FastAPI(title="Luna Agent API (OpenAI-compatible, No Auth)")
+app = FastAPI(title="Luna Agent API", description="OpenAI-compatible API for Luna agents")
 
 # Add CORS for localhost and network access - allow all origins
 app.add_middleware(
@@ -55,23 +100,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-if AGENT_API_TOKEN:
-    @app.middleware("http")
-    async def _require_agent_token(request: Request, call_next):  # type: ignore
-        """Enforce static bearer token when configured."""
-        if request.method == "OPTIONS" or request.url.path in _UNPROTECTED_PATHS:
-            return await call_next(request)
-
-        auth_header = request.headers.get("authorization", "")
-        if not auth_header.startswith("Bearer "):
-            return JSONResponse(status_code=401, content={"detail": "missing bearer token"})
-
-        token = auth_header.split(" ", 1)[1].strip()
-        if token != AGENT_API_TOKEN:
-            return JSONResponse(status_code=401, content={"detail": "invalid token"})
-
-        return await call_next(request)
+# API Key validation
+async def verify_api_key(credentials: HTTPAuthorizationCredentials = Security(security)):
+    """Verify the API key from the Authorization header"""
+    if credentials.credentials != API_KEY:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API key",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return credentials.credentials
 
 # ---- Request/Response models ----
 class ChatMessage(BaseModel):
@@ -363,14 +401,30 @@ async def _on_startup() -> None:
 
 
 # ---- Routes ----
+@app.get("/")
+async def root():
+    """Root endpoint with API information (no auth required)"""
+    agent_list = list(AGENTS.keys()) if AGENTS else ["(discovering...)"]
+    return {
+        "message": "Luna Agent API - OpenAI compatible",
+        "base_url": PUBLIC_URL,
+        "endpoints": [
+            "/v1/models",
+            "/v1/chat/completions",
+            "/extensions"
+        ],
+        "auth": "Bearer token required (use AGENT_API_KEY)",
+        "available_agents": agent_list
+    }
+
 @app.get("/healthz")
 async def healthz() -> Dict[str, str]:
-    """Health check endpoint."""
+    """Health check endpoint (no auth required)."""
     return {"status": "ok"}
 
 
 @app.get("/extensions")
-async def list_extensions_status() -> Dict[str, Any]:
+async def list_extensions_status(api_key: str = Security(verify_api_key)) -> Dict[str, Any]:
     """List discovered extensions with UI and services status."""
     try:
         # Query supervisor API for extension status (supervisor manages all services)
@@ -402,7 +456,7 @@ async def list_extensions_status() -> Dict[str, Any]:
 
 
 @app.get("/extensions/{name}")
-async def get_extension_status(name: str) -> Dict[str, Any]:
+async def get_extension_status(name: str, api_key: str = Security(verify_api_key)) -> Dict[str, Any]:
     try:
         from core.utils.service_manager import get_manager
         mgr = get_manager()
@@ -417,7 +471,7 @@ async def get_extension_status(name: str) -> Dict[str, Any]:
 
 
 @app.post("/extensions/{name}/ui/restart")
-async def restart_extension_ui(name: str) -> Dict[str, Any]:
+async def restart_extension_ui(name: str, api_key: str = Security(verify_api_key)) -> Dict[str, Any]:
     try:
         from core.utils.service_manager import get_manager
         mgr = get_manager()
@@ -433,7 +487,7 @@ async def restart_extension_ui(name: str) -> Dict[str, Any]:
 
 
 @app.post("/extensions/{name}/services/{service}/restart")
-async def restart_extension_service(name: str, service: str) -> Dict[str, Any]:
+async def restart_extension_service(name: str, service: str, api_key: str = Security(verify_api_key)) -> Dict[str, Any]:
     try:
         from core.utils.service_manager import get_manager
         mgr = get_manager()
@@ -449,7 +503,7 @@ async def restart_extension_service(name: str, service: str) -> Dict[str, Any]:
 
 
 @app.get("/v1/models")
-async def list_models():
+async def list_models(api_key: str = Security(verify_api_key)):
     """List available models (agents)."""
     now = int(time.time())
     data = [
@@ -460,7 +514,7 @@ async def list_models():
 
 
 @app.get("/v1/models/{model_id}")
-async def get_model(model_id: str):
+async def get_model(model_id: str, api_key: str = Security(verify_api_key)):
     """Get details of a specific model (agent)."""
     if model_id not in AGENTS:
         raise HTTPException(status_code=404, detail="model not found")
@@ -472,6 +526,7 @@ async def chat_completions(
     body: ChatCompletionRequest,
     request: Request,
     response: Response,
+    api_key: str = Security(verify_api_key),
     memory_header: Optional[str] = Header(default=None, alias="X-Luna-Memory"),
 ):
     """Chat completion endpoint (OpenAI-compatible)."""
@@ -565,4 +620,20 @@ if __name__ == "__main__":
     import uvicorn
     host = os.environ.get("AGENT_API_HOST", "127.0.0.1")
     port = int(os.environ.get("AGENT_API_PORT", "8080"))
+    
+    print("="*60)
+    print("🌙 Luna Agent API Starting...")
+    print("="*60)
+    print(f"Public URL: {PUBLIC_URL}")
+    print(f"API Key: {API_KEY}")
+    print(f"Default Agent: {DEFAULT_AGENT}")
+    print("\nEndpoints:")
+    print(f"  - GET  {PUBLIC_URL}/v1/models")
+    print(f"  - POST {PUBLIC_URL}/v1/chat/completions")
+    print(f"  - GET  {PUBLIC_URL}/extensions")
+    print("\nAuthentication:")
+    print(f"  Add header: Authorization: Bearer {API_KEY}")
+    print("="*60)
+    print(f"\nStarting server on {host}:{port}...\n")
+    
     uvicorn.run(app, host=host, port=port, reload=False)

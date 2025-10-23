@@ -120,7 +120,7 @@ export default function Dashboard() {
   const activeUIs = getActiveUIs();
   const totalToolCount = getTotalToolCount();
   const relevantExtensions = getRelevantExtensions();
-  const totalToolsIconClass = totalToolCount > 0 ? 'icon-warning' : 'icon-success';
+  const totalToolsIconClass = 'icon-success';
 
   return (
     <div className="dashboard-page">
@@ -248,9 +248,7 @@ export default function Dashboard() {
                 {relevantExtensions.length > 0 && (
                   <div>
                     <div className="dashboard-row-tight mb-xs">
-                      <span className={totalToolsIconClass}>
-                        {totalToolCount > 0 ? '⚠️' : '✓'}
-                      </span>
+                      <span className={totalToolsIconClass}>✓</span>
                       <span className="text-strong fw-semibold">
                         Extensions {totalToolCount > 0 && `(${totalToolCount} tools)`}
                       </span>

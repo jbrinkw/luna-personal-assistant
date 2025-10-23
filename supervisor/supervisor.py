@@ -343,6 +343,31 @@ class Supervisor:
                     except:
                         pass
         
+        # Verify core Luna ports are clear before exiting
+        self.log("INFO", "Verifying core ports are released...")
+        import subprocess
+        for port in [5173, 8080, 8765, 9999]:
+            max_retries = 5
+            for attempt in range(max_retries):
+                try:
+                    result = subprocess.run(['lsof', '-ti', f':{port}'], capture_output=True, text=True)
+                    if result.stdout.strip():
+                        pids = result.stdout.strip().split('\n')
+                        for pid in pids:
+                            if pid:
+                                self.log("INFO", f"Killing remaining process on port {port} (PID: {pid}, attempt {attempt + 1}/{max_retries})")
+                                try:
+                                    os.kill(int(pid), signal.SIGKILL)
+                                except:
+                                    pass
+                        time.sleep(0.3)  # Wait for process to fully die and release port
+                    else:
+                        # Port is clear
+                        self.log("INFO", f"Port {port} cleared")
+                        break
+                except:
+                    break
+        
         self.log("INFO", "All services stopped")
         self._reload_caddy_config(reason="shutdown-all-services")
     
@@ -513,9 +538,31 @@ class Supervisor:
             self.update_service_status("agent_api", status="failed")
     
     def _start_mcp_server(self):
-        """Start MCP Server on port 8765"""
+        """Start MCP Server on port 8766 (internal), proxied via Caddy on 8765 (external)"""
         try:
             self.log("INFO", "Starting MCP Server...")
+            
+            # Ensure port 8766 is free before starting
+            self.log("INFO", "Checking if port 8766 is available...")
+            import signal
+            max_retries = 10
+            for attempt in range(max_retries):
+                result = subprocess.run(['lsof', '-ti', ':8766'], capture_output=True, text=True)
+                if result.stdout.strip():
+                    pids = result.stdout.strip().split('\n')
+                    for pid in pids:
+                        if pid:
+                            self.log("INFO", f"Killing process on port 8766 (PID: {pid}, attempt {attempt + 1}/{max_retries})")
+                            try:
+                                os.kill(int(pid), signal.SIGKILL)
+                            except:
+                                pass
+                    import time
+                    time.sleep(0.5)
+                else:
+                    self.log("INFO", "Port 8766 is available")
+                    break
+            
             mcp_server_script = self.core_path / "utils" / "mcp_server.py"
             
             if not mcp_server_script.exists():
@@ -526,9 +573,9 @@ class Supervisor:
             log_file = self.logs_path / "mcp_server.log"
             log_fp = open(log_file, 'w')
             
-            # Spawn mcp_server.py process with localhost binding
+            # Spawn mcp_server.py process on internal port 8766
             proc = subprocess.Popen(
-                [self.python_bin, str(mcp_server_script), "--host", "127.0.0.1"],
+                [self.python_bin, str(mcp_server_script), "--host", "127.0.0.1", "--port", "8766"],
                 stdout=log_fp,
                 stderr=subprocess.STDOUT,
                 cwd=str(self.repo_path),
@@ -536,8 +583,8 @@ class Supervisor:
             )
             
             self.processes["mcp_server"] = proc
-            self.update_service_status("mcp_server", pid=proc.pid, port=8765, status="starting")
-            self.log("INFO", f"MCP Server started with PID {proc.pid} on port 8765")
+            self.update_service_status("mcp_server", pid=proc.pid, port=8766, status="starting")
+            self.log("INFO", f"MCP Server started with PID {proc.pid} on internal port 8766 (external: 8765 via Caddy)")
             
             # Check if process is still running after 1 second and update to running
             import time
