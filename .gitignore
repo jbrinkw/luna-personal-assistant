@@ -144,3 +144,5 @@ caddy_auth.txt
 
 # Installation config (contains sensitive data)
 install_config.json
+nocaddy_auth.txt
+.luna_lock

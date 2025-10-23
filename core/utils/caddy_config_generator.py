@@ -76,7 +76,7 @@ def generate_caddyfile(repo_path, output_path=None):
         "    # Core services",
         "    ",
         "    # API routes (order matters - more specific first)",
-        "    handle /api/agent/* {",
+        "    handle /api/agent* {",
         "        uri strip_prefix /api/agent",
     ])
     if agent_api_key:

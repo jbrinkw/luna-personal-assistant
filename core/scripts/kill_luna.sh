@@ -8,7 +8,7 @@ echo "=========================================="
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-RELOAD_CADDY="${REPO_ROOT}/scripts/reload_caddy.sh"
+RELOAD_CADDY="${REPO_ROOT}/core/scripts/reload_caddy.sh"
 
 # Find and kill all Luna-related processes
 echo "Searching for Luna processes..."

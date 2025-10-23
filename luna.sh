@@ -25,7 +25,7 @@ fi
 LOCKFILE="$SCRIPT_DIR/.luna_lock"
 SHUTDOWN_FLAG="$SCRIPT_DIR/.luna_shutdown"
 UPDATE_FLAG="$SCRIPT_DIR/.luna_updating"
-RELOAD_CADDY="$SCRIPT_DIR/scripts/reload_caddy.sh"
+RELOAD_CADDY="$SCRIPT_DIR/core/scripts/reload_caddy.sh"
 HEALTH_URL="http://127.0.0.1:9999/health"
 HEALTH_CHECK_INTERVAL=10
 MAX_FAILURES=3
