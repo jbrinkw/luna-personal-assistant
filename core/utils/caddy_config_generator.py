@@ -49,7 +49,7 @@ def generate_caddyfile(repo_path, output_path=None):
     public_domain = master_config.get("public_domain") or os.getenv("PUBLIC_DOMAIN", "")
     
     # Optional shared tokens for upstream services (used when set)
-    agent_api_token = os.getenv("AGENT_API_TOKEN", "").strip()
+    agent_api_key = os.getenv("AGENT_API_KEY", "").strip()
     supervisor_api_token = os.getenv("SUPERVISOR_API_TOKEN", "").strip()
     mcp_auth_token = os.getenv("MCP_AUTH_TOKEN", "").strip()
     
@@ -79,28 +79,77 @@ def generate_caddyfile(repo_path, output_path=None):
         "    handle /api/agent/* {",
         "        uri strip_prefix /api/agent",
     ])
-    if agent_api_token:
-        lines.append(f'        header_up Authorization "Bearer {agent_api_token}"')
+    if agent_api_key:
+        lines.extend([
+            "        reverse_proxy 127.0.0.1:8080 {",
+            f'            header_up Authorization "Bearer {agent_api_key}"',
+            "        }",
+        ])
+    else:
+        lines.append("        reverse_proxy 127.0.0.1:8080")
     lines.extend([
-        "        reverse_proxy 127.0.0.1:8080",
         "    }",
         "    ",
-        "    handle /api/mcp/* {",
-        "        uri strip_prefix /api/mcp",
+        "    # OAuth discovery endpoints at root (RFC 8414 requirement)",
+        "    # Rewrite to /api/.well-known/* for the MCP server",
+        "    handle /.well-known/* {",
+        "        # CORS headers",
+        "        header Access-Control-Allow-Origin *",
+        "        header Access-Control-Allow-Methods \"GET, POST, PUT, DELETE, OPTIONS\"",
+        "        header Access-Control-Allow-Headers \"Authorization, Content-Type\"",
+        "        header Access-Control-Allow-Credentials true",
+        "        ",
+        "        # Rewrite /.well-known/* to /api/.well-known/* and proxy to MCP",
+        "        rewrite * /api{uri}",
+        "        reverse_proxy 127.0.0.1:8766",
+        "    }",
+        "    ",
+        "    # MCP Server and OAuth endpoints (handled by ASGI app internally)",
+        "    handle /api/* {",
+        "        # CORS preflight - respond immediately to OPTIONS requests",
+        "        @options method OPTIONS",
+        "        handle @options {",
+        "            header Access-Control-Allow-Origin *",
+        "            header Access-Control-Allow-Methods \"GET, POST, PUT, DELETE, OPTIONS\"",
+        "            header Access-Control-Allow-Headers \"Authorization, Content-Type\"",
+        "            header Access-Control-Allow-Credentials true",
+        "            respond 200",
+        "        }",
+        "        ",
+        "        # Route /api/mcp, /api/authorize, /api/token, /api/callback to MCP server",
+        "        # No path stripping - ASGI app handles full paths",
+        "        @mcp_routes path /api/mcp* /api/authorize* /api/token* /api/auth/* /api/register*",
+        "        handle @mcp_routes {",
+        "            # CORS headers for actual requests",
+        "            header Access-Control-Allow-Origin *",
+        "            header Access-Control-Allow-Methods \"GET, POST, PUT, DELETE, OPTIONS\"",
+        "            header Access-Control-Allow-Headers \"Authorization, Content-Type\"",
+        "            header Access-Control-Allow-Credentials true",
     ])
     if mcp_auth_token:
-        lines.append(f'        header_up Authorization "Bearer {mcp_auth_token}"')
+        lines.extend([
+            "            reverse_proxy 127.0.0.1:8766 {",
+            f'                header_up Authorization "Bearer {mcp_auth_token}"',
+            "            }",
+        ])
+    else:
+        lines.append("            reverse_proxy 127.0.0.1:8766")
     lines.extend([
-        "        reverse_proxy 127.0.0.1:8765",
+        "        }",
         "    }",
         "    ",
         "    handle /api/supervisor/* {",
         "        uri strip_prefix /api/supervisor",
     ])
     if supervisor_api_token:
-        lines.append(f'        header_up Authorization "Bearer {supervisor_api_token}"')
+        lines.extend([
+            "        reverse_proxy 127.0.0.1:9999 {",
+            f'            header_up Authorization "Bearer {supervisor_api_token}"',
+            "        }",
+        ])
+    else:
+        lines.append("        reverse_proxy 127.0.0.1:9999")
     lines.extend([
-        "        reverse_proxy 127.0.0.1:9999",
         "    }",
         "    ",
     ])
@@ -116,8 +165,30 @@ def generate_caddyfile(repo_path, output_path=None):
             print(f"[caddy] Warning: failed to read external service routes: {exc}")
             service_routes = {}
 
-    # Add extension UI routes
+    # Add extension services API routes first (before UIs, for proper precedence)
     extensions = master_config.get("extensions", {})
+    service_port_assignments = master_config.get("port_assignments", {}).get("services", {})
+    
+    enabled_extension_services = []
+    for ext_name, ext_config in extensions.items():
+        if ext_config.get("enabled", False):
+            # Check for extension services
+            for service_key, service_port in service_port_assignments.items():
+                if service_key.startswith(f"{ext_name}."):
+                    enabled_extension_services.append((ext_name, service_key, service_port))
+    
+    if enabled_extension_services:
+        lines.append("    # Extension Service APIs")
+        for ext_name, service_key, service_port in sorted(enabled_extension_services):
+            lines.extend([
+                f"    handle /api/{ext_name}/* {{",
+                f"        uri strip_prefix /api/{ext_name}",
+                f"        reverse_proxy 127.0.0.1:{service_port}",
+                "    }",
+                "    ",
+            ])
+
+    # Add extension UI routes
     port_assignments = master_config.get("port_assignments", {}).get("extensions", {})
     
     enabled_extensions = []
@@ -228,10 +299,9 @@ def generate_caddyfile(repo_path, output_path=None):
     lines.extend([
         "    # Hub UI (catch-all, must be last)",
         "    handle /* {",
-            "        reverse_proxy 127.0.0.1:5173",
+        "        reverse_proxy 127.0.0.1:5173",
         "    }",
-        "}",
-        ""  # Empty line at end
+        "}"
     ])
     
     caddyfile_content = "\n".join(lines)

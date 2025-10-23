@@ -1,0 +1,115 @@
+lunahub.dev {
+    # Core services
+    
+    # API routes (order matters - more specific first)
+    handle /api/agent/* {
+        uri strip_prefix /api/agent
+        reverse_proxy 127.0.0.1:8080
+    }
+    
+    handle /api/mcp* {
+        # CORS preflight - respond immediately to OPTIONS requests
+        @options method OPTIONS
+        handle @options {
+            header Access-Control-Allow-Origin *
+            header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+            header Access-Control-Allow-Headers "Authorization, Content-Type"
+            header Access-Control-Allow-Credentials true
+            respond 200
+        }
+        
+        uri strip_prefix /api/mcp
+        # CORS headers for actual requests
+        header Access-Control-Allow-Origin *
+        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type"
+        header Access-Control-Allow-Credentials true
+        reverse_proxy 127.0.0.1:8766
+    }
+    
+    handle /api/supervisor/* {
+        uri strip_prefix /api/supervisor
+        reverse_proxy 127.0.0.1:9999
+    }
+    
+    # Extension Service APIs
+    handle /api/automation_memory/* {
+        uri strip_prefix /api/automation_memory
+        reverse_proxy 127.0.0.1:5300
+    }
+    
+    # Extension UIs
+    @automation_memory_root {
+        path /ext/automation_memory
+    }
+    redir @automation_memory_root /ext/automation_memory/ 308
+    
+    @automation_memory_ui {
+        path /ext/automation_memory/*
+    }
+    handle @automation_memory_ui {
+        reverse_proxy 127.0.0.1:5200
+    }
+    
+    @grocy_root {
+        path /ext/grocy
+    }
+    redir @grocy_root /ext/grocy/ 308
+    
+    @grocy_ui {
+        path /ext/grocy/*
+    }
+    handle @grocy_ui {
+        uri strip_prefix /ext/grocy
+        reverse_proxy 127.0.0.1:5201
+    }
+    
+    @quick_chat_root {
+        path /ext/quick_chat
+    }
+    redir @quick_chat_root /ext/quick_chat/ 308
+    
+    @quick_chat_ui {
+        path /ext/quick_chat/*
+    }
+    handle @quick_chat_ui {
+        uri strip_prefix /ext/quick_chat
+        reverse_proxy 127.0.0.1:5202
+    }
+    
+    # External service UIs
+    @grocy_svc_root {
+        path /ext_service/grocy
+    }
+    redir @grocy_svc_root /ext_service/grocy/ 308
+    
+    handle_path /ext_service/grocy/* {
+        reverse_proxy 127.0.0.1:9283
+    }
+    
+    # Hub UI (catch-all, must be last)
+    handle /* {
+        reverse_proxy 127.0.0.1:5173
+    }
+}
+
+# MCP Server on dedicated port (avoids subpath issues)
+lunahub.dev:8765 {
+    # CORS preflight - respond immediately to OPTIONS requests
+    @options method OPTIONS
+    handle @options {
+        header Access-Control-Allow-Origin *
+        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type"
+        header Access-Control-Allow-Credentials true
+        respond 200
+    }
+    
+    # CORS headers for actual requests
+    header Access-Control-Allow-Origin *
+    header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+    header Access-Control-Allow-Headers "Authorization, Content-Type"
+    header Access-Control-Allow-Credentials true
+    
+    reverse_proxy 127.0.0.1:8766
+}

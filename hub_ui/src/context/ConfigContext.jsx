@@ -38,6 +38,28 @@ export const ConfigProvider = ({ children }) => {
     try {
       setLoading(true);
       const config = await ConfigAPI.getMaster();
+      
+      // If there's a stale pending_update in the config, validate it
+      if (config.luna?.pending_update) {
+        try {
+          const updateCheck = await CoreAPI.checkUpdates();
+          if (!updateCheck.update_available) {
+            // Core is up to date, remove the stale pending_update
+            console.log('Removing stale pending_update from master config');
+            if (config.luna) {
+              delete config.luna.pending_update;
+              if (Object.keys(config.luna).length === 0) {
+                delete config.luna;
+              }
+            }
+            // Save the cleaned config back to the server
+            await ConfigAPI.updateMaster(config);
+          }
+        } catch (error) {
+          console.warn('Failed to validate pending_update on load:', error);
+        }
+      }
+      
       setOriginalState(config);
       setCurrentState(deepClone(config));
       
@@ -417,6 +439,11 @@ export const ConfigProvider = ({ children }) => {
         if (targetVersion && currentState?.luna?.pending_update !== targetVersion) {
           addCoreUpdate(targetVersion);
         }
+      } else {
+        // Core is up to date, remove any pending update
+        if (currentState?.luna?.pending_update) {
+          removeCoreUpdate();
+        }
       }
       return result;
     } catch (error) {
@@ -567,9 +594,10 @@ export const ConfigProvider = ({ children }) => {
       }
     });
     
-    // Core update check
+    // Core update check - only show as pending if it's different from original
     const currentPendingUpdate = currentState.luna?.pending_update;
-    if (currentPendingUpdate) {
+    const originalPendingUpdate = originalState.luna?.pending_update;
+    if (currentPendingUpdate && currentPendingUpdate !== originalPendingUpdate) {
       changes.push({ 
         type: 'update_core', 
         target: 'Luna Core',
