@@ -537,6 +537,48 @@ class Supervisor:
             self.log("ERROR", traceback.format_exc())
             self.update_service_status("agent_api", status="failed")
     
+    def _start_auth_service(self):
+        """Start Auth Service server on port 8765"""
+        try:
+            self.log("INFO", "Starting Auth Service...")
+            auth_service_script = self.core_path / "utils" / "auth_service.py"
+            
+            if not auth_service_script.exists():
+                self.log("ERROR", f"Auth Service script not found at {auth_service_script}")
+                self.update_service_status("auth_service", status="failed")
+                return
+            
+            log_file = self.logs_path / "auth_service.log"
+            log_fp = open(log_file, 'w')
+            
+            # Spawn auth_service.py process
+            proc = subprocess.Popen(
+                [self.python_bin, str(auth_service_script)],
+                stdout=log_fp,
+                stderr=subprocess.STDOUT,
+                cwd=str(self.repo_path),
+                start_new_session=True
+            )
+            
+            self.processes["auth_service"] = proc
+            self.update_service_status("auth_service", pid=proc.pid, port=8765, status="starting")
+            self.log("INFO", f"Auth Service started with PID {proc.pid} on port 8765")
+            
+            # Check if process is still running after 1 second and update to running
+            import time
+            time.sleep(1)
+            if proc.poll() is None:  # Process still running
+                self.update_service_status("auth_service", status="running")
+                self.log("INFO", "Auth Service is running")
+            else:
+                self.update_service_status("auth_service", status="failed")
+                self.log("ERROR", "Auth Service exited immediately after starting")
+        
+        except Exception as e:
+            self.log("ERROR", f"Failed to start Auth Service: {str(e)}")
+            self.log("ERROR", traceback.format_exc())
+            self.update_service_status("auth_service", status="failed")
+    
     def _start_mcp_server(self):
         """Start MCP Server on port 8766 (internal), proxied via Caddy on 8765 (external)"""
         try:
@@ -899,6 +941,7 @@ class Supervisor:
         # Phase 5: Start core services
         self.log("INFO", "Starting core services...")
         self._start_caddy()
+        self._start_auth_service()
         self._start_hub_ui()
         self._start_agent_api()
         self._start_mcp_server()
@@ -923,8 +966,9 @@ class Supervisor:
         self.log("INFO", "=" * 60)
         self.log("INFO", "Direct service access (localhost only):")
         self.log("INFO", "  Hub UI: http://127.0.0.1:5173")
+        self.log("INFO", "  Auth Service: http://127.0.0.1:8765")
         self.log("INFO", "  Agent API: http://127.0.0.1:8080")
-        self.log("INFO", "  MCP Server: http://127.0.0.1:8765")
+        self.log("INFO", "  MCP Server: http://127.0.0.1:8766")
         self.log("INFO", "  Supervisor API: http://127.0.0.1:9999")
         self.log("INFO", "=" * 60)
     

@@ -29,5 +29,12 @@
     "_comment": "Basic auth credentials for accessing Luna Hub UI (applies to all deployment modes). Leave empty to be prompted during install, or set values here to skip the prompt.",
     "username": "",
     "password": ""
+  },
+  
+  "github_oauth": {
+    "_comment": "GitHub OAuth for Hub UI and MCP Server authentication. Register an OAuth app at https://github.com/settings/developers. Leave empty to be prompted during install.",
+    "client_id": "",
+    "client_secret": "",
+    "_callback_url_instructions": "Set your callback URL to: https://YOUR_DOMAIN/auth/callback"
   }
 }

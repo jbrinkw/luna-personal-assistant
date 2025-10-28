@@ -82,6 +82,11 @@ def generate_caddyfile(repo_path, output_path=None):
     lines.extend([
         "    # PUBLIC ROUTES (no authentication)",
         "    ",
+        "    # Auth Service (public for OAuth flow)",
+        "    handle /auth/* {",
+        "        reverse_proxy 127.0.0.1:8765",
+        "    }",
+        "    ",
         "    # Agent API (public for programmatic access)",
         "    handle /api/agent* {",
         "        uri strip_prefix /api/agent",

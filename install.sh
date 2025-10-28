@@ -43,15 +43,36 @@ check_root() {
 load_config() {
     log_section "Loading Configuration"
     
-    if [ ! -f "$CONFIG_FILE" ]; then
-        log_error "Configuration file not found: $CONFIG_FILE"
-        log_info "Please create install_config.json with the required structure."
-        exit 1
-    fi
-    
     if ! command -v jq &> /dev/null; then
         log_info "Installing jq for JSON parsing..."
         apt-get install -y jq
+    fi
+    
+    # Create minimal config file if it doesn't exist
+    if [ ! -f "$CONFIG_FILE" ]; then
+        log_warn "Configuration file not found, creating minimal config..."
+        cat > "$CONFIG_FILE" <<'EOF'
+{
+  "deployment_mode": "",
+  "ngrok": {
+    "api_key": "",
+    "domain": ""
+  },
+  "nip_io": {},
+  "custom_domain": {
+    "domain": ""
+  },
+  "caddy": {
+    "username": "",
+    "password": ""
+  },
+  "github_oauth": {
+    "client_id": "",
+    "client_secret": ""
+  }
+}
+EOF
+        log_success "Created install_config.json - you will be prompted for required values"
     fi
     
     # Load deployment mode
@@ -74,8 +95,7 @@ load_config() {
         echo "3) custom_domain - Production mode with your own domain"
         echo "                   (requires open ports 80/443 and manual DNS setup)"
         echo ""
-        read -p "Enter your choice (1-3): " -n 1 -r DEPLOY_CHOICE
-        echo ""
+        read -p "Enter your choice (1-3): " -r DEPLOY_CHOICE
         echo ""
         
         case "$DEPLOY_CHOICE" in
@@ -110,6 +130,8 @@ load_config() {
     CUSTOM_DOMAIN=$(jq -r '.custom_domain.domain // ""' "$CONFIG_FILE")
     CADDY_USERNAME=$(jq -r '.caddy.username // ""' "$CONFIG_FILE")
     CADDY_PASSWORD=$(jq -r '.caddy.password // ""' "$CONFIG_FILE")
+    GITHUB_CLIENT_ID=$(jq -r '.github_oauth.client_id // ""' "$CONFIG_FILE")
+    GITHUB_CLIENT_SECRET=$(jq -r '.github_oauth.client_secret // ""' "$CONFIG_FILE")
     
     log_success "Configuration loaded"
     log_info "Deployment mode: $DEPLOYMENT_MODE"
@@ -215,6 +237,57 @@ load_config() {
             ;;
     esac
     
+    # Check if GitHub OAuth credentials are set, prompt if not
+    if [ -z "$GITHUB_CLIENT_ID" ] || [ "$GITHUB_CLIENT_ID" = "null" ] || [ "$GITHUB_CLIENT_ID" = "" ] || \
+       [ -z "$GITHUB_CLIENT_SECRET" ] || [ "$GITHUB_CLIENT_SECRET" = "null" ] || [ "$GITHUB_CLIENT_SECRET" = "" ]; then
+        log_warn "GitHub OAuth credentials are not set in install_config.json"
+        echo ""
+        echo "========================================"
+        echo "GitHub OAuth Setup (Optional)"
+        echo "========================================"
+        echo ""
+        echo "GitHub OAuth provides secure authentication for:"
+        echo "  • Luna Hub UI (web interface)"
+        echo "  • MCP Server (Claude/ChatGPT integration)"
+        echo ""
+        echo "To set up GitHub OAuth:"
+        echo "  1. Register an OAuth app: https://github.com/settings/developers"
+        echo "  2. Set callback URL to: https://$PUBLIC_DOMAIN/auth/callback"
+        echo "  3. Get your Client ID and Client Secret"
+        echo ""
+        echo "You can also skip this and use basic auth instead."
+        echo ""
+        read -p "Would you like to configure GitHub OAuth? (y/N): " -r SETUP_GITHUB_OAUTH
+        echo ""
+        
+        if [[ $SETUP_GITHUB_OAUTH =~ ^[Yy]$ ]]; then
+            echo "Enter your GitHub OAuth credentials:"
+            echo ""
+            read -p "GitHub Client ID: " GITHUB_CLIENT_ID
+            read -p "GitHub Client Secret: " GITHUB_CLIENT_SECRET
+            echo ""
+            
+            if [ -z "$GITHUB_CLIENT_ID" ] || [ -z "$GITHUB_CLIENT_SECRET" ]; then
+                log_warn "GitHub OAuth credentials cannot be empty if you chose to configure them"
+                log_info "Skipping GitHub OAuth setup - will fall back to basic auth"
+                GITHUB_CLIENT_ID=""
+                GITHUB_CLIENT_SECRET=""
+            else
+                # Update config file
+                TMP_CONFIG=$(mktemp)
+                jq --arg id "$GITHUB_CLIENT_ID" --arg secret "$GITHUB_CLIENT_SECRET" \
+                   '.github_oauth.client_id = $id | .github_oauth.client_secret = $secret' \
+                   "$CONFIG_FILE" > "$TMP_CONFIG"
+                mv "$TMP_CONFIG" "$CONFIG_FILE"
+                log_success "GitHub OAuth configured"
+            fi
+        else
+            log_info "Skipping GitHub OAuth - will use basic auth for Hub UI"
+            GITHUB_CLIENT_ID=""
+            GITHUB_CLIENT_SECRET=""
+        fi
+    fi
+    
     # Check if Caddy credentials are set, prompt if not
     if [ -z "$CADDY_USERNAME" ] || [ "$CADDY_USERNAME" = "null" ] || [ "$CADDY_USERNAME" = "" ] || \
        [ -z "$CADDY_PASSWORD" ] || [ "$CADDY_PASSWORD" = "null" ] || [ "$CADDY_PASSWORD" = "" ]; then
@@ -227,8 +300,7 @@ load_config() {
         echo "Do you want to set up basic authentication for the Luna Hub UI?"
         echo "This will require a username and password to access Luna."
         echo ""
-        read -p "Enable basic auth? (y/N): " -n 1 -r
-        echo ""
+        read -p "Enable basic auth? (y/N): " -r
         echo ""
         
         if [[ $REPLY =~ ^[Yy]$ ]]; then
@@ -569,10 +641,16 @@ create_env_file() {
 # Deployment Configuration
 DEPLOYMENT_MODE=$DEPLOYMENT_MODE
 PUBLIC_DOMAIN=$PUBLIC_DOMAIN
+PUBLIC_URL=https://$PUBLIC_DOMAIN/api
+ISSUER_URL=https://$PUBLIC_DOMAIN
 
 # Ngrok Tunnel (only used if DEPLOYMENT_MODE=ngrok)
 NGROK_AUTHTOKEN=$NGROK_API_KEY
 TUNNEL_HOST=$NGROK_DOMAIN
+
+# GitHub OAuth (for Hub UI and MCP Server)
+GITHUB_CLIENT_ID=$GITHUB_CLIENT_ID
+GITHUB_CLIENT_SECRET=$GITHUB_CLIENT_SECRET
 EOF
     
     chmod 600 "$ENV_FILE"
@@ -799,6 +877,31 @@ print_summary() {
     echo ""
 }
 
+cleanup_config() {
+    log_section "Configuration Cleanup"
+    
+    echo "The installation is complete. Your settings have been saved to:"
+    echo "  - .env (environment variables)"
+    echo "  - install_config.json (installation settings)"
+    echo ""
+    echo "The install_config.json file is no longer needed for Luna to run,"
+    echo "but it's useful if you need to re-run the installer in the future."
+    echo ""
+    read -p "Would you like to delete install_config.json? (y/N): " -r
+    echo ""
+    
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        if [ -f "$CONFIG_FILE" ]; then
+            rm -f "$CONFIG_FILE"
+            log_success "install_config.json has been deleted"
+        fi
+    else
+        log_info "Keeping install_config.json - it's safe to delete manually later if needed"
+    fi
+    
+    echo ""
+}
+
 # Main installation flow
 main() {
     cat <<'EOF'
@@ -857,6 +960,9 @@ EOF
     
     # Print summary
     print_summary
+    
+    # Cleanup config file
+    cleanup_config
 }
 
 # Run main installation
