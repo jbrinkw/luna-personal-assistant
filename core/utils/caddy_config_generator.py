@@ -7,6 +7,13 @@ import os
 import re
 from pathlib import Path
 
+# Load .env file if available
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 
 def sanitize_label(label: str) -> str:
     """Sanitize a string to make it safe for use as a Caddy matcher label"""
@@ -73,11 +80,6 @@ def generate_caddyfile(repo_path, output_path=None):
         "    # Core services",
         "    ",
     ]
-    
-    # Check if caddy_auth.txt exists - we'll apply it selectively
-    auth_file_path = repo_path / "caddy_auth.txt"
-    has_auth = auth_file_path.exists()
-    abs_auth_path = auth_file_path.resolve() if has_auth else None
     
     lines.extend([
         "    # PUBLIC ROUTES (no authentication)",
@@ -152,24 +154,12 @@ def generate_caddyfile(repo_path, output_path=None):
         "    ",
     ])
     
-    # Start protected routes section (with basic auth if configured)
-    if has_auth:
-        lines.extend([
-            "    # PROTECTED ROUTES (require authentication)",
-            "    ",
-            "    # Supervisor API (protected)",
-            "    handle /api/supervisor/* {",
-            "        basicauth {",
-            f"            import {abs_auth_path}",
-            "        }",
-            "        uri strip_prefix /api/supervisor",
-        ])
-    else:
-        lines.extend([
-            "    # Supervisor API",
-            "    handle /api/supervisor/* {",
-            "        uri strip_prefix /api/supervisor",
-        ])
+    # Supervisor API
+    lines.extend([
+        "    # Supervisor API",
+        "    handle /api/supervisor/* {",
+        "        uri strip_prefix /api/supervisor",
+    ])
         
     if supervisor_api_token:
         lines.extend([
@@ -208,27 +198,15 @@ def generate_caddyfile(repo_path, output_path=None):
                     enabled_extension_services.append((ext_name, service_key, service_port))
     
     if enabled_extension_services:
-        lines.append("    # Extension Service APIs (protected)")
+        lines.append("    # Extension Service APIs")
         for ext_name, service_key, service_port in sorted(enabled_extension_services):
-            if has_auth:
-                lines.extend([
-                    f"    handle /api/{ext_name}/* {{",
-                    "        basicauth {",
-                    f"            import {abs_auth_path}",
-                    "        }",
-                    f"        uri strip_prefix /api/{ext_name}",
-                    f"        reverse_proxy 127.0.0.1:{service_port}",
-                    "    }",
-                    "    ",
-                ])
-            else:
-                lines.extend([
-                    f"    handle /api/{ext_name}/* {{",
-                    f"        uri strip_prefix /api/{ext_name}",
-                    f"        reverse_proxy 127.0.0.1:{service_port}",
-                    "    }",
-                    "    ",
-                ])
+            lines.extend([
+                f"    handle /api/{ext_name}/* {{",
+                f"        uri strip_prefix /api/{ext_name}",
+                f"        reverse_proxy 127.0.0.1:{service_port}",
+                "    }",
+                "    ",
+            ])
 
     # Add extension UI routes
     port_assignments = master_config.get("port_assignments", {}).get("extensions", {})

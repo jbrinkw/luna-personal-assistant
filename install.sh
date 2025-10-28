@@ -62,13 +62,10 @@ load_config() {
   "custom_domain": {
     "domain": ""
   },
-  "caddy": {
-    "username": "",
-    "password": ""
-  },
   "github_oauth": {
     "client_id": "",
-    "client_secret": ""
+    "client_secret": "",
+    "allowed_username": ""
   }
 }
 EOF
@@ -128,10 +125,6 @@ EOF
     NGROK_API_KEY=$(jq -r '.ngrok.api_key // ""' "$CONFIG_FILE")
     NGROK_DOMAIN=$(jq -r '.ngrok.domain // ""' "$CONFIG_FILE")
     CUSTOM_DOMAIN=$(jq -r '.custom_domain.domain // ""' "$CONFIG_FILE")
-    CADDY_USERNAME=$(jq -r '.caddy.username // ""' "$CONFIG_FILE")
-    CADDY_PASSWORD=$(jq -r '.caddy.password // ""' "$CONFIG_FILE")
-    GITHUB_CLIENT_ID=$(jq -r '.github_oauth.client_id // ""' "$CONFIG_FILE")
-    GITHUB_CLIENT_SECRET=$(jq -r '.github_oauth.client_secret // ""' "$CONFIG_FILE")
     
     log_success "Configuration loaded"
     log_info "Deployment mode: $DEPLOYMENT_MODE"
@@ -237,96 +230,130 @@ EOF
             ;;
     esac
     
-    # Check if GitHub OAuth credentials are set, prompt if not
-    if [ -z "$GITHUB_CLIENT_ID" ] || [ "$GITHUB_CLIENT_ID" = "null" ] || [ "$GITHUB_CLIENT_ID" = "" ] || \
-       [ -z "$GITHUB_CLIENT_SECRET" ] || [ "$GITHUB_CLIENT_SECRET" = "null" ] || [ "$GITHUB_CLIENT_SECRET" = "" ]; then
-        log_warn "GitHub OAuth credentials are not set in install_config.json"
-        echo ""
-        echo "========================================"
-        echo "GitHub OAuth Setup (Optional)"
-        echo "========================================"
-        echo ""
-        echo "GitHub OAuth provides secure authentication for:"
-        echo "  • Luna Hub UI (web interface)"
-        echo "  • MCP Server (Claude/ChatGPT integration)"
-        echo ""
-        echo "To set up GitHub OAuth:"
-        echo "  1. Register an OAuth app: https://github.com/settings/developers"
-        echo "  2. Set callback URL to: https://$PUBLIC_DOMAIN/auth/callback"
-        echo "  3. Get your Client ID and Client Secret"
-        echo ""
-        echo "You can also skip this and use basic auth instead."
-        echo ""
-        read -p "Would you like to configure GitHub OAuth? (y/N): " -r SETUP_GITHUB_OAUTH
-        echo ""
-        
-        if [[ $SETUP_GITHUB_OAUTH =~ ^[Yy]$ ]]; then
-            echo "Enter your GitHub OAuth credentials:"
-            echo ""
-            read -p "GitHub Client ID: " GITHUB_CLIENT_ID
-            read -p "GitHub Client Secret: " GITHUB_CLIENT_SECRET
-            echo ""
-            
-            if [ -z "$GITHUB_CLIENT_ID" ] || [ -z "$GITHUB_CLIENT_SECRET" ]; then
-                log_warn "GitHub OAuth credentials cannot be empty if you chose to configure them"
-                log_info "Skipping GitHub OAuth setup - will fall back to basic auth"
-                GITHUB_CLIENT_ID=""
-                GITHUB_CLIENT_SECRET=""
-            else
-                # Update config file
-                TMP_CONFIG=$(mktemp)
-                jq --arg id "$GITHUB_CLIENT_ID" --arg secret "$GITHUB_CLIENT_SECRET" \
-                   '.github_oauth.client_id = $id | .github_oauth.client_secret = $secret' \
-                   "$CONFIG_FILE" > "$TMP_CONFIG"
-                mv "$TMP_CONFIG" "$CONFIG_FILE"
-                log_success "GitHub OAuth configured"
-            fi
-        else
-            log_info "Skipping GitHub OAuth - will use basic auth for Hub UI"
-            GITHUB_CLIENT_ID=""
-            GITHUB_CLIENT_SECRET=""
-        fi
-    fi
-    
-    # Check if Caddy credentials are set, prompt if not
-    if [ -z "$CADDY_USERNAME" ] || [ "$CADDY_USERNAME" = "null" ] || [ "$CADDY_USERNAME" = "" ] || \
-       [ -z "$CADDY_PASSWORD" ] || [ "$CADDY_PASSWORD" = "null" ] || [ "$CADDY_PASSWORD" = "" ]; then
-        log_warn "Caddy authentication credentials are not set in install_config.json"
-        echo ""
-        echo "========================================"
-        echo "Basic Authentication Setup"
-        echo "========================================"
-        echo ""
-        echo "Do you want to set up basic authentication for the Luna Hub UI?"
-        echo "This will require a username and password to access Luna."
-        echo ""
-        read -p "Enable basic auth? (y/N): " -r
-        echo ""
-        
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            read -p "Enter username: " CADDY_USERNAME
-            read -sp "Enter password: " CADDY_PASSWORD
-            echo ""
-            
-            if [ -z "$CADDY_USERNAME" ] || [ -z "$CADDY_PASSWORD" ]; then
-                log_error "Username and password cannot be empty"
+    # Determine PUBLIC_DOMAIN based on deployment mode before GitHub OAuth setup
+    case "$DEPLOYMENT_MODE" in
+        ngrok)
+            PUBLIC_DOMAIN="$NGROK_DOMAIN"
+            ;;
+        nip_io)
+            # Detect public IP for nip.io
+            log_info "Detecting public IP for nip.io domain..."
+            PUBLIC_IP=$(curl -s --max-time 5 ifconfig.me 2>/dev/null || curl -s --max-time 5 icanhazip.com 2>/dev/null || curl -s --max-time 5 api.ipify.org 2>/dev/null)
+            if [ -z "$PUBLIC_IP" ]; then
+                log_error "Failed to detect public IP address"
+                log_error "Please check your internet connection"
                 exit 1
             fi
-            
-            # Update config file
-            TMP_CONFIG=$(mktemp)
-            jq --arg user "$CADDY_USERNAME" --arg pass "$CADDY_PASSWORD" \
-               '.caddy.username = $user | .caddy.password = $pass' "$CONFIG_FILE" > "$TMP_CONFIG"
-            mv "$TMP_CONFIG" "$CONFIG_FILE"
-            
-            log_success "Authentication will be configured with username: $CADDY_USERNAME"
-        else
-            log_warn "Skipping authentication setup - Luna will be accessible without a password"
-            CADDY_USERNAME=""
-            CADDY_PASSWORD=""
+            PUBLIC_DOMAIN="${PUBLIC_IP}.nip.io"
+            log_success "Detected public domain: $PUBLIC_DOMAIN"
+            ;;
+        custom_domain)
+            PUBLIC_DOMAIN="$CUSTOM_DOMAIN"
+            ;;
+        *)
+            PUBLIC_DOMAIN="localhost:5173"
+            ;;
+    esac
+    
+    # GitHub OAuth Setup (Required)
+    GITHUB_CLIENT_ID=$(jq -r '.github_oauth.client_id // ""' "$CONFIG_FILE")
+    GITHUB_CLIENT_SECRET=$(jq -r '.github_oauth.client_secret // ""' "$CONFIG_FILE")
+    ALLOWED_GITHUB_USERNAME=$(jq -r '.github_oauth.allowed_username // ""' "$CONFIG_FILE")
+    
+    if [ -z "$GITHUB_CLIENT_ID" ] || [ "$GITHUB_CLIENT_ID" = "null" ] || [ "$GITHUB_CLIENT_ID" = "" ] || \
+       [ -z "$GITHUB_CLIENT_SECRET" ] || [ "$GITHUB_CLIENT_SECRET" = "null" ] || [ "$GITHUB_CLIENT_SECRET" = "" ] || \
+       [ -z "$ALLOWED_GITHUB_USERNAME" ] || [ "$ALLOWED_GITHUB_USERNAME" = "null" ] || [ "$ALLOWED_GITHUB_USERNAME" = "" ]; then
+        log_warn "GitHub OAuth is not fully configured in install_config.json"
+        echo ""
+        echo "========================================"
+        echo "GitHub OAuth Setup (Required)"
+        echo "========================================"
+        echo ""
+        echo "Luna uses GitHub OAuth for authentication."
+        echo "Only the specified GitHub username will be allowed to access Luna."
+        echo ""
+        echo "Your Luna domain: https://$PUBLIC_DOMAIN"
+        echo ""
+        echo "To set up GitHub OAuth:"
+        echo "  1. Go to: https://github.com/settings/developers"
+        echo "  2. Click 'New OAuth App'"
+        echo "  3. Set Application name: Luna Personal Assistant"
+        echo "  4. Set Homepage URL: https://$PUBLIC_DOMAIN"
+        echo "  5. Set Authorization callback URL: https://$PUBLIC_DOMAIN/auth/callback"
+        echo "  6. Click 'Register application'"
+        echo "  7. Copy your Client ID and generate a Client Secret"
+        echo ""
+        echo "IMPORTANT: Copy the URLs above exactly as shown!"
+        echo ""
+        read -p "Press Enter once you have your GitHub OAuth credentials ready..."
+        echo ""
+        
+        if [ -z "$GITHUB_CLIENT_ID" ] || [ "$GITHUB_CLIENT_ID" = "null" ] || [ "$GITHUB_CLIENT_ID" = "" ]; then
+            read -p "GitHub OAuth Client ID: " GITHUB_CLIENT_ID
+            echo ""
         fi
+        
+        if [ -z "$GITHUB_CLIENT_SECRET" ] || [ "$GITHUB_CLIENT_SECRET" = "null" ] || [ "$GITHUB_CLIENT_SECRET" = "" ]; then
+            read -p "GitHub OAuth Client Secret: " GITHUB_CLIENT_SECRET
+            echo ""
+        fi
+        
+        if [ -z "$ALLOWED_GITHUB_USERNAME" ] || [ "$ALLOWED_GITHUB_USERNAME" = "null" ] || [ "$ALLOWED_GITHUB_USERNAME" = "" ]; then
+            while true; do
+                read -p "Your GitHub username (only this user will be allowed access): " ALLOWED_GITHUB_USERNAME
+                echo ""
+                
+                if [ -z "$ALLOWED_GITHUB_USERNAME" ]; then
+                    log_error "GitHub username cannot be empty"
+                    continue
+                fi
+                
+                # Validate that the GitHub username exists
+                log_info "Validating GitHub username..."
+                HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://api.github.com/users/$ALLOWED_GITHUB_USERNAME")
+                
+                if [ "$HTTP_CODE" = "200" ]; then
+                    log_success "GitHub username '$ALLOWED_GITHUB_USERNAME' validated"
+                    break
+                elif [ "$HTTP_CODE" = "404" ]; then
+                    log_error "GitHub user '$ALLOWED_GITHUB_USERNAME' not found. Please enter a valid GitHub username."
+                    echo ""
+                else
+                    log_error "Failed to validate GitHub username (HTTP $HTTP_CODE). Please check your internet connection."
+                    echo ""
+                fi
+            done
+        fi
+        
+        if [ -z "$GITHUB_CLIENT_ID" ] || [ -z "$GITHUB_CLIENT_SECRET" ] || [ -z "$ALLOWED_GITHUB_USERNAME" ]; then
+            log_error "GitHub OAuth setup is incomplete"
+            exit 1
+        fi
+        
+        # Update config file
+        TMP_CONFIG=$(mktemp)
+        jq --arg id "$GITHUB_CLIENT_ID" \
+           --arg secret "$GITHUB_CLIENT_SECRET" \
+           --arg user "$ALLOWED_GITHUB_USERNAME" \
+           '.github_oauth.client_id = $id | .github_oauth.client_secret = $secret | .github_oauth.allowed_username = $user' \
+           "$CONFIG_FILE" > "$TMP_CONFIG"
+        mv "$TMP_CONFIG" "$CONFIG_FILE"
+        
+        log_success "GitHub OAuth configured"
+        log_info "Only '$ALLOWED_GITHUB_USERNAME' will be allowed to access Luna"
     else
-        log_info "Caddy username: $CADDY_USERNAME"
+        # Validate existing username
+        log_info "Validating allowed GitHub username: $ALLOWED_GITHUB_USERNAME"
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://api.github.com/users/$ALLOWED_GITHUB_USERNAME")
+        
+        if [ "$HTTP_CODE" = "200" ]; then
+            log_success "GitHub username validated"
+        else
+            log_warn "Saved GitHub username '$ALLOWED_GITHUB_USERNAME' could not be validated"
+        fi
+        
+        log_info "GitHub OAuth already configured"
+        log_info "Allowed user: $ALLOWED_GITHUB_USERNAME"
     fi
 }
 
@@ -569,27 +596,11 @@ install_caddy() {
 }
 
 setup_caddy_auth() {
-    log_section "Setting up Caddy Authentication"
+    log_section "Caddy Setup"
     
-    if [ -z "$CADDY_USERNAME" ] || [ -z "$CADDY_PASSWORD" ]; then
-        log_info "No authentication credentials provided, skipping auth setup"
-        return 0
-    fi
-    
-    log_info "Generating bcrypt hash for password..."
-    CADDY_HASH=$(caddy hash-password --plaintext "$CADDY_PASSWORD" 2>/dev/null)
-    
-    if [ -z "$CADDY_HASH" ]; then
-        log_error "Failed to generate password hash"
-        exit 1
-    fi
-    
-    log_info "Creating Caddy auth file..."
-    echo "$CADDY_USERNAME $CADDY_HASH" > "$SCRIPT_DIR/caddy_auth.txt"
-    echo "" >> "$SCRIPT_DIR/caddy_auth.txt"
-    chmod 600 "$SCRIPT_DIR/caddy_auth.txt"
-    
-    log_success "Caddy authentication configured (Username: $CADDY_USERNAME)"
+    log_info "Authentication will be handled by GitHub OAuth"
+    log_info "No local auth file needed - Caddy will proxy to auth service"
+    log_success "Caddy is ready for OAuth mode"
 }
 
 install_docker() {
@@ -648,9 +659,10 @@ ISSUER_URL=https://$PUBLIC_DOMAIN
 NGROK_AUTHTOKEN=$NGROK_API_KEY
 TUNNEL_HOST=$NGROK_DOMAIN
 
-# GitHub OAuth (for Hub UI and MCP Server)
+# GitHub OAuth Authentication
 GITHUB_CLIENT_ID=$GITHUB_CLIENT_ID
 GITHUB_CLIENT_SECRET=$GITHUB_CLIENT_SECRET
+ALLOWED_GITHUB_USERNAME=$ALLOWED_GITHUB_USERNAME
 EOF
     
     chmod 600 "$ENV_FILE"
@@ -845,6 +857,10 @@ print_summary() {
     echo ""
     echo "Deployment mode: $DEPLOYMENT_MODE"
     echo ""
+    echo "Authentication:"
+    echo "  - Method: GitHub OAuth"
+    echo "  - Allowed User: $ALLOWED_GITHUB_USERNAME"
+    echo ""
     echo "Service URLs (when running):"
     echo "  - Hub UI:     http://127.0.0.1:5173"
     echo "  - Agent API:  http://127.0.0.1:8080"
@@ -926,19 +942,14 @@ EOF
     case "$DEPLOYMENT_MODE" in
         ngrok)
             install_ngrok
-            PUBLIC_DOMAIN="$NGROK_DOMAIN"
+            # PUBLIC_DOMAIN was already set earlier in load_config
             ;;
         nip_io)
-            detect_public_ip
-            # PUBLIC_DOMAIN is set by detect_public_ip
+            # PUBLIC_DOMAIN was already set earlier in load_config
+            log_info "Using nip.io domain: $PUBLIC_DOMAIN"
             ;;
         custom_domain)
-            PUBLIC_DOMAIN="$CUSTOM_DOMAIN"
-            if [ -z "$PUBLIC_DOMAIN" ] || [ "$PUBLIC_DOMAIN" = "null" ]; then
-                log_error "custom_domain mode selected but no domain configured"
-                log_error "Please set custom_domain.domain in install_config.json"
-                exit 1
-            fi
+            # PUBLIC_DOMAIN was already set earlier in load_config
             log_info "Using custom domain: $PUBLIC_DOMAIN"
             ;;
     esac
