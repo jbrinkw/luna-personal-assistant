@@ -221,6 +221,7 @@ async function completeExecution(id, status = 'completed', error = null) {
 }
 
 module.exports = {
+  pool,  // Export pool for schema initialization
   listFlows,
   getFlow,
   getFlowByName,

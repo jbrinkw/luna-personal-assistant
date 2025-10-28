@@ -26,8 +26,8 @@
   },
   
   "caddy": {
-    "_comment": "Basic auth credentials for accessing Luna Hub UI (applies to all deployment modes)",
-    "username": "admin",
-    "password": "password"
+    "_comment": "Basic auth credentials for accessing Luna Hub UI (applies to all deployment modes). Leave empty to be prompted during install, or set values here to skip the prompt.",
+    "username": "",
+    "password": ""
   }
 }

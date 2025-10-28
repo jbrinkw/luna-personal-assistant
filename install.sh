@@ -55,28 +55,159 @@ load_config() {
     fi
     
     # Load deployment mode
-    DEPLOYMENT_MODE=$(jq -r '.deployment_mode // "ngrok"' "$CONFIG_FILE")
+    DEPLOYMENT_MODE=$(jq -r '.deployment_mode // ""' "$CONFIG_FILE")
+    
+    # Prompt for deployment mode if not set
+    if [ -z "$DEPLOYMENT_MODE" ] || [ "$DEPLOYMENT_MODE" = "null" ] || [ "$DEPLOYMENT_MODE" = "" ]; then
+        log_warn "Deployment mode is not set in install_config.json"
+        echo ""
+        echo "========================================"
+        echo "Select Deployment Mode"
+        echo "========================================"
+        echo ""
+        echo "1) ngrok       - Tunnel mode for home networks without port forwarding"
+        echo "                 (uses ngrok service, easiest setup)"
+        echo ""
+        echo "2) nip_io      - Cloud VPS mode with auto-detected public IP"
+        echo "                 (requires open ports 80/443 for Let's Encrypt SSL)"
+        echo ""
+        echo "3) custom_domain - Production mode with your own domain"
+        echo "                   (requires open ports 80/443 and manual DNS setup)"
+        echo ""
+        read -p "Enter your choice (1-3): " -n 1 -r DEPLOY_CHOICE
+        echo ""
+        echo ""
+        
+        case "$DEPLOY_CHOICE" in
+            1)
+                DEPLOYMENT_MODE="ngrok"
+                log_info "Selected: ngrok tunnel mode"
+                ;;
+            2)
+                DEPLOYMENT_MODE="nip_io"
+                log_info "Selected: nip.io mode (auto-detected IP)"
+                ;;
+            3)
+                DEPLOYMENT_MODE="custom_domain"
+                log_info "Selected: custom domain mode"
+                ;;
+            *)
+                log_error "Invalid choice. Please select 1, 2, or 3"
+                exit 1
+                ;;
+        esac
+        
+        # Update config file with deployment mode
+        log_info "Updating install_config.json with deployment mode..."
+        TMP_CONFIG=$(mktemp)
+        jq --arg mode "$DEPLOYMENT_MODE" '.deployment_mode = $mode' "$CONFIG_FILE" > "$TMP_CONFIG"
+        mv "$TMP_CONFIG" "$CONFIG_FILE"
+    fi
     
     # Load mode-specific configuration
     NGROK_API_KEY=$(jq -r '.ngrok.api_key // ""' "$CONFIG_FILE")
     NGROK_DOMAIN=$(jq -r '.ngrok.domain // ""' "$CONFIG_FILE")
     CUSTOM_DOMAIN=$(jq -r '.custom_domain.domain // ""' "$CONFIG_FILE")
-    CADDY_USERNAME=$(jq -r '.caddy.username' "$CONFIG_FILE")
-    CADDY_PASSWORD=$(jq -r '.caddy.password' "$CONFIG_FILE")
+    CADDY_USERNAME=$(jq -r '.caddy.username // ""' "$CONFIG_FILE")
+    CADDY_PASSWORD=$(jq -r '.caddy.password // ""' "$CONFIG_FILE")
     
     log_success "Configuration loaded"
     log_info "Deployment mode: $DEPLOYMENT_MODE"
     
+    # Validate and prompt for deployment mode-specific fields
     case "$DEPLOYMENT_MODE" in
         ngrok)
-            log_info "Ngrok domain: $NGROK_DOMAIN"
+            # Check for ngrok API key
+            if [ -z "$NGROK_API_KEY" ] || [ "$NGROK_API_KEY" = "null" ] || [ "$NGROK_API_KEY" = "your_ngrok_api_key_here" ]; then
+                log_warn "ngrok API key is not set"
+                echo ""
+                echo "You need an ngrok API key to use tunnel mode."
+                echo "Sign up at: https://dashboard.ngrok.com/signup"
+                echo "Find your authtoken at: https://dashboard.ngrok.com/get-started/your-authtoken"
+                echo ""
+                read -p "Enter your ngrok API key: " NGROK_API_KEY
+                echo ""
+                
+                if [ -z "$NGROK_API_KEY" ]; then
+                    log_error "ngrok API key cannot be empty for ngrok mode"
+                    exit 1
+                fi
+                
+                # Update config file
+                TMP_CONFIG=$(mktemp)
+                jq --arg key "$NGROK_API_KEY" '.ngrok.api_key = $key' "$CONFIG_FILE" > "$TMP_CONFIG"
+                mv "$TMP_CONFIG" "$CONFIG_FILE"
+            fi
+            
+            # Check for ngrok domain
+            if [ -z "$NGROK_DOMAIN" ] || [ "$NGROK_DOMAIN" = "null" ] || [ "$NGROK_DOMAIN" = "your-domain.ngrok-free.app" ] || [ "$NGROK_DOMAIN" = "" ]; then
+                log_warn "ngrok domain is not set"
+                echo ""
+                echo "You need a static ngrok domain (available on free plan)."
+                echo "Claim a free domain at: https://dashboard.ngrok.com/domains"
+                echo "Example: my-luna-app.ngrok-free.app"
+                echo ""
+                read -p "Enter your ngrok domain: " NGROK_DOMAIN
+                echo ""
+                
+                if [ -z "$NGROK_DOMAIN" ]; then
+                    log_error "ngrok domain cannot be empty for ngrok mode"
+                    exit 1
+                fi
+                
+                # Update config file
+                TMP_CONFIG=$(mktemp)
+                jq --arg domain "$NGROK_DOMAIN" '.ngrok.domain = $domain' "$CONFIG_FILE" > "$TMP_CONFIG"
+                mv "$TMP_CONFIG" "$CONFIG_FILE"
+            fi
+            
+            log_info "ngrok domain: $NGROK_DOMAIN"
             ;;
+            
         nip_io)
             log_info "Using nip.io magic DNS (IP will be auto-detected)"
+            echo ""
+            log_warn "IMPORTANT: Make sure ports 80 and 443 are open on your firewall"
+            log_warn "Let's Encrypt needs these ports to provision SSL certificates"
+            echo ""
+            read -p "Press Enter to continue once ports are confirmed open..."
             ;;
+            
         custom_domain)
+            # Check for custom domain
+            if [ -z "$CUSTOM_DOMAIN" ] || [ "$CUSTOM_DOMAIN" = "null" ] || [ "$CUSTOM_DOMAIN" = "lunahub.dev" ] || [ "$CUSTOM_DOMAIN" = "" ]; then
+                log_warn "Custom domain is not set"
+                echo ""
+                echo "Enter the domain name you want to use for Luna."
+                echo "Example: luna.yourdomain.com"
+                echo ""
+                echo "IMPORTANT: Before continuing, you must:"
+                echo "  1. Create an A record in your DNS provider"
+                echo "  2. Point it to this server's public IP address"
+                echo "  3. Wait for DNS propagation (usually 5-10 minutes)"
+                echo ""
+                read -p "Enter your custom domain: " CUSTOM_DOMAIN
+                echo ""
+                
+                if [ -z "$CUSTOM_DOMAIN" ]; then
+                    log_error "Custom domain cannot be empty for custom_domain mode"
+                    exit 1
+                fi
+                
+                # Update config file
+                TMP_CONFIG=$(mktemp)
+                jq --arg domain "$CUSTOM_DOMAIN" '.custom_domain.domain = $domain' "$CONFIG_FILE" > "$TMP_CONFIG"
+                mv "$TMP_CONFIG" "$CONFIG_FILE"
+            fi
+            
             log_info "Custom domain: $CUSTOM_DOMAIN"
+            echo ""
+            log_warn "IMPORTANT: Make sure ports 80 and 443 are open on your firewall"
+            log_warn "Make sure your domain's A record points to this server's public IP"
+            echo ""
+            read -p "Press Enter to continue once DNS and firewall are configured..."
             ;;
+            
         *)
             log_error "Invalid deployment_mode: $DEPLOYMENT_MODE"
             log_error "Valid options: ngrok, nip_io, custom_domain"
@@ -84,7 +215,47 @@ load_config() {
             ;;
     esac
     
-    log_info "Caddy username: $CADDY_USERNAME"
+    # Check if Caddy credentials are set, prompt if not
+    if [ -z "$CADDY_USERNAME" ] || [ "$CADDY_USERNAME" = "null" ] || [ "$CADDY_USERNAME" = "" ] || \
+       [ -z "$CADDY_PASSWORD" ] || [ "$CADDY_PASSWORD" = "null" ] || [ "$CADDY_PASSWORD" = "" ]; then
+        log_warn "Caddy authentication credentials are not set in install_config.json"
+        echo ""
+        echo "========================================"
+        echo "Basic Authentication Setup"
+        echo "========================================"
+        echo ""
+        echo "Do you want to set up basic authentication for the Luna Hub UI?"
+        echo "This will require a username and password to access Luna."
+        echo ""
+        read -p "Enable basic auth? (y/N): " -n 1 -r
+        echo ""
+        echo ""
+        
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            read -p "Enter username: " CADDY_USERNAME
+            read -sp "Enter password: " CADDY_PASSWORD
+            echo ""
+            
+            if [ -z "$CADDY_USERNAME" ] || [ -z "$CADDY_PASSWORD" ]; then
+                log_error "Username and password cannot be empty"
+                exit 1
+            fi
+            
+            # Update config file
+            TMP_CONFIG=$(mktemp)
+            jq --arg user "$CADDY_USERNAME" --arg pass "$CADDY_PASSWORD" \
+               '.caddy.username = $user | .caddy.password = $pass' "$CONFIG_FILE" > "$TMP_CONFIG"
+            mv "$TMP_CONFIG" "$CONFIG_FILE"
+            
+            log_success "Authentication will be configured with username: $CADDY_USERNAME"
+        else
+            log_warn "Skipping authentication setup - Luna will be accessible without a password"
+            CADDY_USERNAME=""
+            CADDY_PASSWORD=""
+        fi
+    else
+        log_info "Caddy username: $CADDY_USERNAME"
+    fi
 }
 
 check_system_requirements() {
@@ -168,7 +339,41 @@ create_venv() {
     
     # *** CRITICAL FIX: ***
     # We explicitly use `python3.11` to create the venv.
-    python3.11 -m venv "$VENV_PATH"
+    # Try to create venv and capture any errors
+    # Temporarily disable exit-on-error to handle venv creation failure gracefully
+    set +e
+    python3.11 -m venv "$VENV_PATH" > /tmp/venv_creation.log 2>&1
+    VENV_EXIT_CODE=$?
+    set -e
+    
+    if [ $VENV_EXIT_CODE -ne 0 ]; then
+        # Check if the error is about missing ensurepip/venv package
+        if grep -q "ensurepip" /tmp/venv_creation.log || grep -q "No module named venv" /tmp/venv_creation.log; then
+            log_warn "Python venv package not found. Installing python3.11-venv..."
+            apt-get install -y python3.11-venv 2>&1 | tail -5
+            
+            if [ $? -ne 0 ]; then
+                log_error "Failed to install python3.11-venv package"
+                exit 1
+            fi
+            
+            log_info "Retrying virtual environment creation..."
+            python3.11 -m venv "$VENV_PATH" > /tmp/venv_creation_retry.log 2>&1
+            
+            if [ $? -ne 0 ]; then
+                log_error "Failed to create virtual environment even after installing python3.11-venv"
+                log_error "Error output:"
+                cat /tmp/venv_creation_retry.log
+                rm -f /tmp/venv_creation.log /tmp/venv_creation_retry.log
+                exit 1
+            fi
+        else
+            log_error "Failed to create virtual environment with unknown error"
+            cat /tmp/venv_creation.log
+            rm -f /tmp/venv_creation.log
+            exit 1
+        fi
+    fi
     
     if [ -f "$VENV_PATH/bin/activate" ] && [ -f "$VENV_PATH/bin/python3" ]; then
         log_success "Virtual environment created successfully"
@@ -179,6 +384,9 @@ create_venv() {
     
     # Set permissions for the venv now
     chown -R "$SUDO_USER:$SUDO_USER" "$VENV_PATH"
+    
+    # Cleanup temp log file
+    rm -f /tmp/venv_creation.log /tmp/venv_creation_retry.log
 }
 
 activate_venv_and_install_uv() {
@@ -292,7 +500,7 @@ setup_caddy_auth() {
     log_section "Setting up Caddy Authentication"
     
     if [ -z "$CADDY_USERNAME" ] || [ -z "$CADDY_PASSWORD" ]; then
-        log_warn "Caddy username or password not provided, skipping auth setup"
+        log_info "No authentication credentials provided, skipping auth setup"
         return 0
     fi
     

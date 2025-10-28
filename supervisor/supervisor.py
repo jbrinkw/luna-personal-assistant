@@ -931,6 +931,10 @@ class Supervisor:
     def _load_external_services(self):
         """Load external services registry into state for monitoring"""
         try:
+            # Bootstrap bundled service definitions on first run
+            self.log("INFO", "Bootstrapping bundled external services...")
+            self.external_services_manager.bootstrap_bundled_services()
+            
             self.log("INFO", "Loading external services for monitoring...")
             registry = self.external_services_manager.get_registry()
             
