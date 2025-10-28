@@ -32,6 +32,7 @@ except Exception:
 # ---- Configuration ----
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID")
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET")
+ALLOWED_GITHUB_USERNAME = os.getenv("ALLOWED_GITHUB_USERNAME")
 PUBLIC_DOMAIN = os.getenv("PUBLIC_DOMAIN", "localhost:5173")
 JWT_SECRET = os.getenv("JWT_SECRET", secrets.token_urlsafe(32))
 SESSION_DURATION_HOURS = int(os.getenv("SESSION_DURATION_HOURS", "24"))
@@ -44,6 +45,12 @@ if not GITHUB_CLIENT_ID or not GITHUB_CLIENT_SECRET:
     print("[Auth Service] WARNING: GitHub OAuth not configured")
     print("[Auth Service] Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET in .env")
     print("[Auth Service] Auth service will start but OAuth will not work")
+
+if not ALLOWED_GITHUB_USERNAME:
+    print("[Auth Service] WARNING: ALLOWED_GITHUB_USERNAME not set")
+    print("[Auth Service] Any GitHub user will be able to log in")
+else:
+    print(f"[Auth Service] Access restricted to GitHub user: {ALLOWED_GITHUB_USERNAME}")
 
 if not DATABASE_URL:
     print("[Auth Service] WARNING: DATABASE_URL not set, using in-memory sessions")
@@ -287,6 +294,13 @@ async def callback(
         
         if not github_id or not github_username:
             raise HTTPException(status_code=400, detail="Invalid user data from GitHub")
+        
+        # Check if user is allowed
+        if ALLOWED_GITHUB_USERNAME and github_username != ALLOWED_GITHUB_USERNAME:
+            raise HTTPException(
+                status_code=403, 
+                detail=f"Access denied. Only '{ALLOWED_GITHUB_USERNAME}' is allowed to access this Luna instance."
+            )
     
     # Create or update user in database
     user_id = create_or_update_user(github_id, github_username, access_token)
