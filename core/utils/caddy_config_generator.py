@@ -70,12 +70,19 @@ def generate_caddyfile(repo_path, output_path=None):
     # Build Caddyfile content
     lines = [
         f"{server_address} {{",
-    ]
-    
-    lines.extend([
         "    # Core services",
         "    ",
-        "    # API routes (order matters - more specific first)",
+    ]
+    
+    # Check if caddy_auth.txt exists - we'll apply it selectively
+    auth_file_path = repo_path / "caddy_auth.txt"
+    has_auth = auth_file_path.exists()
+    abs_auth_path = auth_file_path.resolve() if has_auth else None
+    
+    lines.extend([
+        "    # PUBLIC ROUTES (no authentication)",
+        "    ",
+        "    # Agent API (public for programmatic access)",
         "    handle /api/agent* {",
         "        uri strip_prefix /api/agent",
     ])
@@ -90,7 +97,7 @@ def generate_caddyfile(repo_path, output_path=None):
     lines.extend([
         "    }",
         "    ",
-        "    # OAuth discovery endpoints at root (RFC 8414 requirement)",
+        "    # MCP Server OAuth discovery endpoints (public for OAuth clients)",
         "    # Rewrite to /api/.well-known/* for the MCP server",
         "    handle /.well-known/* {",
         "        # CORS headers",
@@ -104,7 +111,7 @@ def generate_caddyfile(repo_path, output_path=None):
         "        reverse_proxy 127.0.0.1:8766",
         "    }",
         "    ",
-        "    # MCP Server and OAuth endpoints (handled by ASGI app internally)",
+        "    # MCP Server and OAuth endpoints (public for AI clients)",
         "    handle /api/* {",
         "        # CORS preflight - respond immediately to OPTIONS requests",
         "        @options method OPTIONS",
@@ -138,9 +145,27 @@ def generate_caddyfile(repo_path, output_path=None):
         "        }",
         "    }",
         "    ",
-        "    handle /api/supervisor/* {",
-        "        uri strip_prefix /api/supervisor",
     ])
+    
+    # Start protected routes section (with basic auth if configured)
+    if has_auth:
+        lines.extend([
+            "    # PROTECTED ROUTES (require authentication)",
+            "    ",
+            "    # Supervisor API (protected)",
+            "    handle /api/supervisor/* {",
+            "        basicauth {",
+            f"            import {abs_auth_path}",
+            "        }",
+            "        uri strip_prefix /api/supervisor",
+        ])
+    else:
+        lines.extend([
+            "    # Supervisor API",
+            "    handle /api/supervisor/* {",
+            "        uri strip_prefix /api/supervisor",
+        ])
+        
     if supervisor_api_token:
         lines.extend([
             "        reverse_proxy 127.0.0.1:9999 {",
@@ -178,15 +203,27 @@ def generate_caddyfile(repo_path, output_path=None):
                     enabled_extension_services.append((ext_name, service_key, service_port))
     
     if enabled_extension_services:
-        lines.append("    # Extension Service APIs")
+        lines.append("    # Extension Service APIs (protected)")
         for ext_name, service_key, service_port in sorted(enabled_extension_services):
-            lines.extend([
-                f"    handle /api/{ext_name}/* {{",
-                f"        uri strip_prefix /api/{ext_name}",
-                f"        reverse_proxy 127.0.0.1:{service_port}",
-                "    }",
-                "    ",
-            ])
+            if has_auth:
+                lines.extend([
+                    f"    handle /api/{ext_name}/* {{",
+                    "        basicauth {",
+                    f"            import {abs_auth_path}",
+                    "        }",
+                    f"        uri strip_prefix /api/{ext_name}",
+                    f"        reverse_proxy 127.0.0.1:{service_port}",
+                    "    }",
+                    "    ",
+                ])
+            else:
+                lines.extend([
+                    f"    handle /api/{ext_name}/* {{",
+                    f"        uri strip_prefix /api/{ext_name}",
+                    f"        reverse_proxy 127.0.0.1:{service_port}",
+                    "    }",
+                    "    ",
+                ])
 
     # Add extension UI routes
     port_assignments = master_config.get("port_assignments", {}).get("extensions", {})

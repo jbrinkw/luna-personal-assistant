@@ -38,6 +38,56 @@ class ExternalServicesManager:
         self.services_dir.mkdir(parents=True, exist_ok=True)
         self.logs_dir.mkdir(parents=True, exist_ok=True)
 
+    def bootstrap_bundled_services(self) -> None:
+        """
+        Bootstrap bundled external service definitions from the repo root.
+        
+        Looks for *-docker.json files in the repo root and copies them to
+        external_services/{name}/service.json if they don't already exist.
+        """
+        try:
+            # Look for bundled service definitions in repo root
+            bundled_files = list(self.repo_path.glob("*-docker.json"))
+            
+            if not bundled_files:
+                print("[ExternalServicesManager] No bundled service definitions found")
+                return
+            
+            print(f"[ExternalServicesManager] Found {len(bundled_files)} bundled service definition(s)")
+            
+            for bundled_file in bundled_files:
+                try:
+                    # Load and validate the service definition
+                    with open(bundled_file, 'r') as f:
+                        service_data = json.load(f)
+                    
+                    # Validate with Pydantic
+                    service_def = ServiceDefinition(**service_data)
+                    service_name = service_def.name
+                    
+                    # Check if service directory already exists
+                    service_dir = self.services_dir / service_name
+                    service_json = service_dir / "service.json"
+                    
+                    if service_json.exists():
+                        print(f"[ExternalServicesManager] Service {service_name} already exists, skipping")
+                        continue
+                    
+                    # Create service directory and copy definition
+                    service_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    with open(service_json, 'w') as f:
+                        json.dump(service_data, f, indent=2)
+                    
+                    print(f"[ExternalServicesManager] Bootstrapped service: {service_name} from {bundled_file.name}")
+                    
+                except Exception as e:
+                    print(f"[ExternalServicesManager] Error bootstrapping {bundled_file.name}: {e}")
+                    continue
+            
+        except Exception as e:
+            print(f"[ExternalServicesManager] Error during bootstrap: {e}")
+
     def get_ui_routes(self) -> Dict[str, Dict[str, Any]]:
         """
         Read persisted UI routing metadata.

@@ -5,6 +5,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 
 // Load environment
 require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
@@ -351,10 +352,45 @@ app.get('/api/agents', async (req, res) => {
   }
 });
 
+// Database initialization - auto-create tables if missing
+async function initializeSchema() {
+  try {
+    // Check if memories table exists
+    const result = await db.pool.query(
+      `SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'memories'
+      );`
+    );
+    
+    if (!result.rows[0].exists) {
+      console.log('[automation-memory] Tables missing, initializing schema...');
+      
+      // Read and execute schema.sql
+      const schemaPath = path.resolve(__dirname, '../schema.sql');
+      const schemaSQL = fs.readFileSync(schemaPath, 'utf8');
+      await db.pool.query(schemaSQL);
+      
+      console.log('[automation-memory] Database schema initialized successfully');
+    }
+  } catch (error) {
+    console.error('[automation-memory] Schema initialization error (non-fatal):', error.message);
+    // Continue anyway - tables might exist but check failed
+  }
+}
+
+// Start server after initializing schema
 const PORT = process.env.AM_API_PORT || 5302;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`[automation-memory] API listening on 0.0.0.0:${PORT}`);
-  console.log(`[automation-memory] Database: ${process.env.DB_NAME || 'luna'}`);
-  console.log(`[automation-memory] Port dynamically assigned by supervisor`);
+
+initializeSchema().then(() => {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[automation-memory] API listening on 0.0.0.0:${PORT}`);
+    console.log(`[automation-memory] Database: ${process.env.DB_NAME || 'luna'}`);
+    console.log(`[automation-memory] Port dynamically assigned by supervisor`);
+  });
+}).catch(err => {
+  console.error('[automation-memory] Failed to start:', err);
+  process.exit(1);
 });
 
