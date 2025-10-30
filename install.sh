@@ -255,46 +255,91 @@ EOF
             ;;
     esac
     
-    # GitHub OAuth Setup (Required)
+    # GitHub OAuth Setup (Required - TWO OAuth Apps)
     GITHUB_CLIENT_ID=$(jq -r '.github_oauth.client_id // ""' "$CONFIG_FILE")
     GITHUB_CLIENT_SECRET=$(jq -r '.github_oauth.client_secret // ""' "$CONFIG_FILE")
+    MCP_GITHUB_CLIENT_ID=$(jq -r '.mcp_oauth.client_id // ""' "$CONFIG_FILE")
+    MCP_GITHUB_CLIENT_SECRET=$(jq -r '.mcp_oauth.client_secret // ""' "$CONFIG_FILE")
     ALLOWED_GITHUB_USERNAME=$(jq -r '.github_oauth.allowed_username // ""' "$CONFIG_FILE")
     
     if [ -z "$GITHUB_CLIENT_ID" ] || [ "$GITHUB_CLIENT_ID" = "null" ] || [ "$GITHUB_CLIENT_ID" = "" ] || \
        [ -z "$GITHUB_CLIENT_SECRET" ] || [ "$GITHUB_CLIENT_SECRET" = "null" ] || [ "$GITHUB_CLIENT_SECRET" = "" ] || \
+       [ -z "$MCP_GITHUB_CLIENT_ID" ] || [ "$MCP_GITHUB_CLIENT_ID" = "null" ] || [ "$MCP_GITHUB_CLIENT_ID" = "" ] || \
+       [ -z "$MCP_GITHUB_CLIENT_SECRET" ] || [ "$MCP_GITHUB_CLIENT_SECRET" = "null" ] || [ "$MCP_GITHUB_CLIENT_SECRET" = "" ] || \
        [ -z "$ALLOWED_GITHUB_USERNAME" ] || [ "$ALLOWED_GITHUB_USERNAME" = "null" ] || [ "$ALLOWED_GITHUB_USERNAME" = "" ]; then
         log_warn "GitHub OAuth is not fully configured in install_config.json"
         echo ""
-        echo "========================================"
-        echo "GitHub OAuth Setup (Required)"
-        echo "========================================"
+        echo "============================================================"
+        echo "GitHub OAuth Setup (Required - Two OAuth Apps)"
+        echo "============================================================"
         echo ""
-        echo "Luna uses GitHub OAuth for authentication."
-        echo "Only the specified GitHub username will be allowed to access Luna."
+        echo "Luna requires TWO separate GitHub OAuth applications:"
+        echo ""
+        echo "  1. Hub UI OAuth - For web interface login"
+        echo "  2. MCP OAuth     - For Claude/AI assistant connections"
+        echo ""
+        echo "Why two apps? They use different callback URLs and serve"
+        echo "different purposes. This is the standard architecture."
         echo ""
         echo "Your Luna domain: https://$PUBLIC_DOMAIN"
         echo ""
-        echo "To set up GitHub OAuth:"
+        echo "============================================================"
+        echo "STEP 1: Create Hub UI OAuth App"
+        echo "============================================================"
+        echo ""
+        echo "This app authenticates YOU when you log into Luna's web interface."
+        echo ""
+        echo "To set up Hub UI OAuth:"
         echo "  1. Go to: https://github.com/settings/developers"
         echo "  2. Click 'New OAuth App'"
-        echo "  3. Set Application name: Luna Personal Assistant"
-        echo "  4. Set Homepage URL: https://$PUBLIC_DOMAIN"
-        echo "  5. Set Authorization callback URL: https://$PUBLIC_DOMAIN/auth/callback"
+        echo "  3. Application name: Luna Hub UI"
+        echo "  4. Homepage URL: https://$PUBLIC_DOMAIN"
+        echo "  5. Authorization callback URL: https://$PUBLIC_DOMAIN/auth/callback"
         echo "  6. Click 'Register application'"
         echo "  7. Copy your Client ID and generate a Client Secret"
         echo ""
-        echo "IMPORTANT: Copy the URLs above exactly as shown!"
+        echo "IMPORTANT: Note the callback URL is /auth/callback"
         echo ""
-        read -p "Press Enter once you have your GitHub OAuth credentials ready..."
+        read -p "Press Enter once you have your Hub UI OAuth credentials ready..."
         echo ""
         
         if [ -z "$GITHUB_CLIENT_ID" ] || [ "$GITHUB_CLIENT_ID" = "null" ] || [ "$GITHUB_CLIENT_ID" = "" ]; then
-            read -p "GitHub OAuth Client ID: " GITHUB_CLIENT_ID
+            read -p "Hub UI OAuth Client ID: " GITHUB_CLIENT_ID
             echo ""
         fi
         
         if [ -z "$GITHUB_CLIENT_SECRET" ] || [ "$GITHUB_CLIENT_SECRET" = "null" ] || [ "$GITHUB_CLIENT_SECRET" = "" ]; then
-            read -p "GitHub OAuth Client Secret: " GITHUB_CLIENT_SECRET
+            read -p "Hub UI OAuth Client Secret: " GITHUB_CLIENT_SECRET
+            echo ""
+        fi
+        
+        echo "============================================================"
+        echo "STEP 2: Create MCP OAuth App"
+        echo "============================================================"
+        echo ""
+        echo "This app authenticates Claude/AI assistants connecting to your tools."
+        echo ""
+        echo "To set up MCP OAuth:"
+        echo "  1. Go to: https://github.com/settings/developers (same page)"
+        echo "  2. Click 'New OAuth App' again"
+        echo "  3. Application name: Luna MCP Server"
+        echo "  4. Homepage URL: https://$PUBLIC_DOMAIN"
+        echo "  5. Authorization callback URL: https://$PUBLIC_DOMAIN/api/auth/callback"
+        echo "  6. Click 'Register application'"
+        echo "  7. Copy your Client ID and generate a Client Secret"
+        echo ""
+        echo "IMPORTANT: Note the callback URL is /api/auth/callback (different!)"
+        echo ""
+        read -p "Press Enter once you have your MCP OAuth credentials ready..."
+        echo ""
+        
+        if [ -z "$MCP_GITHUB_CLIENT_ID" ] || [ "$MCP_GITHUB_CLIENT_ID" = "null" ] || [ "$MCP_GITHUB_CLIENT_ID" = "" ]; then
+            read -p "MCP OAuth Client ID: " MCP_GITHUB_CLIENT_ID
+            echo ""
+        fi
+        
+        if [ -z "$MCP_GITHUB_CLIENT_SECRET" ] || [ "$MCP_GITHUB_CLIENT_SECRET" = "null" ] || [ "$MCP_GITHUB_CLIENT_SECRET" = "" ]; then
+            read -p "MCP OAuth Client Secret: " MCP_GITHUB_CLIENT_SECRET
             echo ""
         fi
         
@@ -325,21 +370,31 @@ EOF
             done
         fi
         
-        if [ -z "$GITHUB_CLIENT_ID" ] || [ -z "$GITHUB_CLIENT_SECRET" ] || [ -z "$ALLOWED_GITHUB_USERNAME" ]; then
+        if [ -z "$GITHUB_CLIENT_ID" ] || [ -z "$GITHUB_CLIENT_SECRET" ] || \
+           [ -z "$MCP_GITHUB_CLIENT_ID" ] || [ -z "$MCP_GITHUB_CLIENT_SECRET" ] || \
+           [ -z "$ALLOWED_GITHUB_USERNAME" ]; then
             log_error "GitHub OAuth setup is incomplete"
             exit 1
         fi
         
         # Update config file
         TMP_CONFIG=$(mktemp)
-        jq --arg id "$GITHUB_CLIENT_ID" \
-           --arg secret "$GITHUB_CLIENT_SECRET" \
+        jq --arg hub_id "$GITHUB_CLIENT_ID" \
+           --arg hub_secret "$GITHUB_CLIENT_SECRET" \
+           --arg mcp_id "$MCP_GITHUB_CLIENT_ID" \
+           --arg mcp_secret "$MCP_GITHUB_CLIENT_SECRET" \
            --arg user "$ALLOWED_GITHUB_USERNAME" \
-           '.github_oauth.client_id = $id | .github_oauth.client_secret = $secret | .github_oauth.allowed_username = $user' \
+           '.github_oauth.client_id = $hub_id | 
+            .github_oauth.client_secret = $hub_secret | 
+            .github_oauth.allowed_username = $user |
+            .mcp_oauth.client_id = $mcp_id |
+            .mcp_oauth.client_secret = $mcp_secret' \
            "$CONFIG_FILE" > "$TMP_CONFIG"
         mv "$TMP_CONFIG" "$CONFIG_FILE"
         
         log_success "GitHub OAuth configured"
+        log_info "Hub UI OAuth: $GITHUB_CLIENT_ID"
+        log_info "MCP OAuth: $MCP_GITHUB_CLIENT_ID"
         log_info "Only '$ALLOWED_GITHUB_USERNAME' will be allowed to access Luna"
     else
         # Validate existing username
@@ -353,6 +408,8 @@ EOF
         fi
         
         log_info "GitHub OAuth already configured"
+        log_info "Hub UI OAuth: ${GITHUB_CLIENT_ID:0:20}..."
+        log_info "MCP OAuth: ${MCP_GITHUB_CLIENT_ID:0:20}..."
         log_info "Allowed user: $ALLOWED_GITHUB_USERNAME"
     fi
 }
@@ -660,8 +717,15 @@ NGROK_AUTHTOKEN=$NGROK_API_KEY
 TUNNEL_HOST=$NGROK_DOMAIN
 
 # GitHub OAuth Authentication
+# Hub UI OAuth (web interface login)
 GITHUB_CLIENT_ID=$GITHUB_CLIENT_ID
 GITHUB_CLIENT_SECRET=$GITHUB_CLIENT_SECRET
+
+# MCP OAuth (Claude/AI assistant connections)
+MCP_GITHUB_CLIENT_ID=$MCP_GITHUB_CLIENT_ID
+MCP_GITHUB_CLIENT_SECRET=$MCP_GITHUB_CLIENT_SECRET
+
+# Username restriction (applies to both Hub UI and MCP)
 ALLOWED_GITHUB_USERNAME=$ALLOWED_GITHUB_USERNAME
 EOF
     

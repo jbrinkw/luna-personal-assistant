@@ -857,6 +857,301 @@ def get_required_keys():
 
 
 # ============================================================================
+# Tools API Endpoints
+# ============================================================================
+
+@app.get('/tools/discover')
+def discover_tools(extension: Optional[str] = None):
+    """Discover tools from all extensions or a specific extension.
+    
+    Args:
+        extension: Optional extension name to filter by
+        
+    Returns:
+        {
+            "tools": [
+                {
+                    "name": str,
+                    "description": str,
+                    "extension": str,
+                    "parameters": dict (if available from function signature)
+                }
+            ]
+        }
+    """
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    try:
+        from core.utils.extension_discovery import discover_extensions
+        from pathlib import Path
+        import inspect
+        
+        extensions_root = Path(supervisor_instance.repo_path) / 'extensions'
+        discovered_exts = discover_extensions(str(extensions_root))
+        
+        tools_list = []
+        
+        for ext in discovered_exts:
+            ext_name = ext.get('name', '')
+            
+            # Filter by extension if specified
+            if extension and ext_name != extension:
+                continue
+            
+            tools = ext.get('tools', [])
+            tool_configs = ext.get('tool_configs', {})
+            
+            for tool in tools:
+                if not callable(tool):
+                    continue
+                
+                tool_name = tool.__name__
+                tool_doc = tool.__doc__ or "No description available"
+                
+                # Extract first line of docstring as description
+                description = tool_doc.strip().split('\n')[0] if tool_doc else "No description available"
+                
+                # Try to get function signature for parameters
+                parameters = {}
+                try:
+                    sig = inspect.signature(tool)
+                    parameters = {
+                        param_name: {
+                            "annotation": str(param.annotation) if param.annotation != inspect.Parameter.empty else "Any",
+                            "default": str(param.default) if param.default != inspect.Parameter.empty else None
+                        }
+                        for param_name, param in sig.parameters.items()
+                    }
+                except Exception:
+                    pass
+                
+                tools_list.append({
+                    "name": tool_name,
+                    "description": description,
+                    "extension": ext_name,
+                    "parameters": parameters,
+                    "config": tool_configs.get(tool_name, {})
+                })
+        
+        return {"tools": tools_list}
+    except Exception as e:
+        print(f"[SupervisorAPI] Error discovering tools: {e}", flush=True)
+        raise HTTPException(status_code=500, detail=f"Failed to discover tools: {str(e)}")
+
+
+@app.get('/tools/list')
+def list_tools(extension: Optional[str] = None, enabled_only: bool = False):
+    """List all tools with their configurations from master_config.
+    
+    Args:
+        extension: Optional extension name to filter by
+        enabled_only: If true, only return tools enabled in MCP
+        
+    Returns:
+        {
+            "tools": [
+                {
+                    "name": str,
+                    "extension": str,
+                    "config": {
+                        "enabled_in_mcp": bool,
+                        "passthrough": bool
+                    }
+                }
+            ]
+        }
+    """
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    try:
+        from core.utils.extension_discovery import discover_extensions
+        from pathlib import Path
+        
+        extensions_root = Path(supervisor_instance.repo_path) / 'extensions'
+        discovered_exts = discover_extensions(str(extensions_root))
+        
+        # Get tool configs from master_config
+        tool_configs = supervisor_instance.master_config.get('tool_configs', {})
+        
+        tools_list = []
+        
+        for ext in discovered_exts:
+            ext_name = ext.get('name', '')
+            
+            # Filter by extension if specified
+            if extension and ext_name != extension:
+                continue
+            
+            tools = ext.get('tools', [])
+            
+            for tool in tools:
+                if not callable(tool):
+                    continue
+                
+                tool_name = tool.__name__
+                tool_config = tool_configs.get(tool_name, {})
+                
+                # Default values if not in master_config
+                enabled_in_mcp = tool_config.get('enabled_in_mcp', True)
+                
+                # Filter by enabled status if requested
+                if enabled_only and not enabled_in_mcp:
+                    continue
+                
+                tools_list.append({
+                    "name": tool_name,
+                    "extension": ext_name,
+                    "config": {
+                        "enabled_in_mcp": enabled_in_mcp,
+                        "passthrough": tool_config.get('passthrough', False)
+                    }
+                })
+        
+        return {"tools": tools_list}
+    except Exception as e:
+        print(f"[SupervisorAPI] Error listing tools: {e}", flush=True)
+        raise HTTPException(status_code=500, detail=f"Failed to list tools: {str(e)}")
+
+
+@app.post('/tools/validate/{tool_name}')
+def validate_tool(tool_name: str, args: Dict[str, Any]):
+    """Validate arguments for a tool without executing it.
+    
+    Args:
+        tool_name: Name of the tool to validate
+        args: Arguments to validate
+        
+    Returns:
+        {
+            "valid": bool,
+            "errors": List[str] (if invalid)
+        }
+    """
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    try:
+        from core.utils.extension_discovery import discover_extensions
+        from pathlib import Path
+        import inspect
+        
+        extensions_root = Path(supervisor_instance.repo_path) / 'extensions'
+        discovered_exts = discover_extensions(str(extensions_root))
+        
+        # Find the tool
+        tool_func = None
+        for ext in discovered_exts:
+            for tool in ext.get('tools', []):
+                if callable(tool) and tool.__name__ == tool_name:
+                    tool_func = tool
+                    break
+            if tool_func:
+                break
+        
+        if not tool_func:
+            raise HTTPException(status_code=404, detail=f"Tool {tool_name} not found")
+        
+        # Validate arguments against function signature
+        errors = []
+        try:
+            sig = inspect.signature(tool_func)
+            
+            # Check for missing required parameters
+            for param_name, param in sig.parameters.items():
+                if param.default == inspect.Parameter.empty and param_name not in args:
+                    errors.append(f"Missing required parameter: {param_name}")
+            
+            # Check for unexpected parameters
+            valid_params = set(sig.parameters.keys())
+            provided_params = set(args.keys())
+            unexpected = provided_params - valid_params
+            if unexpected:
+                errors.append(f"Unexpected parameters: {', '.join(unexpected)}")
+        
+        except Exception as e:
+            errors.append(f"Signature validation error: {str(e)}")
+        
+        return {
+            "valid": len(errors) == 0,
+            "errors": errors if errors else None
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[SupervisorAPI] Error validating tool: {e}", flush=True)
+        raise HTTPException(status_code=500, detail=f"Failed to validate tool: {str(e)}")
+
+
+@app.post('/tools/execute/{tool_name}')
+def execute_tool(tool_name: str, args: Dict[str, Any]):
+    """Execute a tool with given arguments.
+    
+    Args:
+        tool_name: Name of the tool to execute
+        args: Arguments to pass to the tool
+        
+    Returns:
+        {
+            "success": bool,
+            "result": Any,
+            "error": str (if failed)
+        }
+    """
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    try:
+        from core.utils.extension_discovery import discover_extensions
+        from pathlib import Path
+        
+        extensions_root = Path(supervisor_instance.repo_path) / 'extensions'
+        discovered_exts = discover_extensions(str(extensions_root))
+        
+        # Find the tool
+        tool_func = None
+        for ext in discovered_exts:
+            for tool in ext.get('tools', []):
+                if callable(tool) and tool.__name__ == tool_name:
+                    tool_func = tool
+                    break
+            if tool_func:
+                break
+        
+        if not tool_func:
+            raise HTTPException(status_code=404, detail=f"Tool {tool_name} not found")
+        
+        # Execute the tool
+        try:
+            result = tool_func(**args)
+            
+            # Handle different return formats
+            # Most Luna tools return (bool, str) tuples
+            if isinstance(result, tuple) and len(result) == 2:
+                success, output = result
+                return {
+                    "success": success,
+                    "result": output
+                }
+            else:
+                return {
+                    "success": True,
+                    "result": result
+                }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[SupervisorAPI] Error executing tool: {e}", flush=True)
+        raise HTTPException(status_code=500, detail=f"Failed to execute tool: {str(e)}")
+
+
+# ============================================================================
 # External Services API Endpoints
 # ============================================================================
 
