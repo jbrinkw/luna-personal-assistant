@@ -40,11 +40,16 @@ class ExternalServicesManager:
 
     def bootstrap_bundled_services(self) -> None:
         """
-        Bootstrap bundled external service definitions from the repo root.
+        [DISABLED] Bootstrap bundled external service definitions from the repo root.
         
-        Looks for *-docker.json files in the repo root and copies them to
-        external_services/{name}/service.json if they don't already exist.
+        This method is no longer called during startup. Bundled *-docker.json files
+        in the repo root are kept as examples/reference only. Services should be 
+        installed via the Hub UI or API upload endpoint.
         """
+        print("[ExternalServicesManager] bootstrap_bundled_services() is disabled - use Hub UI to install services")
+        return
+        
+        # Legacy code kept for reference:
         try:
             # Look for bundled service definitions in repo root
             bundled_files = list(self.repo_path.glob("*-docker.json"))

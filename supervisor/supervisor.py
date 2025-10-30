@@ -972,9 +972,9 @@ class Supervisor:
     def _load_external_services(self):
         """Load external services registry into state for monitoring"""
         try:
-            # Bootstrap bundled service definitions on first run
-            self.log("INFO", "Bootstrapping bundled external services...")
-            self.external_services_manager.bootstrap_bundled_services()
+            # NOTE: Auto-bootstrap of bundled services is disabled.
+            # Services should be installed via Hub UI or API upload.
+            # Bundled JSON files in repo root are examples only.
             
             self.log("INFO", "Loading external services for monitoring...")
             registry = self.external_services_manager.get_registry()
