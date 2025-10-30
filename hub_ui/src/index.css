@@ -453,7 +453,7 @@ body {
   bottom: 0;
   background: #202124;
   z-index: 100;
-  padding-top: 80px;
+  padding-top: 0;
 }
 
 .fullscreen-iframe {
@@ -512,7 +512,7 @@ body {
   }
 
   .fullscreen-iframe-container {
-    padding-top: 70px;
+    padding-top: 0;
   }
 }
 

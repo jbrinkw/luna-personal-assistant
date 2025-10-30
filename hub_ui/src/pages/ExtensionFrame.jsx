@@ -34,7 +34,7 @@ export default function ExtensionFrame() {
   }
 
   return (
-    <div className="fullscreen-iframe-container">
+    <div className="fullscreen-iframe-container" style={{ paddingTop: 0 }}>
       <iframe 
         className="fullscreen-iframe" 
         src={url} 
