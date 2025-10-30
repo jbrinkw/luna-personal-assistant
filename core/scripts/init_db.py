@@ -2,9 +2,9 @@
 
 Creates tables for:
 - automation_memory extension (task_flows, scheduled_prompts, memories, flow_executions)
-- authentication (users, sessions)
 
 All timestamps stored in UTC (TIMESTAMPTZ).
+Note: Auth uses stateless JWT (no database tables needed).
 """
 import os
 import sys
@@ -91,30 +91,6 @@ def init_database():
         """)
         print("  [OK] memories table created")
         
-        # Create users table for GitHub OAuth authentication
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                github_id INTEGER UNIQUE NOT NULL,
-                github_username TEXT NOT NULL,
-                github_access_token TEXT,
-                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-                last_login TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-        print("  [OK] users table created")
-        
-        # Create sessions table for user sessions
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS sessions (
-                id TEXT PRIMARY KEY,
-                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                expires_at TIMESTAMPTZ NOT NULL,
-                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-        print("  [OK] sessions table created")
-        
         # Create flow_executions table for tracking task flow progress
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS flow_executions (
@@ -143,15 +119,6 @@ def init_database():
         """)
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_flow_executions_status ON flow_executions(status);
-        """)
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_users_github_id ON users(github_id);
-        """)
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
-        """)
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
         """)
         print("  [OK] Indexes created")
         

@@ -11,6 +11,13 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
+# Load .env file at startup
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 
 class Supervisor:
     def __init__(self, repo_path=None):
@@ -420,7 +427,7 @@ class Supervisor:
             log_file = self.logs_path / "caddy.log"
             log_fp = open(log_file, 'w')
             
-            # Start Caddy with generated config
+            # Start Caddy with generated config (inherits environment automatically)
             proc = subprocess.Popen(
                 ["caddy", "run", "--config", str(caddyfile_path), "--adapter", "caddyfile"],
                 stdout=log_fp,
@@ -509,7 +516,7 @@ class Supervisor:
             log_file = self.logs_path / "agent_api.log"
             log_fp = open(log_file, 'w')
             
-            # Spawn agent_api.py process
+            # Spawn agent_api.py process (inherits environment automatically)
             proc = subprocess.Popen(
                 [self.python_bin, str(agent_api_script)],
                 stdout=log_fp,
@@ -551,7 +558,7 @@ class Supervisor:
             log_file = self.logs_path / "auth_service.log"
             log_fp = open(log_file, 'w')
             
-            # Spawn auth_service.py process
+            # Spawn auth_service.py process (inherits environment automatically)
             proc = subprocess.Popen(
                 [self.python_bin, str(auth_service_script)],
                 stdout=log_fp,
@@ -615,7 +622,7 @@ class Supervisor:
             log_file = self.logs_path / "mcp_server.log"
             log_fp = open(log_file, 'w')
             
-            # Spawn mcp_server.py process on internal port 8766
+            # Spawn mcp_server.py process on internal port 8766 (inherits environment automatically)
             proc = subprocess.Popen(
                 [self.python_bin, str(mcp_server_script), "--host", "127.0.0.1", "--port", "8766"],
                 stdout=log_fp,
@@ -683,7 +690,7 @@ class Supervisor:
             log_file = self.logs_path / "hub_ui.log"
             log_fp = open(log_file, 'w')
             
-            # Spawn npm run dev
+            # Spawn npm run dev (inherits environment automatically)
             proc = subprocess.Popen(
                 ["npm", "run", "dev"],
                 stdout=log_fp,
@@ -728,25 +735,16 @@ class Supervisor:
             import os
             os.chmod(start_script, 0o755)
             
-            # Set environment variables
-            env = os.environ.copy()
-            env['LUNA_PORTS'] = json.dumps(self.get_port_mappings())
-            env['LUNA_PYTHON'] = self.python_bin
-            # Prepend venv bin to PATH so python3/pip commands use venv
-            venv_bin = str(self.repo_path / ".venv" / "bin")
-            env['PATH'] = f"{venv_bin}:{env.get('PATH', '')}"
-            
             # Open log file
             log_file = self.logs_path / f"{extension_name}_ui.log"
             log_fp = open(log_file, 'w')
             
-            # Start the UI
+            # Start the UI (inherits environment automatically)
             proc = subprocess.Popen(
                 [str(start_script), str(port)],
                 stdout=log_fp,
                 stderr=subprocess.STDOUT,
                 cwd=str(ui_dir),
-                env=env,
                 start_new_session=True
             )
             
@@ -799,14 +797,6 @@ class Supervisor:
             import os
             os.chmod(start_script, 0o755)
             
-            # Set environment variables
-            env = os.environ.copy()
-            env['LUNA_PORTS'] = json.dumps(self.get_port_mappings())
-            env['LUNA_PYTHON'] = self.python_bin
-            # Prepend venv bin to PATH so python3/pip commands use venv
-            venv_bin = str(self.repo_path / ".venv" / "bin")
-            env['PATH'] = f"{venv_bin}:{env.get('PATH', '')}"
-            
             # Open log file
             log_file = self.logs_path / f"{extension_name}__service_{service_name}.log"
             log_fp = open(log_file, 'w')
@@ -816,13 +806,12 @@ class Supervisor:
             if port:
                 cmd.append(str(port))
             
-            # Start the service
+            # Start the service (inherits environment automatically)
             proc = subprocess.Popen(
                 cmd,
                 stdout=log_fp,
                 stderr=subprocess.STDOUT,
                 cwd=str(service_path),
-                env=env,
                 start_new_session=True
             )
             
@@ -932,10 +921,18 @@ class Supervisor:
         # Phase 2: Load or create master config
         self.load_or_create_master_config()
         
-        # Phase 3: Run config sync (discovers new extensions and syncs configs)
+        # Phase 3: Set global environment variables once (all subprocesses will inherit)
+        os.environ['LUNA_PYTHON'] = self.python_bin
+        os.environ['LUNA_PORTS'] = json.dumps(self.get_port_mappings())
+        # Add venv bin to PATH so python3/pip commands use venv
+        venv_bin = str(self.repo_path / ".venv" / "bin")
+        os.environ['PATH'] = f"{venv_bin}:{os.environ.get('PATH', '')}"
+        self.log("INFO", "Set global environment variables for all child processes")
+        
+        # Phase 4: Run config sync (discovers new extensions and syncs configs)
         self.run_config_sync()
         
-        # Phase 4: Load or create state
+        # Phase 5: Load or create state
         self.load_or_create_state()
         
         # Phase 5: Start core services

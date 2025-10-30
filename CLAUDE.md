@@ -1,590 +1,372 @@
-Here is a condensed version of the Luna Project Specification, focusing on technical details, schemas, and logic.
+Luna Project Specification
+==========================
+Updated: 2025-10-28
 
-### **1. Overview & Vision**
+---
 
-Luna is a personal AI assistant platform serving as a unified hub for AI tools, extensions, and infrastructure services.
+Table of Contents
+-----------------
+1. Purpose & Scope
+2. High-Level Architecture
+3. Repository Layout & Conventions
+4. Bootstrap & Process Orchestration
+5. HTTP Surfaces & Networking
+6. Configuration & Environment Management
+7. Extensions
+8. External Services
+9. Agents & LLM Integration
+10. Hub UI Experience
+11. Installation & Operational Tasks
+12. Logging, Monitoring, & Health
+13. Testing Strategy
+14. Divergences from Prior Documentation
 
-  * **Core Features:** Extension management (local/GitHub), Python tool ecosystem (auto-discovery, MCP), agent system (ReAct, Passthrough) with OpenAI-compatible API, Docker-based external services, and a unified React UI.
-  * **System Features:** One-line install, auto-discovery, hot reload, health monitoring, and persistent state.
-  * **Technology Stack:**
-      * **Backend:** Python (FastAPI)
-      * **Frontend:** React + Vite
-      * **Database:** PostgreSQL (Store: UTC, Display: America/New\_York)
-      * **Containerization:** Docker
-      * **Process Management:** Custom supervisor (no systemd)
-      * **Agent Framework:** LangChain (ReAct)
-      * **MCP Integration:** Server-Sent Events (SSE)
+---
 
-### **2. Project Directory Structure**
+1. Purpose & Scope
+------------------
+This document captures how the **current** Luna repository behaves at runtime. The previous `CLAUDE.md` described an older layout (e.g., `/opt/luna/luna-repo`, simple supervisor loop, bearer-token MCP). The system has evolved: we now run directly from this Git checkout, rely heavily on Caddy, enforce GitHub OAuth, and route nearly every interaction through a supervisor-managed API surface. Treat this document as the authoritative specification until the architecture shifts again.
 
+---
+
+2. High-Level Architecture
+---------------------------
+Luna runs as a constellation of cooperating processes launched and supervised by `supervisor/supervisor.py`:
+
+- **Bootstrap (`luna.sh`)**: ensures a virtualenv exists, loads environment variables, cleans ports, and spawns the supervisor while preventing concurrent launches.
+- **Supervisor**: starts and monitors all core services (Caddy, auth, Hub UI dev server, Agent API, MCP server), discovers extensions, and manages external services. It maintains `supervisor/state.json` and exposes a FastAPI control plane (`supervisor/api.py`).
+- **Caddy reverse proxy**: the single HTTP entry point. It terminates TLS (where applicable), injects auth headers, rewrites OAuth discovery routes, and proxies traffic to the internal services.
+- **GitHub OAuth auth service**: provides `/auth/login`/`/auth/callback`/`/auth/me`/`/auth/logout`, issues signed cookies, and (optionally) persists sessions in Postgres.
+- **Agent API**: an OpenAI-compatible FastAPI server that auto-discovers LangChain tools and generates an `AGENT_API_KEY` stored in `.env`.
+- **MCP server**: a FastMCP instance using GitHub OAuth, surfaced externally through Caddy under `/api/mcp`.
+- **Extensions & services**: each extension may include tools, a frontend (`ui/start.sh`), and background services. Ports are assigned deterministically and persisted in `master_config.json`.
+- **External services**: Dockerized infrastructure components (Postgres, Grocy, etc.) managed via `ExternalServicesManager`; definitions live under `external_services/` with runtime metadata in `.luna/external_services.json`.
+
+All long-lived processes are started within the repository root (not `/opt/luna/luna-repo`). You can inspect their PIDs and ports in `supervisor/state.json` and their log files under `logs/`.
+
+---
+
+3. Repository Layout & Conventions
+----------------------------------
 ```
-/opt/luna/
-├── luna.sh                     # Bootstrap script
-├── luna-repo/                  # Main repository (git-tracked)
-│   ├── core/
-│   │   ├── agents/
-│   │   │   ├── simple_agent/
-│   │   │   └── passthrough_agent/
-│   │   ├── utils/
-│   │   │   ├── agent_api.py      # OpenAI-compatible API
-│   │   │   ├── mcp_server.py     # MCP SSE server
-│   │   │   ├── service_manager.py
-│   │   │   └── ...
-│   │   ├── scripts/
-│   │   │   └── apply_updates.py
-│   │   └── master_config.json    # Source of truth
-│   ├── supervisor/
-│   │   ├── supervisor.py       # Main process manager
-│   │   └── state.json          # Runtime state (ephemeral)
-│   ├── extensions/
-│   │   ├── [extension_name]/
-│   │   │   ├── config.json
-│   │   │   ├── requirements.txt
-│   │   │   ├── tools/
-│   │   │   │   ├── tool_config.json
-│   │   │   │   └── *_tools.py
-│   │   │   ├── ui/               # Optional
-│   │   │   │   ├── start.sh
-│   │   │   │   └── ...
-│   │   │   └── services/         # Optional
-│   │   │       └── [service_name]/
-│   │   │           ├── start.sh
-│   │   │           └── service.json
-│   ├── external_services/        # Infrastructure
-│   │   ├── postgres/
-│   │   │   ├── service.json
-│   │   │   ├── config.json       # User config (git-ignored)
-│   │   │   └── data/             # Volume (git-ignored)
-│   │   └── redis/
-│   ├── hub_ui/                   # Main frontend
-│   ├── .env                      # Secrets (git-ignored)
-│   └── requirements.txt
-└── .luna/                        # Logs (git-ignored)
-    ├── external_services.json    # Installed service registry
-    ├── external_service_routes.json
-    └── logs/
+./
+├── luna.sh                     # Bootstrap script (expects .venv/bin/python3)
+├── requirements.txt            # Python dependencies
+├── core/
+│   ├── master_config.json      # Canonical configuration for extensions/services/tools
+│   ├── agents/                 # Agent implementations
+│   ├── scripts/                # CLI helpers (apply_updates, config_sync, init_db, etc.)
+│   └── utils/                  # Core runtime modules (auth service, agent API, MCP server, etc.)
+├── supervisor/
+│   ├── supervisor.py           # Process orchestrator
+│   ├── api.py                  # Supervisor FastAPI app
+│   └── state.json              # Rewritten on startup with live PIDs/ports/status
+├── extensions/                 # Extension packages (config, tools, optional UI/services)
+├── external_services/          # Service definitions + persistent configs/data
+├── hub_ui/                     # Vite/React Hub frontend
+├── logs/                       # Runtime logs (supervisor.log, hub_ui.log, agent_api.log, auth_service.log, caddy.log, etc.)
+├── .luna/                      # Generated artifacts (Caddyfile, external_services.json, routes)
+├── install.sh                  # Interactive installer (ngrok / nip.io / custom domain)
+├── install_config.json         # Saved installer selections (git-ignored)
+└── tests/                      # Pytest suites & helpers
 ```
 
-**Git Ignore Rules:** `.env`, `supervisor/state.json`, `.luna/`, `extensions/*/config.json`, `extensions/*/data/`, `external_services/*/config.json`, `external_services/*/data/`, `__pycache__/`, `node_modules/`, `dist/`, `*.log`.
+- **Git-ignored**: `.env`, `.venv`, `.luna/`, `logs/`, `extensions/*/config.json`, `external_services/*/config.json`, `external_services/*/data/`, `node_modules/`, `dist/`, caches, and compiled artifacts.
+- **Virtualenv**: all processes run with `PYTHON_BIN=.venv/bin/python3`. `luna.sh` will abort if the virtualenv is missing.
+- **Environment keys**: managed programmatically via `/api/supervisor/keys/*`; avoid editing `.env` manually unless you know the runtime will reload it.
 
-### **3. Core Architecture**
+---
 
-**3.1. Bootstrap (`/opt/luna/luna.sh`)**
-Simple health monitor (outside git repo).
+4. Bootstrap & Process Orchestration
+------------------------------------
+### 4.1 `luna.sh`
+- Sources `.env` (exporting values) before starting anything.
+- Builds or cleans `.luna_lock` to prevent double launches; stale locks are removed automatically.
+- Performs aggressive port cleanup for core ports (5173, 8080, 8443/443, 8765, 8766, 9999) plus extension/service ranges (5200-5399).
+- Spawns the supervisor within the repo root, logging to `logs/supervisor.log`.
+- Waits for `/health` on port 9999 with a configurable timeout; retries spawn if the process dies during startup.
+- Handles SIGINT/SIGTERM by gracefully stopping tracked processes, reloading Caddy (if configured), and optionally preserving ngrok tunnels when running under systemd.
 
-  * **Logic:** `while true`:
-    1.  Check if `supervisor.py` process exists. If not, start it.
-    2.  `curl` supervisor's `/health` (port 9999).
-    3.  If health check fails 3 consecutive times, `pkill` and restart supervisor.
-    4.  Sleep 10 seconds.
-  * **Script:**
-    ```bash
-    #!/bin/bash
-    LUNA_ROOT="/opt/luna/luna-repo"
-    SUPERVISOR_SCRIPT="$LUNA_ROOT/supervisor/supervisor.py"
-    SUPERVISOR_PORT=9999
-    CHECK_INTERVAL=10
-    MAX_FAILS=3
-    FAIL_COUNT=0
+### 4.2 Supervisor Startup (Phases)
+1. **Update Queue Check**: if `core/update_queue.json` exists, copy `core/scripts/apply_updates.py` to `/tmp`, create `.luna_updating`, spawn the script, and exit. The bootstrap loop waits for the flag to disappear before relaunching.
+2. **Load/Create master_config**: ensures `core/master_config.json` exists, populating defaults (`deployment_mode`, `public_domain`, `extensions`, `tool_configs`, `port_assignments`, `external_services`). Environment overrides (`DEPLOYMENT_MODE`, `PUBLIC_DOMAIN`) are applied after loading.
+3. **Config Sync**: invokes `config_sync.sync_all(repo_path)` to discover new extensions on disk, add them to `master_config`, and sync config/tool settings back to each extension.
+4. **State Reset**: rewrites `supervisor/state.json` to `{"services": {}}`.
+5. **Start Core Services** (in order):
+   - `_start_caddy()`: installs Caddy if absent, generates `.luna/Caddyfile`, launches `caddy run --config ... --adapter caddyfile`, updates `state.json` after verifying the process stays alive.
+   - `_start_auth_service()`: runs `core/utils/auth_service.py` on port 8765; GitHub credentials and optional username restrictions are read from environment.
+   - `_start_hub_ui()`: ensures `npm install`/`pnpm install` has been executed, then runs `npm run dev` on port 5173.
+   - `_start_agent_api()`: starts the OpenAI-compatible server on 8080, generating `AGENT_API_KEY` if missing and persisting it to `.env`.
+   - `_start_mcp_server()`: launches FastMCP with GitHub OAuth on 8766; Caddy proxies it under `/api/mcp`.
+6. **Enable Extensions**: for each `enabled` extension in `master_config` with a directory under `extensions/`:
+   - Allocate deterministic ports (`5200-5299` for UIs, `5300-5399` for services) via `assign_port`.
+   - Start `ui/start.sh` if present, logging to `logs/<extension>_ui.log`.
+   - Iterate `services/<name>/`, read `service_config.json`, start `start.sh`, log to `logs/<extension>__service_<name>.log`.
+7. **Load External Services**: call `external_services_manager.bootstrap_bundled_services()` (copy repo-root `*-docker.json` into `external_services/` if missing), load `.luna/external_services.json`, and update `state.json` under `external_services`.
+8. **Health Monitoring**: spawn a background thread that every 30 seconds executes `_health_check_external_services()` to run defined health checks, update registry entries, and restart unhealthy services if `restart_on_failure` is true.
+9. **Operational Logs**: supervisor prints a startup summary including direct localhost URLs for quick debugging (Hub UI, auth, agent API, MCP, supervisor API).
 
-    while true; do
-        if ! pgrep -f "supervisor.py" > /dev/null; then
-            echo "[$(date)] Supervisor not running, starting..."
-            python3 $SUPERVISOR_SCRIPT &
-            sleep 5
-            continue
-        fi
-        
-        if curl -sf http://127.0.0.1:$SUPERVISOR_PORT/health > /dev/null 2>&1; then
-            FAIL_COUNT=0
-        else
-            FAIL_COUNT=$((FAIL_COUNT + 1))
-            if [ $FAIL_COUNT -ge $MAX_FAILS ]; then
-                echo "[$(date)] Supervisor unhealthy, restarting..."
-                pkill -f supervisor.py
-                sleep 2
-                FAIL_COUNT=0
-            fi
-        fi
-        sleep $CHECK_INTERVAL
-    done
-    ```
+### 4.3 Update Workflow (`core/scripts/apply_updates.py`)
+- Queue schema:
+  ```json
+  {
+    "created_at": "ISO8601",
+    "operations": [
+      {"type": "install", "target": "ext", "source": "github:user/repo"},
+      {"type": "update", "target": "ext", "source": "upload:file.zip"},
+      {"type": "delete", "target": "ext"},
+      {"type": "install_external_service", "name": "postgres", ...},
+      {"type": "update_core", "target_version": "latest"}
+    ],
+    "master_config": { ... }
+  }
+  ```
+- `operations` run in deterministic phases: delete, install, update, external-service ops, core update, dependency installation, config sync.
+- Supports GitHub monorepo installs (`github:user/repo:path/to/subdir`) and uploaded archives in `/tmp`.
+- Maintains retry metadata in `core/update_retry_count.json` (max 3 attempts). Stuck queues are renamed to `update_queue_failed.json` and supervisor startup proceeds without applying them.
+- On success rewrites `master_config.json`, removes the queue and retry file, and clears `.luna_updating`.
 
-**3.2. Supervisor (`supervisor/supervisor.py`)**
-Master process manager (git-tracked).
+### 4.4 Supervisor API (`supervisor/api.py`)
+- Exposes control endpoints for services, extensions, queue management, environment keys, external services, and system restart/shutdown.
+- Requires `SUPERVISOR_API_TOKEN` for mutating operations when configured (Caddy injects the header in proxied requests).
 
-  * **On Startup:**
-    1.  Check for `core/update_queue.json`.
-    2.  **If queue exists:** Copy `apply_updates.py` to `/tmp/`, spawn it detached, and `exit(0)`.
-    3.  **If no queue:** Create `master_config.json` (if missing), run Config Sync, start core services (Hub UI, Agent API, MCP Server), discover/start enabled extensions (UIs, services) and external services.
-    4.  Begin health monitoring loop (30s) and expose supervisor API (port 9999).
-  * **During Operation:**
-    1.  Poll `/healthz` endpoints every 30s.
-    2.  Track failures; auto-restart (2 failures -\> stop -\> restart; max 2 restarts).
-    3.  Maintain `state.json` (PIDs, ports, status).
-    4.  Export `LUNA_PORTS` env var for all services.
-  * **On Restart Request:**
-    1.  Copy `apply_updates.py` to `/tmp/`, spawn it detached.
-    2.  Gracefully shutdown all services (SIGTERM -\> 5s wait -\> SIGKILL).
-    3.  Exit cleanly (bootstrap will restart it).
+---
 
-**3.3. Apply Updates (`core/scripts/apply_updates.py`)**
-Standalone script (run from `/tmp/`) that applies queued changes during shutdown.
+5. HTTP Surfaces & Networking
+-----------------------------
+All external traffic should flow through Caddy; direct localhost access is possible for debugging but bypasses authentication and proxy header injection.
 
-  * **Responsibilities:**
-    1.  Read `core/update_queue.json`.
-    2.  Apply changes (install/uninstall extensions, deps, enable/disable, update configs, install/uninstall external services).
-    3.  Write all changes to `master_config.json`.
-    4.  Delete `update_queue.json`.
-    5.  Signal bootstrap to restart supervisor.
-  * **Update Queue Format (`core/update_queue.json`):**
-    ```json
-    {
-      "timestamp": "2025-10-20T12:00:00Z",
-      "changes": [
-        { "type": "install_extension", "source": "...", "name": "notes" },
-        { "type": "enable_extension", "name": "notes" },
-        { "type": "install_dependencies", "extension": "notes", "python": true },
-        { "type": "update_master_config", "path": "extensions.notes.enabled", "value": true }
-      ]
+| Path / Prefix                 | Upstream              | Notes |
+|------------------------------|-----------------------|-------|
+| `/auth/*`                     | Auth service (8765)   | GitHub OAuth login/logout/session APIs |
+| `/api/agent*`                 | Agent API (8080)      | Caddy injects `Authorization: Bearer <AGENT_API_KEY>` when available |
+| `/.well-known/*`              | MCP (8766)            | Rewritten to `/api/.well-known/*` handled by FastMCP |
+| `/api/mcp`, `/api/authorize`, `/api/token`, `/api/register` | MCP (8766) | GitHub OAuth-protected integration for Anthropic clients |
+| `/api/supervisor/*`           | Supervisor API (9999) | Config/queue/env/external-service management |
+| `/api/<extension>/*`          | Extension service ports | Populated from `master_config.port_assignments.services` |
+| `/ext/<extension>/`           | Extension UI ports    | Trailing slash enforced by default unless disabled in `config.json` |
+| `/ext_service/<slug>/`        | External service UI ports | Derived from `.luna/external_service_routes.json` |
+| `/*` (catch-all)              | Hub UI dev server (5173) | React/Vite frontend |
+
+Caddy decisions are governed by `core/utils/caddy_config_generator.py`, which inspects deployment mode (`ngrok`, `nip_io`, `custom_domain`), `public_domain`, and env vars (`AGENT_API_KEY`, `SUPERVISOR_API_TOKEN`, `MCP_AUTH_TOKEN`). The generated file is stored in `.luna/Caddyfile`.
+
+---
+
+6. Configuration & Environment Management
+-----------------------------------------
+### 6.1 `master_config.json`
+Holds the authoritative view of extensions, tool configs, port assignments, and external service status. Example:
+```
+{
+  "luna": {
+    "version": "10-28-25",
+    "timezone": "UTC",
+    "default_llm": "gpt-4"
+  },
+  "deployment_mode": "custom_domain",
+  "public_domain": "example.lunahub.dev",
+  "extensions": {
+    "automation_memory": {
+      "enabled": true,
+      "source": "local",
+      "config": {}
     }
-    ```
-
-**3.4. Config Sync**
-On supervisor startup, merges `master_config.json` into individual extension `config.json` files.
-
-  * **Rules:**
-    1.  **NEVER** overwrite `version` field.
-    2.  Only update keys that exist in `master_config`.
-    3.  If extension `config.json` has no `version`, generate one (MM-DD-YY).
-    4.  Syncs `master_config.tool_configs` to extension `tool_config.json` files.
-
-### **4. Extension System**
-
-**4.1. Extension Structure**
-
+  },
+  "tool_configs": {
+    "MEMORY_GET_all": {
+      "enabled_in_mcp": true,
+      "passthrough": false
+    }
+  },
+  "port_assignments": {
+    "extensions": {
+      "automation_memory": 5200
+    },
+    "services": {
+      "automation_memory.backend": 5300
+    }
+  },
+  "external_services": {
+    "postgres": {
+      "installed": true,
+      "enabled": false
+    }
+  }
+}
 ```
-extensions/my_extension/
-├── config.json         # Manifest
-├── requirements.txt
+
+### 6.2 Config Sync (`core/scripts/config_sync.py`)
+- Discovers extension directories and ensures each has an entry in `master_config.extensions` with `enabled`/`source` metadata.
+- Writes back to `extensions/<name>/config.json`, preserving existing fields and `version` values (generating today’s date when missing).
+- Syncs `tools/tool_config.json` entries for any tools defined in `master_config.tool_configs`.
+
+### 6.3 Environment Keys
+Managed exclusively through supervisor endpoints:
+- `GET /api/supervisor/keys/list` → masked `.env` contents.
+- `POST /api/supervisor/keys/set` → upsert key/value.
+- `POST /api/supervisor/keys/delete` → remove key.
+- `POST /api/supervisor/keys/upload-env` → merge uploaded `.env` file.
+- `GET /api/supervisor/keys/required` → collect `required_secrets` from extension configs.
+Calls rewrite `.env` and reload it in memory via `dotenv.load_dotenv(..., override=True)`.
+
+---
+
+7. Extensions
+-------------
+### 7.1 Filesystem Expectations
+```
+extensions/<name>/
+├── config.json                 # Minimal manifest (name, required_secrets, auto_update, version, enabled, source, optional ui settings)
+├── requirements.txt            # Optional Python deps
 ├── tools/
-│   ├── tool_config.json
-│   └── my_extension_tools.py
-├── ui/                 # Optional
-│   ├── start.sh
-│   └── ...
-└── services/           # Optional
-    └── worker/
-        ├── start.sh
-        └── service.json
+│   ├── tool_config.json        # Tool exposure settings (enabled_in_mcp, passthrough)
+│   └── *_tools.py              # Tool implementations exporting TOOLS list
+├── ui/
+│   └── start.sh                # Receives port as $1; supervisor sets PATH to include .venv/bin and exports LUNA_PORTS
+└── services/
+    └── <service>/
+        ├── service_config.json # {"name": "...", "requires_port": true, "health_check": "/healthz", "restart_on_failure": true}
+        └── start.sh            # Receives port if requires_port=true
 ```
 
-**4.2. Extension Config (`config.json`)**
-Manifest for metadata and requirements.
+### 7.2 Tool Conventions
+- Export a module-level `TOOLS` list containing callables.
+- Functions typically return `(bool success, str json_payload)`; JSON helpers should use `json.dumps(..., ensure_ascii=False)` when emitting structured data.
+- Docstrings must include `Example Prompt`, `Example Response`, and `Example Args` to aid LLM prompting.
+- File-level `SYSTEM_PROMPT` strings are consumed by LangChain’s tool discovery.
+- `tool_config.json` controls MCP exposure (`enabled_in_mcp`) and passthrough eligibility (`passthrough`).
 
-  * **Schema:**
-    ```json
-    {
-      "name": "my_extension",
-      "display_name": "My Extension",
-      "version": "10-20-25",
-      "author": "Your Name",
-      "description": "What this extension does",
-      "required_secrets": ["API_KEY"],
-      "auto_update": false,
-      "enabled": true,   /* Added by system */
-      "source": "local"  /* Added by system */
-    }
-    ```
-  * **Version:** Must be **MM-DD-YY**. Set by developer, **NEVER** overwritten by sync. Auto-generated if missing.
+### 7.3 Lifecycle & Queue Integration
+- The Hub UI keeps a draft queue (`operations`, `master_config`) in memory; mutations (installs, updates, deletes) edit that draft.
+- `POST /api/supervisor/queue/save` persists the queue; empty drafts remove the queue (`DELETE /api/supervisor/queue/current`).
+- Once an operation is queued, the user must trigger a restart (`POST /api/supervisor/restart`). The supervisor spawns `apply_updates.py`, applies the queue, reruns config sync, and restarts services.
 
-**4.3. Tool System**
+---
 
-  * **Naming Convention:** `DOMAIN_{GET|UPDATE|ACTION}_VerbNoun` (e.g., `NOTES_CREATE_note`).
-  * **Tool File Format (`*_tools.py`):**
-    ```python
-    from pydantic import BaseModel, Field
-    from typing import Tuple
+8. External Services
+---------------------
+### 8.1 Definitions
+- Located under `external_services/<name>/service.json`.
+- Validated by `core/utils/external_service_schemas.ServiceDefinition` (supports both new `commands` object and legacy fields).
+- Each definition may include:
+  - Metadata (`name`, `display_name`, `description`, `category`, `version`).
+  - `config_form`: fields presented in the Hub UI (type, label, default, help text).
+  - `commands`: shell commands for `install`, `start`, `stop`, `restart`, `uninstall`, `health_check`, optional startup mode toggles.
+  - `health_check_expected`: string or number used to verify health output.
+  - `provides_vars` / `post_install_env`: environment variables to append to `.env`.
+  - `ui`: metadata describing how to proxy the service UI (base path, slug, port or config field, scheme, strip_prefix, trailing slash handling, open mode).
 
-    # System prompt for this domain
-    SYSTEM_PROMPT = "The user has access to tools for managing their notes."
+### 8.2 Runtime Artifacts
+- `.luna/external_services.json`: registry of installed services with status, timestamps, config/log paths.
+- `.luna/external_service_routes.json`: UI routing metadata used by Caddy generator.
+- `external_services/<name>/config.json`: persisted user-supplied config (git-ignored).
+- `external_services/<name>/data/`: Docker volumes (git-ignored).
 
-    # Pydantic model for input validation
-    class NOTES_CREATE_NoteArgs(BaseModel):
-        title: str = Field(..., description="Note title")
-        content: str = Field(..., description="Note content")
+### 8.3 Supervisor API Endpoints
+- `GET /api/external-services/available`
+- `GET /api/external-services/installed`
+- `GET /api/external-services/{name}`
+- `POST /api/external-services/{name}/install`
+- `POST /api/external-services/{name}/uninstall`
+- `POST /api/external-services/{name}/start|stop|restart`
+- `POST /api/external-services/{name}/enable|disable`
+- `POST /api/external-services/upload`
 
-    # Tool function
-    def NOTES_CREATE_note(title: str, content: str) -> Tuple[bool, str]:
-        """Create a new note with title and content.
-        
-        Example Prompt: create a note titled "Meeting Notes"
-        Example Response: {"success": true, "note_id": "abc123"}
-        Example Args: {"title": "string", "content": "string"}
-        Notes: Tags are optional.
-        """
-        try:
-            args = NOTES_CREATE_NoteArgs(title=title, content=content)
-            # Business logic here
-            note_id = "abc123"
-            return (True, f'{{"success": true, "note_id": "{note_id}"}}')
-        except Exception as e:
-            return (False, f'{{"error": "{str(e)}"}}')
+Service health is monitored alongside extension services. Failures trigger restarts when `restart_on_failure` is true; status updates are logged to `.luna/external_services.json` and surfaced via API.
 
-    # Export tools
-    TOOLS = [NOTES_CREATE_note]
-    ```
-  * **Docstring:** Must include `Example Prompt`, `Example Response`, `Example Args`, and optional `Notes`.
-  * **Return Format:** `Tuple[bool, str]` (success boolean, JSON string response).
-  * **Tool Config (`tool_config.json`):**
-    ```json
-    {
-      "NOTES_CREATE_note": {
-        "enabled_in_mcp": true,  /* Expose to ChatGPT/Claude */
-        "passthrough": false     /* For passthrough_agent */
-      }
-    }
-    ```
+---
 
-**4.4. Extension UI**
+9. Agents & LLM Integration
+---------------------------
+### 9.1 Agent API (`core/utils/agent_api.py`)
+- Discovers agent modules from `core/agents/`.
+- Generates an `AGENT_API_KEY` on first run (format `sk-luna-<token>`), saves it to `.env`, and reuses it subsequently.
+- Exposes `/v1/chat/completions` following OpenAI’s schema (supports streaming and non-streaming requests).
+- Accepts `Authorization: Bearer <AGENT_API_KEY>` header; rejects other keys.
+- Optional `X-Luna-Memory` header provides conversation memory to agents; the JSON body no longer carries a `memory` field.
+- Tool discovery uses `extension_discovery.discover_extensions`, wrapping functions with LangChain `StructuredTool`s (Pydantic validation, retry logic).
+- Includes custom LangChain callbacks for timing and trace capture.
 
-  * **`start.sh` Contract:**
-    1.  Receives port as `$1`.
-    2.  Must bind to `127.0.0.1:$1`.
-    3.  Must expose a `GET /healthz` endpoint (returns 200).
-    4.  Must stay running in the foreground.
-  * **Example `start.sh` (Vite):**
-    ```bash
-    #!/bin/bash
-    PORT=$1
-    pnpm vite --port $PORT --host 127.0.0.1
-    ```
+### 9.2 Passthrough Agent (`core/agents/passthrough_agent/agent.py`)
+- Planner/executor design with structured outputs describing tool calls.
+- Honors `passthrough: true` in `tool_config.json` to allow autonomous tool execution.
+- Provides a `DIRECT_RESPONSE` option for final answers when no tool is needed.
 
-**4.5. Extension Services (Background Processes)**
+### 9.3 MCP Server (`core/utils/mcp_server.py`)
+- FastMCP instance using `fastmcp.server.auth.providers.github.GitHubProvider`.
+- Requires `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`; fails fast if missing.
+- Runs on `0.0.0.0:8766` with transport `streamable-http` by default.
+- Caddy mounts the ASGI app under `/api/*`, rewriting OAuth discovery endpoints (`/.well-known/oauth-authorization-server`).
+- Discovers MCP-enabled tools via `extension_discovery.get_mcp_tools()`.
 
-  * **Structure:** `extensions/{name}/services/{service_name}/`
-  * **`service.json` Schema:**
-    ```json
-    {
-      "name": "worker",
-      "requires_port": false,
-      "health_check": null, /* e.g., "/healthz" if requires_port is true */
-      "restart_on_failure": true
-    }
-    ```
-  * **`start.sh` Contract:** Receives port as `$1` *only if* `requires_port` is true.
+---
 
-### **5. External Services**
+10. Hub UI Experience
+---------------------
+- Built with Vite/React; served through Caddy catch-all.
+- `AuthContext` checks `GET /auth/me`, redirects to `/auth/login`, and logs out via `POST /auth/logout`.
+- `ConfigContext` loads `master_config` (`/api/supervisor/config/master`), tracks draft queue state, and persists changes (`/api/supervisor/queue/save`).
+- Extension Manager supports:
+  - ZIP upload: `ExtensionsAPI.upload` posts to `/api/supervisor/extensions/upload`, returning a temporary filename stored in queue operations (`source: "upload:filename.zip"`).
+  - Git install: user-entered strings converted to `github:` sources (`github:user/repo` or `github:user/repo:path/subdir`).
+  - Enable/disable toggles update the queue by editing `master_config.extensions[<name>].enabled`.
+- External Services pages call `/api/external-services/*` endpoints for install/start/stop and display UI links generated by Caddy.
+- Environment Key Manager interacts exclusively with `/api/supervisor/keys/*` endpoints.
+- System controls (restart/shutdown) use `/api/supervisor/restart` and `/api/supervisor/shutdown`.
 
-Docker-based infrastructure (Postgres, Redis) managed by Luna.
+---
 
-  * **Structure:** `external_services/{name}/` contains `service.json`, `config.json` (user-config, git-ignored), and `data/` (volume, git-ignored).
-  * **`service.json` (Single Definition File):** Contains all metadata, config form, and commands.
-      * `name`, `display_name`, `description`, `category`, `version`
-      * `config_form`: JSON schema for the installation UI (fields: `name`, `label`, `type`, `default`, `required`, `help`).
-      * `commands`: Shell commands for `install`, `uninstall`, `start`, `stop`, `restart`, `health_check`. Commands use `{{variable}}` templates (e.g., `docker run -p {{port}}:5432 ...`).
-      * `health_check_expected`: Expected string output from `health_check` (e.g., "Up" or "PONG").
-      * `install_timeout`: Seconds to wait (e.g., 120).
-      * `provides_vars`: List of env var names this service auto-generates (e.g., `DATABASE_URL`).
-      * `post_install_env`: Optional mapping of env var names to templated values (supports `{{field}}` tokens). If omitted, raw config values are used when writing `.env`.
-      * `ui`: Optional metadata to expose a proxied web UI for the service.
-          * `base_path`: Root segment for generated paths (defaults to `ext_service`).
-          * `slug`: Override for the path slug (defaults to the service name).
-          * `port` **or** `port_field`: Either a literal host port or the name of a saved config field that stores it.
-          * `scheme`: Upstream scheme (`http` default).
-          * `strip_prefix`: Strip the generated prefix before proxying (defaults to `true`).
-          * `enforce_trailing_slash`: Issue a 308 redirect to add `/` (defaults to `true`).
-          * `open_mode`: Hint for Hub UI buttons (`iframe` | `new_tab`, defaults to `iframe`). 
-  * **Installation Flow:**
-    1.  UI POSTs `/api/external-services/{name}/install` with user `config` object.
-    2.  Backend validates config, saves to `config.json`.
-    3.  Backend executes `install` command (with variables replaced).
-    4.  Backend polls `health_check` command until `health_check_expected` is met or `install_timeout`.
-    5.  On success: Renders `post_install_env` templates (or uses raw config values) for each `provides_vars` entry and appends them to `.env`.
-    6.  On failure: Executes `uninstall` command, deletes `config.json`.
-  * **Uninstall Flow:**
-    1.  POST `/api/external-services/{name}/uninstall`.
-    2.  Backend executes `uninstall` command, deletes `config.json` and `data/`, removes env vars.
-  * **Upload:**
-    1.  POST `/api/external-services/upload` with a full `service_definition` JSON.
-    2.  Backend validates (checks for `name`, `commands.install`, `commands.health_check`, etc.).
-    3.  Creates `external_services/{name}/` and saves `service.json`.
-  * **Example `service.json` (Postgres snippet):**
-    ```json
-    {
-      "name": "postgres",
-      "display_name": "PostgreSQL",
-      "version": "16-alpine",
-      "config_form": {
-        "fields": [
-          { "name": "database", "label": "Database Name", "type": "text", "default": "luna" },
-          { "name": "user", "label": "Username", "type": "text", "default": "luna_user" },
-          { "name": "password", "label": "Password", "type": "password", "required": true },
-          { "name": "port", "label": "Port", "type": "number", "default": 5432 }
-        ]
-      },
-      "commands": {
-        "install": "mkdir -p ... && docker run -d --name luna_postgres --restart unless-stopped -p {{port}}:5432 -e POSTGRES_DB={{database}} -e POSTGRES_USER={{user}} -e POSTGRES_PASSWORD={{password}} -v $(pwd)/external_services/postgres/data:/var/lib/postgresql/data postgres:16-alpine ...",
-        "uninstall": "docker stop luna_postgres && docker rm luna_postgres",
-        "start": "docker start luna_postgres",
-        "stop": "docker stop luna_postgres",
-        "health_check": "docker ps --filter name=luna_postgres --format '{{.Status}}'"
-      },
-      "health_check_expected": "Up",
-      "provides_vars": ["DATABASE_URL", "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB"],
-      "post_install_env": {
-        "DATABASE_URL": "postgresql://{{ user }}:{{ password }}@127.0.0.1:{{ port }}/{{ database }}",
-        "POSTGRES_HOST": "127.0.0.1",
-        "POSTGRES_PORT": "{{ port }}",
-        "POSTGRES_DB": "{{ database }}",
-        "POSTGRES_USER": "{{ user }}",
-        "POSTGRES_PASSWORD": "{{ password }}"
-      }
-    }
-    ```
-  * **Example `ui` block (Grocy snippet):**
-    ```json
-    {
-      "ui": {
-        "base_path": "ext_service",
-        "slug": "grocy",
-        "port_field": "port",
-        "strip_prefix": true,
-        "enforce_trailing_slash": true,
-        "open_mode": "iframe"
-      }
-    }
-    ```
-  * **Routing Metadata:** Derived UI routes live in `.luna/external_service_routes.json` and are merged into the generated Caddyfile automatically.
+11. Installation & Operational Tasks
+------------------------------------
+### 11.1 Installer (`install.sh`)
+- Must be executed with sudo (`sudo ./install.sh`).
+- Installs prerequisite packages (Python, pip, Node, pnpm/npm, Docker, jq, etc.).
+- Prompts for deployment mode:
+  - `ngrok`: requires `ngrok.api_key` and `ngrok.domain` in `install_config.json`.
+  - `nip_io`: expects ports 80/443 open; auto-detects public IP.
+  - `custom_domain`: user supplies domain and ensures DNS A record.
+- Writes `install_config.json` with choices and secrets; configures `.env`/systemd as needed.
+- Creates `.venv`, installs Python requirements, and runs database setup scripts upon request.
 
-### **6. Core Services**
+### 11.2 Database Initialization
+- `core/scripts/create_db.py`: creates the database specified by `.env` (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`).
+- `core/scripts/init_db.py`: executes SQL migrations to create tables for automation_memory (memories, task_flows, schedules, etc.).
 
-  * **Hub UI:** (React + Vite)
-      * **Location:** `luna-repo/hub_ui/`
-      * **Port:** `5173` (fixed)
-      * **Features:** Manages extensions, external services, `.env` keys. Aggregates extension UIs in `iframes` (`/ext/{extension_name}`).
-      * **Health:** `GET /healthz`
-  * **Agent API:** (FastAPI)
-      * **Location:** `luna-repo/core/utils/agent_api.py`
-      * **Port:** `8080` (fixed)
-      * **Features:** OpenAI-compatible API (`/v1/chat/completions`) for `simple_agent` and `passthrough_agent`. Auto-discovers tools from active extensions.
-      * **Health:** `GET /healthz`
-  * **MCP Server:** (Python + SSE)
-      * **Location:** `luna-repo/core/utils/mcp_server.py`
-      * **Port:** `8765` (fixed)
-      * **Features:** Provides Server-Sent Events (SSE) stream for Model Context Protocol (ChatGPT/Claude integration). Exposes tools where `enabled_in_mcp: true`.
-      * **Endpoint:** `GET /mcp/sse` (Requires `Authorization: Bearer {MCP_AUTH_TOKEN}`)
-      * **Health:** `GET /healthz`
+### 11.3 Operational Scripts
+- `core/scripts/install_deps.py`: install extension dependencies (Python/npm) when triggered via queue operations.
+- `core/scripts/reload_caddy.sh`: manual hook to reload Caddy (invoked by supervisor and bootstrap).
+- `core/scripts/kill_luna.sh`, `kill_luna.sh`: forceful shutdown helpers when automation fails.
 
-### **7. Configuration Management**
+---
 
-  * **`master_config.json`:** (`core/master_config.json`)
-      * Source of truth. Only modified by `apply_updates.py`.
-      * Stores `extensions` state, flat `tool_configs` namespace, `port_assignments`, and `external_services` status.
-    <!-- end list -->
-    ```json
-    {
-      "version": "1.0",
-      "extensions": {
-        "notes": { "enabled": true, "source": "github..." }
-      },
-      "tool_configs": {
-        "NOTES_CREATE_note": { "enabled_in_mcp": true, "passthrough": false }
-      },
-      "port_assignments": {
-        "core": { "hub_ui": 5173, ... },
-        "extensions": { "notes": 5200 },
-        "services": { "github_sync.webhook_receiver": 5300 }
-      },
-      "external_services": {
-        "postgres": { "installed": true, "enabled": true }
-      }
-    }
-    ```
-  * **`state.json`:** (`supervisor/state.json`)
-      * Ephemeral runtime state (PIDs, status, health failures). Git-ignored. Regenerated on startup.
-    <!-- end list -->
-    ```json
-    {
-      "services": {
-        "hub_ui": { "pid": 1001, "port": 5173, "status": "running", "health_failures": 0 },
-        "notes_ui": { "pid": 1004, "port": 5200, "status": "running", "health_failures": 0 },
-        "github_sync_webhook": { "pid": 1005, "port": 5300, "status": "unhealthy", "health_failures": 1 }
-      }
-    }
-    ```
+12. Logging, Monitoring, & Health
+---------------------------------
+- Log files reside in `logs/` (supervisor.log, hub_ui.log, agent_api.log, auth_service.log, mcp_server.log, caddy.log, extension/service logs). External-service logs are under `.luna/logs/`.
+- Supervisor health endpoint: `GET /api/supervisor/health` (proxied via Caddy at `/api/supervisor/health`).
+- Supervisor state file: `supervisor/state.json` enumerates each service with PID, port, status, and last health check time.
+- Health monitoring thread (within supervisor) checks external services every 30 seconds and restarts unhealthy services when allowed.
+- Bootstrap keeps attempting to restart the supervisor if `/health` fails repeatedly, cleaning ports between attempts.
 
-### **8. Port Management**
+---
 
-  * **Core Services (Fixed):**
-      * `5173`: Hub UI
-      * `8080`: Agent API
-      * `8765`: MCP Server
-      * `9999`: Supervisor API
-  * **Extension UIs (Dynamic):** `5200-5299`
-  * **Extension Services (Dynamic):** `5300-5399` (only if `requires_port: true`)
-  * **External Services (User-Configured):** e.g., `5432`, `6379`.
-  * **Assignment Strategy:** On first enable, supervisor finds next available port (e.g., `5200` for UI, `5300` for service) and persists the assignment in `master_config.port_assignments`.
-  * **`LUNA_PORTS` Env Var:** Supervisor exports a JSON string of `master_config.port_assignments` to all child processes.
+13. Testing Strategy
+--------------------
+- Pytest suite organized into phases (`tests/phase_1a`, `phase_1b`, `phase_1c`, etc.) plus integration tests (agent API, external services, prompt runner).
+- Shell helpers (`tests/run_db_tests.sh`, `tests/simple_install_test.sh`, `tests/reset_phase1.sh`) cover end-to-end flows.
+- CI expectations: tests should pass after any change to supervisor, agent API, extension discovery, or external-service logic.
 
-### **9. Health Monitoring**
+---
 
-  * **Frequency:** Every 30 seconds.
-  * **Logic (per service):**
-    1.  Poll `GET /healthz`.
-    2.  **On Success (200 OK):** `status: "running"`, reset failure/restart counters.
-    3.  **On Failure (non-200/timeout):**
-          * **1st Failure:** `status: "unhealthy"`.
-          * **2nd Failure:** Stop process (SIGTERM -\> 5s -\> SIGKILL). Increment `restart_attempt` counter.
-          * **If `restart_attempts < 2`:** Start process, reset failure counter.
-          * **If `restart_attempts >= 2`:** `status: "failed"`. Stop monitoring.
-  * **Manual Restart:** (via API) Resets all counters and restarts the service.
+14. Divergences from Prior Documentation
+----------------------------------------
+1. **Runtime Location**: The system runs directly from the repository root. The `/opt/luna/luna-repo` hierarchy in earlier docs is obsolete.
+2. **Supervisor Behavior**: No longer a simple restart loop; now includes queue retries, Caddy management, GitHub auth, and background health threads.
+3. **Caddy + OAuth**: All HTTP surfaces sit behind Caddy with GitHub OAuth for both Hub UI and MCP. Prior bearer-token/SSE references are invalid.
+4. **Update Queue Schema**: Uses an `operations` array with typed entries instead of dotted `path` changes.
+5. **Environment Management**: `/api/supervisor/keys/*` replaces the old `PATCH /api/env` hot reload endpoint.
+6. **Extension Services**: Implemented via `service_config.json` + `start.sh`; the previously documented in-extension `service.json` command structure is not used.
+7. **Logging Paths**: Core logs live in `logs/`; `.luna/` stores generated Caddy and external-service metadata.
+8. **Hub UI APIs**: Now call supervisor endpoints directly; `/api/extensions/...` (old spec) does not exist.
+9. **DEMO_MODE**: Mentioned in legacy docs but not implemented in current code paths.
 
-### **10. Agent System**
-
-  * **Discovery:** Supervisor scans `core/agents/` for `agent.py` + `config.json`.
-  * **Agent Types:**
-      * `simple_agent`: LangChain ReAct agent for complex, multi-tool tasks.
-      * `passthrough_agent`: Can use tools (honors `passthrough: true`) or respond naturally using the internal `DIRECT_RESPONSE` tool.
-  * **`DIRECT_RESPONSE` Tool:**
-    ```python
-    def DIRECT_RESPONSE(message: str) -> Tuple[bool, str]:
-        """Respond directly to the user without calling any tools."""
-        return (True, f'{{"message": "{message}"}}')
-    ```
-  * **Tool Execution:** Retries tool execution up to 2 times on failure before returning an error to the agent.
-
-### **11. Database**
-
-  * **Default:** Bundled PostgreSQL external service.
-  * **Connection:** Auto-generates `DATABASE_URL` and other vars in `.env`.
-  * **Timezone:** All timestamps stored as **UTC**. All timestamps displayed as **America/New\_York**.
-  * **Core Schema (`automation_memory`):**
-    ```sql
-    CREATE TABLE memories (
-        id SERIAL PRIMARY KEY,
-        content TEXT NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE TABLE scheduled_tasks (
-        id SERIAL PRIMARY KEY,
-        name TEXT NOT NULL,
-        prompt TEXT NOT NULL,
-        cron_expression TEXT NOT NULL,
-        agent TEXT NOT NULL,
-        enabled BOOLEAN DEFAULT TRUE,
-        last_run TIMESTAMPTZ,
-        next_run TIMESTAMPTZ
-    );
-    CREATE TABLE task_flows (
-        id SERIAL PRIMARY KEY,
-        name TEXT NOT NULL,
-        steps JSONB NOT NULL, -- Array of {prompt, agent}
-        enabled BOOLEAN DEFAULT TRUE
-    );
-    ```
-
-### **12. API Specifications**
-
-**12.1. Supervisor API (`:9999`)**
-
-  * `GET /health`: Returns supervisor health.
-  * `GET /services/status`: Returns full `state.json` content.
-  * `GET /ports`: Returns `port_assignments` from `master_config`.
-  * `POST /ports/assign`: (Internal) Assigns a new persistent port.
-  * `POST /restart`: Queues a full system restart.
-  * `POST /services/{service_name}/restart`: Manually restarts a specific service.
-
-**12.2. Hub UI API (`:5173/api`)**
-
-  * `GET /config/master`: Returns `master_config.json`.
-  * `PATCH /config/master`: Queues a change to `master_config` (requires restart). Body: `{ "path": "extensions.notes.enabled", "value": true }`.
-  * `GET /extensions`: List all installed extensions.
-  * `POST /extensions/install`: Queues an extension install. Body: `{ "source": "github.com/...", "name": "ext_name" }`.
-  * `DELETE /extensions/{name}`: Queues an extension uninstall.
-  * `POST /extensions/{name}/enable` | `/disable`: Queues enable/disable.
-  * `GET /external-services`: List all available/installed external services.
-  * `POST /external-services/{name}/install`: Installs a service. Body: `{ "config": { "port": 5432, ... } }`.
-  * `POST /external-services/{name}/uninstall`: Uninstalls a service.
-  * `POST /external-services/{name}/start` | `/stop` | `/restart`: Manages service.
-  * `POST /external-services/upload`: Uploads a new `service.json`. Body: `{ "service_definition": {...} }`.
-  * `GET /env`: Returns all keys from `.env`.
-  * `PATCH /env`: Hot-reloads `.env`. Body: `{ "OPENAI_API_KEY": "sk-new" }`.
-
-**12.3. Agent API (`:8080`)**
-
-  * `POST /v1/chat/completions`: OpenAI-compatible endpoint.
-      * **Body:** `{ "model": "simple_agent", "messages": [...], "memory": [...] }`
-      * **Response:** OpenAI-compatible chat completion object.
-
-**12.4. MCP Server (`:8765`)**
-
-  * `GET /mcp/sse`: (Requires `Authorization: Bearer {MCP_AUTH_TOKEN}`)
-      * **Response:** `text/event-stream` with MCP-formatted tool definitions.
-
-### **13. Extension Store**
-
-  * **Structure:** Hosted in a `luna-extensions` monorepo containing a `registry.json`.
-  * **`registry.json` Format:**
-    ```json
-    {
-      "version": "1.0",
-      "extensions": [
-        {
-          "name": "notes",
-          "display_name": "Notes",
-          "description": "Simple note-taking extension",
-          "category": "productivity",
-          "author": "Luna Team",
-          "version": "10-20-25",
-          "repository": "https://github.com/luna/extensions",
-          "path": "extensions/notes",
-          "tags": ["notes"]
-        }
-      ]
-    }
-    ```
-  * **Installation:** `POST /api/extensions/install` is used for store, GitHub URL, and local path installs. All are queued for `apply_updates.py`.
-
-### **14. Key Management**
-
-  * **`.env` File:** `luna-repo/.env` (git-ignored). Stores `OPENAI_API_KEY`, `DATABASE_URL`, `MCP_AUTH_TOKEN`, etc.
-  * **Hot Reload:** `PATCH /api/env` updates `.env` file and reloads environment variables in memory without a system restart.
-  * **Required Secrets:** Extension `config.json` can specify `required_secrets: ["KEY_NAME"]`. The Hub UI will show a warning if these keys are missing from `.env`.
-
-### **15. Testing Strategy**
-
-  * **Phases:**
-      * 1A: Core Infrastructure (Bootstrap, Supervisor)
-      * 1B: Config & Sync
-      * 1C: Service Management
-      * 2A: Extension System
-      * 2B: External Services
-      * 2C: Agent System
-  * **Reset State:** A script (`scripts/reset_test_env.sh`) is used to clear `state.json`, `update_queue.json`, reset `master_config.json`, and clear all user data/logs.
-  * **Test Case Format:**
-      * **Test ID:** `1A.1.1`
-      * **Name:** Master Config Creation
-      * **Setup:** `rm core/master_config.json`, start supervisor.
-      * **Action:** Check if `master_config.json` exists.
-      * **Verify:** File exists, contains required keys.
-      * **Expected Output:** JSON blob with test status and verification booleans.
-
-### **16. Deployment**
-
-  * **MVP (Local):**
-      * **Install:** `curl -sSL https://get.luna.ai/install.sh | bash`
-      * **Access:** `http://localhost:5173` (Hub UI), `http://localhost:8080` (Agent API).
-  * **Public Demo:**
-      * **Architecture:** Caddy reverse proxy mapping a single domain to all internal ports.
-      * **Example Caddyfile:**
-        ```
-        demo.luna.ai {
-            reverse_proxy / localhost:5173
-            reverse_proxy /api/* localhost:8080
-            reverse_proxy /mcp/* localhost:8765
-            reverse_proxy /ext/notes/* localhost:5200
-            reverse_proxy /ext_service/grocy/* localhost:5303
-        }
-        ```
-      * **Demo Mode:** `DEMO_MODE=true` env var disables config changes, installs, and `.env` editing.
+Keep this document synchronized with future changes to supervisor startup order, proxy generation, queue semantics, or API contracts to prevent the Hub UI, deployment scripts, and external integrations from drifting.

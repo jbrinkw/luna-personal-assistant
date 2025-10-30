@@ -1,7 +1,7 @@
 """Auth Service for Luna Hub UI - GitHub OAuth Authentication
 
 Provides GitHub OAuth login flow for the Hub UI.
-Uses the same GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET as the MCP server.
+Uses stateless JWT authentication (no database required).
 """
 import os
 import sys
@@ -37,9 +37,6 @@ PUBLIC_DOMAIN = os.getenv("PUBLIC_DOMAIN", "localhost:5173")
 JWT_SECRET = os.getenv("JWT_SECRET", secrets.token_urlsafe(32))
 SESSION_DURATION_HOURS = int(os.getenv("SESSION_DURATION_HOURS", "24"))
 
-# Database connection
-DATABASE_URL = os.getenv("DATABASE_URL")
-
 # Validate configuration
 if not GITHUB_CLIENT_ID or not GITHUB_CLIENT_SECRET:
     print("[Auth Service] WARNING: GitHub OAuth not configured")
@@ -51,10 +48,6 @@ if not ALLOWED_GITHUB_USERNAME:
     print("[Auth Service] Any GitHub user will be able to log in")
 else:
     print(f"[Auth Service] Access restricted to GitHub user: {ALLOWED_GITHUB_USERNAME}")
-
-if not DATABASE_URL:
-    print("[Auth Service] WARNING: DATABASE_URL not set, using in-memory sessions")
-    DATABASE_URL = None
 
 # ---- FastAPI App ----
 app = FastAPI(title="Luna Auth Service")
@@ -68,145 +61,39 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---- In-Memory Session Store (fallback if no DB) ----
-SESSIONS: Dict[str, Dict[str, Any]] = {}
+# ---- JWT Functions ----
+def create_jwt_token(github_id: int, github_username: str) -> str:
+    """Create a JWT token for the user"""
+    now = datetime.utcnow()
+    expires_at = now + timedelta(hours=SESSION_DURATION_HOURS)
+    
+    payload = {
+        "github_id": github_id,
+        "github_username": github_username,
+        "iat": now,
+        "exp": expires_at
+    }
+    
+    token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+    return token
 
-# ---- Database Functions ----
-def get_db_connection():
-    """Get database connection if available"""
-    if not DATABASE_URL:
+def validate_jwt_token(token: str) -> Optional[Dict[str, Any]]:
+    """Validate JWT token and return payload"""
+    if not token:
         return None
     
     try:
-        import psycopg2
-        conn = psycopg2.connect(DATABASE_URL)
-        return conn
-    except Exception as e:
-        print(f"[Auth Service] Database connection failed: {e}")
-        return None
-
-def create_or_update_user(github_id: int, username: str, access_token: str) -> Optional[int]:
-    """Create or update user in database, return user_id"""
-    conn = get_db_connection()
-    if not conn:
-        # Store in memory
-        user_id = github_id
-        return user_id
-    
-    try:
-        with conn.cursor() as cur:
-            # Upsert user
-            cur.execute("""
-                INSERT INTO users (github_id, github_username, github_access_token, last_login)
-                VALUES (%s, %s, %s, NOW())
-                ON CONFLICT (github_id) DO UPDATE
-                SET github_username = EXCLUDED.github_username,
-                    github_access_token = EXCLUDED.github_access_token,
-                    last_login = NOW()
-                RETURNING id
-            """, (github_id, username, access_token))
-            user_id = cur.fetchone()[0]
-            conn.commit()
-            return user_id
-    except Exception as e:
-        print(f"[Auth Service] Database error: {e}")
-        conn.rollback()
-        return None
-    finally:
-        conn.close()
-
-def create_session(user_id: int, github_username: str) -> str:
-    """Create a new session and return session token"""
-    session_token = secrets.token_urlsafe(32)
-    expires_at = datetime.utcnow() + timedelta(hours=SESSION_DURATION_HOURS)
-    
-    conn = get_db_connection()
-    if not conn:
-        # Store in memory
-        SESSIONS[session_token] = {
-            "user_id": user_id,
-            "github_username": github_username,
-            "expires_at": expires_at,
-            "created_at": datetime.utcnow()
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        return {
+            "github_id": payload["github_id"],
+            "github_username": payload["github_username"]
         }
-        return session_token
-    
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO sessions (id, user_id, expires_at)
-                VALUES (%s, %s, %s)
-            """, (session_token, user_id, expires_at))
-            conn.commit()
-        return session_token
-    except Exception as e:
-        print(f"[Auth Service] Database error: {e}")
-        conn.rollback()
+    except jwt.ExpiredSignatureError:
+        print("[Auth Service] Token expired")
         return None
-    finally:
-        conn.close()
-
-def validate_session(session_token: str) -> Optional[Dict[str, Any]]:
-    """Validate session and return user info"""
-    if not session_token:
+    except jwt.InvalidTokenError as e:
+        print(f"[Auth Service] Invalid token: {e}")
         return None
-    
-    conn = get_db_connection()
-    if not conn:
-        # Check in-memory
-        session = SESSIONS.get(session_token)
-        if not session:
-            return None
-        
-        if datetime.utcnow() > session["expires_at"]:
-            del SESSIONS[session_token]
-            return None
-        
-        return session
-    
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT s.user_id, u.github_username, s.expires_at
-                FROM sessions s
-                JOIN users u ON u.id = s.user_id
-                WHERE s.id = %s AND s.expires_at > NOW()
-            """, (session_token,))
-            row = cur.fetchone()
-            if not row:
-                return None
-            
-            return {
-                "user_id": row[0],
-                "github_username": row[1],
-                "expires_at": row[2]
-            }
-    except Exception as e:
-        print(f"[Auth Service] Database error: {e}")
-        return None
-    finally:
-        conn.close()
-
-def delete_session(session_token: str):
-    """Delete a session"""
-    if not session_token:
-        return
-    
-    conn = get_db_connection()
-    if not conn:
-        # Delete from memory
-        SESSIONS.pop(session_token, None)
-        return
-    
-    try:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM sessions WHERE id = %s", (session_token,))
-            conn.commit()
-    except Exception as e:
-        print(f"[Auth Service] Database error: {e}")
-        conn.rollback()
-    finally:
-        conn.close()
 
 # ---- OAuth Flow ----
 @app.get("/auth/login")
@@ -302,21 +189,14 @@ async def callback(
                 detail=f"Access denied. Only '{ALLOWED_GITHUB_USERNAME}' is allowed to access this Luna instance."
             )
     
-    # Create or update user in database
-    user_id = create_or_update_user(github_id, github_username, access_token)
-    if not user_id:
-        raise HTTPException(status_code=500, detail="Failed to create user")
+    # Create JWT token
+    jwt_token = create_jwt_token(github_id, github_username)
     
-    # Create session
-    session_token = create_session(user_id, github_username)
-    if not session_token:
-        raise HTTPException(status_code=500, detail="Failed to create session")
-    
-    # Redirect to Hub UI with session cookie
+    # Redirect to Hub UI with JWT cookie
     response = RedirectResponse("/")
     response.set_cookie(
         key="session",
-        value=session_token,
+        value=jwt_token,
         httponly=True,
         secure=True,
         samesite="lax",
@@ -328,26 +208,23 @@ async def callback(
 
 @app.post("/auth/logout")
 async def logout(session: Optional[str] = Cookie(None)):
-    """Logout user and delete session"""
-    if session:
-        delete_session(session)
-    
+    """Logout user (clear JWT cookie)"""
     response = JSONResponse({"success": True})
     response.delete_cookie("session")
     return response
 
 @app.get("/auth/me")
 async def get_current_user(session: Optional[str] = Cookie(None)):
-    """Get current user info"""
+    """Get current user info from JWT"""
     if not session:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
-    user = validate_session(session)
+    user = validate_jwt_token(session)
     if not user:
-        raise HTTPException(status_code=401, detail="Invalid or expired session")
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
     
     return {
-        "user_id": user["user_id"],
+        "github_id": user["github_id"],
         "username": user["github_username"],
         "authenticated": True
     }
@@ -365,7 +242,7 @@ if __name__ == "__main__":
     
     print(f"[Auth Service] Starting on port {port}")
     print(f"[Auth Service] GitHub OAuth: {'configured' if GITHUB_CLIENT_ID else 'NOT configured'}")
-    print(f"[Auth Service] Database: {'connected' if DATABASE_URL else 'in-memory'}")
+    print(f"[Auth Service] Authentication: Stateless JWT (no database)")
     print(f"[Auth Service] Session duration: {SESSION_DURATION_HOURS} hours")
     
     uvicorn.run(app, host="127.0.0.1", port=port)

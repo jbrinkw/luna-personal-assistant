@@ -21,11 +21,11 @@ if [ ! -d "node_modules" ]; then
   npm install --silent
 fi
 
-# Load .env from project root for other variables
-export $(grep -v '^#' ../../../.env 2>/dev/null | xargs) || true
-
 # Export the port for server.js to use
 export AM_API_PORT=$PORT
+
+# Path to .env file (let Node read it directly)
+export LUNA_ENV_FILE="$(cd ../../../ && pwd)/.env"
 
 echo "[automation-memory] Starting backend on port $PORT..."
 

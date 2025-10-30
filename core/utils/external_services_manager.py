@@ -654,6 +654,55 @@ class ExternalServicesManager:
         """Create logs directory if it doesn't exist"""
         self.logs_dir.mkdir(parents=True, exist_ok=True)
     
+    def _write_to_log(self, service_name: str, content: str) -> None:
+        """
+        Append content to a service's log file
+        
+        Args:
+            service_name: Name of the service
+            content: Content to write
+        """
+        try:
+            log_path = self.get_log_path(service_name)
+            with open(log_path, 'a', encoding='utf-8') as f:
+                f.write(content)
+        except Exception as e:
+            print(f"[ExternalServicesManager] Warning: Failed to write to log for {service_name}: {e}")
+    
+    def capture_docker_logs(self, service_name: str, container_name: str, lines: int = 100) -> None:
+        """
+        Capture recent Docker container logs and append to service log file
+        
+        Args:
+            service_name: Name of the service
+            container_name: Name of the Docker container
+            lines: Number of recent log lines to capture
+        """
+        try:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Try to get docker logs
+            result = subprocess.run(
+                ["docker", "logs", "--tail", str(lines), container_name],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode == 0:
+                docker_logs = result.stdout + result.stderr
+                if docker_logs.strip():
+                    self._write_to_log(service_name, f"\n[{timestamp}] Docker container logs ({container_name}):\n")
+                    self._write_to_log(service_name, docker_logs)
+                    self._write_to_log(service_name, "\n" + "=" * 80 + "\n")
+                else:
+                    self._write_to_log(service_name, f"\n[{timestamp}] Docker container logs ({container_name}): (empty)\n")
+            else:
+                self._write_to_log(service_name, f"\n[{timestamp}] Failed to capture Docker logs for {container_name}: {result.stderr}\n")
+                
+        except Exception as e:
+            print(f"[ExternalServicesManager] Warning: Failed to capture Docker logs for {service_name}: {e}")
+    
     def tail_log(self, service_name: str, lines: int = 100) -> str:
         """
         Read last N lines from a service log file
@@ -796,6 +845,11 @@ class ExternalServicesManager:
         if working_dir is None:
             working_dir = str(self.repo_path)
         
+        # Prepare log entry header
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_header = f"[{timestamp}] Executing command for service '{service_name or 'unknown'}':\n{command}\n"
+        log_separator = "=" * 80 + "\n"
+        
         # Load .env variables into environment
         env = os.environ.copy()
         env_file = self.repo_path / ".env"
@@ -824,26 +878,64 @@ class ExternalServicesManager:
             output = result.stdout + result.stderr
             success = result.returncode == 0
             
+            # Write to log file if service_name is provided
+            if service_name:
+                self._write_to_log(service_name, log_header)
+                self._write_to_log(service_name, f"Exit Code: {result.returncode}\n")
+                if output:
+                    self._write_to_log(service_name, f"Output:\n{output}\n")
+                else:
+                    self._write_to_log(service_name, "Output: (empty)\n")
+                self._write_to_log(service_name, log_separator)
+            
             return success, output, result.returncode
             
         except subprocess.TimeoutExpired:
             error_msg = f"Command timed out after {timeout} seconds"
             print(f"[ExternalServicesManager] {error_msg}: {command}")
+            
+            # Log timeout
+            if service_name:
+                self._write_to_log(service_name, log_header)
+                self._write_to_log(service_name, f"ERROR: {error_msg}\n")
+                self._write_to_log(service_name, log_separator)
+            
             return False, error_msg, -1
             
         except FileNotFoundError:
             error_msg = f"Command executable not found"
             print(f"[ExternalServicesManager] {error_msg}: {command}")
+            
+            # Log error
+            if service_name:
+                self._write_to_log(service_name, log_header)
+                self._write_to_log(service_name, f"ERROR: {error_msg}\n")
+                self._write_to_log(service_name, log_separator)
+            
             return False, error_msg, -1
             
         except PermissionError:
             error_msg = f"Permission denied executing command"
             print(f"[ExternalServicesManager] {error_msg}: {command}")
+            
+            # Log error
+            if service_name:
+                self._write_to_log(service_name, log_header)
+                self._write_to_log(service_name, f"ERROR: {error_msg}\n")
+                self._write_to_log(service_name, log_separator)
+            
             return False, error_msg, -1
             
         except Exception as e:
             error_msg = f"Unexpected error: {str(e)}"
             print(f"[ExternalServicesManager] {error_msg}: {command}")
+            
+            # Log error
+            if service_name:
+                self._write_to_log(service_name, log_header)
+                self._write_to_log(service_name, f"ERROR: {error_msg}\n")
+                self._write_to_log(service_name, log_separator)
+            
             return False, error_msg, -1
     
     def check_health(self, service_name: str) -> Tuple[str, Optional[str]]:
@@ -855,7 +947,7 @@ class ExternalServicesManager:
             
         Returns:
             Tuple of (status, error_message)
-            Status: "running", "stopped", "unhealthy", "unknown"
+            Status: "running", "failed", "unknown"
         """
         service_def = self.get_service_definition(service_name)
         if not service_def:
@@ -891,7 +983,7 @@ class ExternalServicesManager:
         if service_def.health_check_expected in output:
             return "running", None
         else:
-            return "stopped", None
+            return "failed", None
     
     def install_service(
         self,
@@ -1108,6 +1200,13 @@ class ExternalServicesManager:
             "status": status,
             "last_health_check": datetime.now().isoformat()
         })
+
+        # If this is a Docker-based service, capture container logs
+        if "docker" in start_cmd.lower():
+            # Try to extract container name from command
+            # Common pattern: --name container_name or luna_{service_name}
+            container_name = f"luna_{service_name}"
+            self.capture_docker_logs(service_name, container_name, lines=50)
 
         self._reload_caddy(f"start:{service_name}")
         
