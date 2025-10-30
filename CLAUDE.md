@@ -102,7 +102,7 @@ All long-lived processes are started within the repository root (not `/opt/luna/
    - Allocate deterministic ports (`5200-5299` for UIs, `5300-5399` for services) via `assign_port`.
    - Start `ui/start.sh` if present, logging to `logs/<extension>_ui.log`.
    - Iterate `services/<name>/`, read `service_config.json`, start `start.sh`, log to `logs/<extension>__service_<name>.log`.
-7. **Load External Services**: call `external_services_manager.bootstrap_bundled_services()` (copy repo-root `*-docker.json` into `external_services/` if missing), load `.luna/external_services.json`, and update `state.json` under `external_services`.
+7. **Load External Services**: load `.luna/external_services.json` and update `state.json` under `external_services`. (Note: auto-bootstrap from repo-root `*-docker.json` files is disabled; services must be installed via Hub UI or API upload.)
 8. **Health Monitoring**: spawn a background thread that every 30 seconds executes `_health_check_external_services()` to run defined health checks, update registry entries, and restart unhealthy services if `restart_on_failure` is true.
 9. **Operational Logs**: supervisor prints a startup summary including direct localhost URLs for quick debugging (Hub UI, auth, agent API, MCP, supervisor API).
 
@@ -247,6 +247,8 @@ extensions/<name>/
 ---------------------
 ### 8.1 Definitions
 - Located under `external_services/<name>/service.json`.
+- Bundled example definitions (`grocy-docker.json`, `postgres-docker.json`) exist in the repo root as reference/templates only; they are **not** auto-installed during startup.
+- Services must be explicitly installed via Hub UI (External Services page) or API upload endpoint (`POST /api/external-services/upload`).
 - Validated by `core/utils/external_service_schemas.ServiceDefinition` (supports both new `commands` object and legacy fields).
 - Each definition may include:
   - Metadata (`name`, `display_name`, `description`, `category`, `version`).
