@@ -78,45 +78,48 @@ class Supervisor:
         if self.update_queue_path.exists():
             self.log("INFO", f"Update queue found at {self.update_queue_path}")
             
-            # Check retry count to prevent infinite loops
-            retry_state_path = self.core_path / "update_retry_count.json"
-            retry_count = 0
+            # PREQUEUE RETRY LOGIC COMMENTED OUT - Apply updates immediately without retry checks
+            # # Check retry count to prevent infinite loops
+            # retry_state_path = self.core_path / "update_retry_count.json"
+            # retry_count = 0
+            # 
+            # if retry_state_path.exists():
+            #     try:
+            #         with open(retry_state_path, 'r') as f:
+            #             retry_data = json.load(f)
+            #             retry_count = retry_data.get("count", 0)
+            #             last_attempt = retry_data.get("last_attempt", "")
+            #             self.log("INFO", f"Previous retry attempts: {retry_count}, last: {last_attempt}")
+            #     except Exception as e:
+            #         self.log("WARNING", f"Failed to read retry state: {e}")
+            # 
+            # # If we've tried 3 times, give up
+            # if retry_count >= 3:
+            #     self.log("ERROR", "Update failed after 3 attempts, moving queue to failed state")
+            #     failed_queue_path = self.core_path / "update_queue_failed.json"
+            #     import shutil
+            #     shutil.move(str(self.update_queue_path), str(failed_queue_path))
+            #     
+            #     # Clean up retry state
+            #     if retry_state_path.exists():
+            #         retry_state_path.unlink()
+            #     
+            #     self.log("ERROR", f"Failed queue moved to {failed_queue_path}")
+            #     self.log("INFO", "Continuing with normal startup (no updates will be applied)")
+            #     return False
+            # 
+            # # Increment retry count
+            # retry_count += 1
+            # retry_data = {
+            #     "count": retry_count,
+            #     "last_attempt": datetime.now().isoformat()
+            # }
+            # with open(retry_state_path, 'w') as f:
+            #     json.dump(retry_data, f, indent=2)
+            # 
+            # self.log("INFO", f"Triggering apply_updates (attempt {retry_count}/3)...")
             
-            if retry_state_path.exists():
-                try:
-                    with open(retry_state_path, 'r') as f:
-                        retry_data = json.load(f)
-                        retry_count = retry_data.get("count", 0)
-                        last_attempt = retry_data.get("last_attempt", "")
-                        self.log("INFO", f"Previous retry attempts: {retry_count}, last: {last_attempt}")
-                except Exception as e:
-                    self.log("WARNING", f"Failed to read retry state: {e}")
-            
-            # If we've tried 3 times, give up
-            if retry_count >= 3:
-                self.log("ERROR", "Update failed after 3 attempts, moving queue to failed state")
-                failed_queue_path = self.core_path / "update_queue_failed.json"
-                import shutil
-                shutil.move(str(self.update_queue_path), str(failed_queue_path))
-                
-                # Clean up retry state
-                if retry_state_path.exists():
-                    retry_state_path.unlink()
-                
-                self.log("ERROR", f"Failed queue moved to {failed_queue_path}")
-                self.log("INFO", "Continuing with normal startup (no updates will be applied)")
-                return False
-            
-            # Increment retry count
-            retry_count += 1
-            retry_data = {
-                "count": retry_count,
-                "last_attempt": datetime.now().isoformat()
-            }
-            with open(retry_state_path, 'w') as f:
-                json.dump(retry_data, f, indent=2)
-            
-            self.log("INFO", f"Triggering apply_updates (attempt {retry_count}/3)...")
+            self.log("INFO", "Triggering apply_updates...")
             
             # Create flag file FIRST to signal bootstrap to wait (don't restart supervisor)
             update_flag = self.repo_path / ".luna_updating"
@@ -184,6 +187,7 @@ class Supervisor:
                 "public_domain": public_domain,
                 "extensions": {},
                 "tool_configs": {},
+                "remote_mcp_servers": {},
                 "port_assignments": {
                     "extensions": {},
                     "services": {}

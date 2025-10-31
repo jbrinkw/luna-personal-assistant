@@ -569,7 +569,7 @@ def phase_7_overwrite_master_config(repo_path, master_config):
 def phase_8_clear_queue(repo_path):
     """
     Phase 8: Clear Queue
-    Delete update_queue.json, retry counter, and update flag
+    Delete update_queue.json and update flag
     """
     log("Phase 8: Clearing queue...")
     
@@ -581,11 +581,12 @@ def phase_8_clear_queue(repo_path):
     else:
         log("Queue already cleared")
     
-    # Also clear retry counter on successful completion
-    retry_state_path = repo_path / "core" / "update_retry_count.json"
-    if retry_state_path.exists():
-        retry_state_path.unlink()
-        log("Retry counter cleared")
+    # RETRY COUNTER CLEANUP COMMENTED OUT - No longer using retry mechanism
+    # # Also clear retry counter on successful completion
+    # retry_state_path = repo_path / "core" / "update_retry_count.json"
+    # if retry_state_path.exists():
+    #     retry_state_path.unlink()
+    #     log("Retry counter cleared")
     
     # Clear update flag so bootstrap knows update is complete
     update_flag = repo_path / ".luna_updating"

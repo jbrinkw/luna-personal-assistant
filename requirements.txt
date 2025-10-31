@@ -24,6 +24,7 @@ langgraph>=0.2.0
 
 # MCP Server
 fastmcp>=2.12.4
+mcp[cli]
 
 # OAuth 2.0 and Authentication
 pyjwt==2.9.0

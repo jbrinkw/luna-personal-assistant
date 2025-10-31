@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useSystem } from '../../context/SystemContext';
 import { useConfig } from '../../context/ConfigContext';
 import StatusIndicator from '../common/StatusIndicator';
@@ -10,6 +10,9 @@ export default function Header() {
   const { health, version } = useSystem();
   const { hasChanges, pendingChanges } = useConfig();
   const [showRestartModal, setShowRestartModal] = useState(false);
+  const navigate = useNavigate();
+  const pendingCount = pendingChanges?.length || 0;
+  const hasPendingChanges = hasChanges && pendingCount > 0;
 
   return (
     <div className="header">
@@ -21,11 +24,21 @@ export default function Header() {
       </div>
       
       <div className="header-right">
-        {hasChanges && (
-          <Link to="/queue" className="pending-changes-badge">
-            ⚠️ {pendingChanges.length} pending change{pendingChanges.length !== 1 ? 's' : ''}
-          </Link>
-        )}
+        <Button
+          size="sm"
+          variant="secondary"
+          className={`update-manager-button${hasPendingChanges ? ' has-pending' : ''}`}
+          onClick={() => navigate('/queue')}
+          title="Open Update Manager"
+        >
+          <span className="update-manager-icon" aria-hidden="true">🛠️</span>
+          <span className="update-manager-label">Update Manager</span>
+          {hasPendingChanges && (
+            <span className="update-manager-badge">
+              {pendingCount}
+            </span>
+          )}
+        </Button>
         
         <div className="system-health">
           <StatusIndicator status={health} />
@@ -56,5 +69,4 @@ export default function Header() {
     </div>
   );
 }
-
 
