@@ -73,6 +73,15 @@ export default function Sidebar({ isOpen, onClose }) {
           Infrastructure
         </NavLink>
         
+        <NavLink 
+          to="/tools" 
+          className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}
+          onClick={handleLinkClick}
+        >
+          <span className="menu-icon">🔧</span>
+          Tool Manager
+        </NavLink>
+        
         <div className="menu-divider"></div>
         <div className="menu-section-title">Extension UIs</div>
         

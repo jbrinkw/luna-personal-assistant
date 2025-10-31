@@ -15,6 +15,7 @@ import ExtensionStore from './pages/ExtensionStore';
 import KeyManager from './pages/KeyManager';
 import ExtensionFrame from './pages/ExtensionFrame';
 import Infrastructure from './pages/Infrastructure';
+import MCPToolManager from './pages/MCPToolManager';
 
 function AuthGate({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -80,6 +81,7 @@ export default function App() {
                           <Route path="/store" element={<ExtensionStore />} />
                           <Route path="/secrets" element={<KeyManager />} />
                           <Route path="/infrastructure" element={<Infrastructure />} />
+                          <Route path="/tools" element={<MCPToolManager />} />
                         </Routes>
                       </Layout>
                     } />

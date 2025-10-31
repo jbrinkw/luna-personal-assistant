@@ -4,6 +4,7 @@ import { useSystem } from '../context/SystemContext';
 import { useServices } from '../context/ServicesContext';
 import { SystemAPI } from '../lib/api';
 import { getInstalledServices } from '../lib/externalServicesApi';
+import { MCPApi } from '../lib/mcpApi';
 import Card, { CardTitle, CardContent } from '../components/common/Card';
 import StatusIndicator from '../components/common/StatusIndicator';
 import Button from '../components/common/Button';
@@ -21,11 +22,13 @@ export default function Dashboard() {
   const [mcpStatus, setMcpStatus] = useState('checking');
   const [agents, setAgents] = useState([]);
   const [externalServices, setExternalServices] = useState({});
+  const [remoteMcpServers, setRemoteMcpServers] = useState([]);
 
   useEffect(() => {
     checkServices();
     loadAgents();
     loadExternalServices();
+    loadRemoteMcpServers();
   }, []);
 
   const checkServices = async () => {
@@ -69,6 +72,17 @@ export default function Dashboard() {
       setExternalServices(data || {});
     } catch (e) {
       console.error('Failed to load external services:', e);
+    }
+  };
+
+  const loadRemoteMcpServers = async () => {
+    try {
+      const data = await MCPApi.listServers();
+      // Convert servers object to array
+      const serversArray = Object.values(data.servers || {});
+      setRemoteMcpServers(serversArray);
+    } catch (e) {
+      console.error('Failed to load remote MCP servers:', e);
     }
   };
 
@@ -132,9 +146,9 @@ export default function Dashboard() {
             <div className="action-icon">📦</div>
             <div className="action-label">Browse Store</div>
           </Card>
-          <Card className="action-card" onClick={() => navigate('/queue')}>
-            <div className="action-icon">📋</div>
-            <div className="action-label">Update Manager</div>
+          <Card className="action-card" onClick={() => navigate('/tools')}>
+            <div className="action-icon">🧰</div>
+            <div className="action-label">Tool Manager</div>
           </Card>
           <Card className="action-card" onClick={() => navigate('/secrets')}>
             <div className="action-icon">🔑</div>
@@ -289,6 +303,27 @@ export default function Dashboard() {
                           </div>
                         );
                       })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Remote MCP Servers */}
+                {remoteMcpServers.length > 0 && (
+                  <div>
+                    <div className="dashboard-row-tight mb-xs">
+                      <span className="icon-success">✓</span>
+                      <span className="text-strong fw-semibold">Remote MCP Servers</span>
+                    </div>
+                    <div className="dashboard-indented">
+                      {remoteMcpServers.map(server => (
+                        <div key={server.server_id} className="dashboard-row-tight">
+                          <StatusIndicator status="online" />
+                          <span className="text-strong">{server.server_id}</span>
+                          <span className="text-muted text-xs">
+                            ({server.tool_count} tool{server.tool_count !== 1 ? 's' : ''})
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}

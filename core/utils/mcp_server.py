@@ -35,7 +35,7 @@ except Exception as e:
         "fastmcp and starlette are required. Install with: pip install fastmcp starlette uvicorn"
     ) from e
 
-from core.utils.extension_discovery import get_mcp_tools
+from core.utils.tool_discovery import get_mcp_enabled_tools
 
 
 class RestrictedGitHubTokenVerifier(GitHubTokenVerifier):
@@ -152,14 +152,87 @@ class RestrictedGitHubProvider(GitHubProvider):
 
 def _register_tools(mcp: "FastMCP", tools: List[Callable[..., Any]]) -> int:
     """Register tools with the MCP server."""
+    from core.utils.tool_discovery import MCPRemoteTool
+    import inspect
+    
     count = 0
     for fn in tools:
         try:
-            mcp.tool(fn)
-            count += 1
+            # Handle remote MCP tools differently
+            if isinstance(fn, MCPRemoteTool):
+                # Create a proper function with explicit parameters from schema
+                tool_name = fn.__name__
+                tool_doc = fn.__doc__
+                input_schema = fn.input_schema
+                
+                # Build function with explicit parameters
+                if input_schema and isinstance(input_schema, dict):
+                    properties = input_schema.get('properties', {})
+                    required = input_schema.get('required', [])
+                    
+                    # Create parameter list
+                    params = []
+                    param_names = []
+                    annotations = {}
+                    
+                    for param_name, param_info in properties.items():
+                        param_names.append(param_name)
+                        param_type = param_info.get('type', 'string')
+                        
+                        # Map JSON schema types to Python types
+                        if param_type == 'string':
+                            py_type = str
+                        elif param_type in ('number', 'integer'):
+                            py_type = float if param_type == 'number' else int
+                        elif param_type == 'boolean':
+                            py_type = bool
+                        else:
+                            py_type = str
+                        
+                        annotations[param_name] = py_type
+                        
+                        # Add parameter with default if not required
+                        if param_name in required:
+                            params.append(inspect.Parameter(param_name, inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=py_type))
+                        else:
+                            params.append(inspect.Parameter(param_name, inspect.Parameter.POSITIONAL_OR_KEYWORD, default=None, annotation=py_type))
+                    
+                    # Create function with proper signature
+                    def create_remote_tool_func(remote_tool_instance, param_list):
+                        def tool_func(*args, **kwargs):
+                            # Convert args/kwargs to dict for remote call
+                            call_kwargs = dict(zip(param_list, args))
+                            call_kwargs.update(kwargs)
+                            # Remove None values
+                            call_kwargs = {k: v for k, v in call_kwargs.items() if v is not None}
+                            return remote_tool_instance(**call_kwargs)
+                        
+                        tool_func.__name__ = remote_tool_instance.__name__
+                        tool_func.__doc__ = remote_tool_instance.__doc__
+                        tool_func.__signature__ = inspect.Signature(params)
+                        tool_func.__annotations__ = annotations
+                        return tool_func
+                    
+                    wrapper_fn = create_remote_tool_func(fn, param_names)
+                else:
+                    # No schema, create simple wrapper
+                    def tool_func():
+                        return fn()
+                    tool_func.__name__ = tool_name
+                    tool_func.__doc__ = tool_doc
+                    wrapper_fn = tool_func
+                
+                mcp.tool(wrapper_fn)
+                count += 1
+            else:
+                # Regular local tool
+                mcp.tool(fn)
+                count += 1
         except Exception as e:
             # Skip tools that fail to register
-            print(f"[WARNING] Failed to register tool {fn.__name__}: {e}")
+            print(f"[WARNING] Failed to register tool {getattr(fn, '__name__', 'unknown')}: {e}")
+            import traceback
+            traceback.print_exc()
             continue
     return count
 
@@ -237,13 +310,45 @@ def main(argv: List[str]) -> int:
         print("[ERROR] MCP server cannot start without authentication")
         return 1
 
-    # Load and register MCP-enabled tools
-    print("[MCP] Discovering tools from Luna extensions...")
-    tools = get_mcp_tools()
-    registered = _register_tools(mcp, tools)
+    # Initialize remote MCP session manager if configured
+    session_manager = None
+    try:
+        import json
+        from pathlib import Path
+        master_config_path = Path(PROJECT_ROOT) / 'core' / 'master_config.json'
+        if master_config_path.exists():
+            with open(master_config_path, 'r') as f:
+                master_config = json.load(f)
+            
+            # Check if remote MCP servers are configured
+            remote_servers = master_config.get('remote_mcp_servers', {})
+            if remote_servers:
+                print(f"[MCP] Initializing {len(remote_servers)} remote MCP server(s)...")
+                import asyncio
+                from core.utils.remote_mcp_session_manager import RemoteMCPSessionManager
+                
+                session_manager = RemoteMCPSessionManager(master_config)
+                asyncio.run(session_manager.initialize_all())
+    except Exception as e:
+        print(f"[MCP] Warning: Failed to initialize remote MCP servers: {e}")
+        import traceback
+        traceback.print_exc()
     
-    if registered == 0:
-        print("[WARNING] No tools registered. Check extension tool_config.json files.")
+    # Load and register MCP-enabled tools (local + remote)
+    print("[MCP] Discovering tools from all sources...", flush=True)
+    try:
+        tools = get_mcp_enabled_tools(session_manager=session_manager)
+        print(f"[MCP] Found {len(tools)} total tools (local + remote)", flush=True)
+        registered = _register_tools(mcp, tools)
+        print(f"[MCP] Successfully registered {registered} tools", flush=True)
+        
+        if registered == 0:
+            print("[WARNING] No tools registered. Check extension tool_config.json files.", flush=True)
+    except Exception as e:
+        print(f"[MCP] ERROR during tool discovery/registration: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        registered = 0
 
     if args.transport in ["sse", "http", "streamable-http"]:
         url = f"http://{args.host}:{args.port}"

@@ -1,6 +1,6 @@
 Luna Project Specification
 ==========================
-Updated: 2025-10-28
+Updated: 2025-10-30
 
 ---
 
@@ -38,7 +38,7 @@ Luna runs as a constellation of cooperating processes launched and supervised by
 - **Caddy reverse proxy**: the single HTTP entry point. It terminates TLS (where applicable), injects auth headers, rewrites OAuth discovery routes, and proxies traffic to the internal services.
 - **GitHub OAuth auth service**: provides `/auth/login`/`/auth/callback`/`/auth/me`/`/auth/logout`, issues signed cookies, and (optionally) persists sessions in Postgres.
 - **Agent API**: an OpenAI-compatible FastAPI server that auto-discovers LangChain tools and generates an `AGENT_API_KEY` stored in `.env`.
-- **MCP server**: a FastMCP instance using GitHub OAuth, surfaced externally through Caddy under `/api/mcp`.
+- **MCP server**: a FastMCP instance using GitHub OAuth, surfaced externally through Caddy under `/api/mcp`. Supports both local extension tools and remote Smithery MCP servers.
 - **Extensions & services**: each extension may include tools, a frontend (`ui/start.sh`), and background services. Ports are assigned deterministically and persisted in `master_config.json`.
 - **External services**: Dockerized infrastructure components (Postgres, Grocy, etc.) managed via `ExternalServicesManager`; definitions live under `external_services/` with runtime metadata in `.luna/external_services.json`.
 
@@ -123,8 +123,8 @@ All long-lived processes are started within the repository root (not `/opt/luna/
   ```
 - `operations` run in deterministic phases: delete, install, update, external-service ops, core update, dependency installation, config sync.
 - Supports GitHub monorepo installs (`github:user/repo:path/to/subdir`) and uploaded archives in `/tmp`.
-- Maintains retry metadata in `core/update_retry_count.json` (max 3 attempts). Stuck queues are renamed to `update_queue_failed.json` and supervisor startup proceeds without applying them.
-- On success rewrites `master_config.json`, removes the queue and retry file, and clears `.luna_updating`.
+- **Retry logic disabled**: Queued updates are applied immediately on next startup without retry checks or failure thresholds. The supervisor applies any queued updates found in `core/update_queue.json` without maintaining retry counters.
+- On success rewrites `master_config.json`, removes the queue, and clears `.luna_updating`.
 
 ### 4.4 Supervisor API (`supervisor/api.py`)
 - Exposes control endpoints for services, extensions, queue management, environment keys, external services, and system restart/shutdown.
@@ -176,6 +176,21 @@ Holds the authoritative view of extensions, tool configs, port assignments, and 
     "MEMORY_GET_all": {
       "enabled_in_mcp": true,
       "passthrough": false
+    }
+  },
+  "remote_mcp_servers": {
+    "exa-search-server": {
+      "server_id": "exa-search-server",
+      "url": "https://mcp.exa.ai/mcp?api_key=...",
+      "enabled": true,
+      "tool_count": 2,
+      "tools": {
+        "web_search_exa": {
+          "enabled": true,
+          "docstring": "...",
+          "input_schema": {...}
+        }
+      }
     }
   },
   "port_assignments": {
@@ -299,7 +314,95 @@ Service health is monitored alongside extension services. Failures trigger resta
 - Requires `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`; fails fast if missing.
 - Runs on `0.0.0.0:8766` with transport `streamable-http` by default.
 - Caddy mounts the ASGI app under `/api/*`, rewriting OAuth discovery endpoints (`/.well-known/oauth-authorization-server`).
-- Discovers MCP-enabled tools via `extension_discovery.get_mcp_tools()`.
+- Discovers MCP-enabled tools via `tool_discovery.get_mcp_enabled_tools()` which combines local extension tools and remote MCP server tools.
+- Remote MCP tools are wrapped in `MCPRemoteTool` class and converted to proper function signatures with explicit parameters from JSON schemas for FastMCP registration.
+
+### 9.4 Remote MCP Tools & Tool Discovery
+
+**Overview:**
+Luna supports loading tools from remote Smithery MCP servers, enabling access to external tool ecosystems (Exa search, Context7 docs, etc.) alongside local extension tools.
+
+**Architecture Components:**
+
+1. **`core/utils/remote_mcp_loader.py`** - Server Connection & Discovery
+   - `extract_server_id_from_url(url)`: Extracts server identifier from URL (part between `//` and `api_key=`)
+   - `async load_mcp_server(url)`: Connects via MCP protocol, fetches server name and tool schemas
+   - `add_or_update_server(master_config, server_data)`: Adds/updates server in config, preserves enabled states
+   - `async_add_or_update_server_from_url(master_config, url)`: Main entry point for adding servers
+
+2. **`core/utils/remote_mcp_session_manager.py`** - Persistent Connections
+   - `PersistentMCPSession`: Manages single persistent MCP connection using background thread + event loop
+   - `RemoteMCPSessionManager`: Manages multiple sessions, initialized at MCP server startup
+   - Maintains health tracking in `self._session_health` with connection status, timestamps, tool counts
+   - Logs to `logs/remote_mcp_sessions.log` with detailed initialization info
+   - Generates `logs/remote_mcp_tools_manifest.json` with comprehensive tool inventory and health status
+
+3. **`core/utils/tool_discovery.py`** - Unified Tool Loading
+   - `MCPRemoteTool`: Wrapper class that makes remote tools callable, stores server_id, tool_name, schemas
+   - `get_all_tools()`: Returns tools grouped by source (extensions, remote_mcp_servers) for Hub UI
+   - `get_mcp_enabled_tools(session_manager)`: Combines local + remote tools for MCP server registration
+   - Loads tools from all sources: local extensions via `extension_discovery`, remote servers from `master_config.remote_mcp_servers`
+
+**Configuration:**
+Remote MCP servers stored in `master_config.json` under `remote_mcp_servers`:
+```json
+{
+  "server_id": "exa-search-server",
+  "url": "https://mcp.exa.ai/mcp?api_key=...",
+  "enabled": true,
+  "tool_count": 2,
+  "tools": {
+    "tool_name": {
+      "enabled": true,
+      "docstring": "Tool description",
+      "input_schema": {...},
+      "output_schema": {...}
+    }
+  }
+}
+```
+
+**Supervisor API Endpoints:**
+- `POST /api/supervisor/remote-mcp/add` - Add remote MCP server by URL
+- `GET /api/supervisor/remote-mcp/list` - List all remote servers
+- `PATCH /api/supervisor/remote-mcp/{server_id}` - Update server/tool enabled status
+- `DELETE /api/supervisor/remote-mcp/{server_id}` - Remove server
+- `GET /api/supervisor/tools/all` - Get all tools from all sources
+
+**Hub UI - Tool Manager (`/tools`):**
+- Text input to add Smithery MCP URLs
+- Collapsible cards for each remote MCP server with:
+  - Server enable/disable toggle
+  - Individual tool enable/disable toggles
+  - Tool descriptions and schema preview
+- Collapsible cards for local extensions with:
+  - Extension enable/disable toggle
+  - Individual tool MCP exposure toggles
+- Changes require Luna restart to take effect
+
+**Logging & Health:**
+- `logs/remote_mcp_sessions.log`: Detailed connection logs, tool enumeration, initialization status
+- `logs/remote_mcp_tools_manifest.json`: JSON manifest with:
+  - Server health status (connected/error/disabled)
+  - Tool counts (total/enabled)
+  - Individual tool metadata (name, enabled, docstring, has_schema)
+  - Timestamps for health checks
+
+**Tool Registration Flow:**
+1. MCP server startup initializes `RemoteMCPSessionManager` with `master_config`
+2. Session manager connects to all enabled remote servers, logs connection status
+3. `tool_discovery.get_mcp_enabled_tools()` loads local + remote tools
+4. Remote `MCPRemoteTool` instances converted to proper functions with explicit parameters from JSON schemas
+5. All tools registered with FastMCP's `@tool` decorator
+6. MCP server serves combined tool set to Anthropic Claude clients
+
+**Key Features:**
+- Single source of truth: `master_config.json` (no config sync needed)
+- Preserves enabled states across server updates
+- Persistent connections maintained in background threads
+- Comprehensive health tracking and logging
+- Seamless integration with local extension tools
+- Tool calls delegated to remote MCP servers via session manager
 
 ---
 
@@ -312,6 +415,11 @@ Service health is monitored alongside extension services. Failures trigger resta
   - ZIP upload: `ExtensionsAPI.upload` posts to `/api/supervisor/extensions/upload`, returning a temporary filename stored in queue operations (`source: "upload:filename.zip"`).
   - Git install: user-entered strings converted to `github:` sources (`github:user/repo` or `github:user/repo:path/subdir`).
   - Enable/disable toggles update the queue by editing `master_config.extensions[<name>].enabled`.
+- Tool Manager (`/tools`) provides unified interface for:
+  - Adding remote Smithery MCP servers by URL
+  - Toggling remote MCP servers and individual tools on/off
+  - Toggling local extension tools' MCP exposure
+  - Viewing tool descriptions and schemas
 - External Services pages call `/api/external-services/*` endpoints for install/start/stop and display UI links generated by Caddy.
 - Environment Key Manager interacts exclusively with `/api/supervisor/keys/*` endpoints.
 - System controls (restart/shutdown) use `/api/supervisor/restart` and `/api/supervisor/shutdown`.
@@ -343,7 +451,10 @@ Service health is monitored alongside extension services. Failures trigger resta
 
 12. Logging, Monitoring, & Health
 ---------------------------------
-- Log files reside in `logs/` (supervisor.log, hub_ui.log, agent_api.log, auth_service.log, mcp_server.log, caddy.log, extension/service logs). External-service logs are under `.luna/logs/`.
+- Log files reside in `logs/` (supervisor.log, hub_ui.log, agent_api.log, auth_service.log, mcp_server.log, caddy.log, extension/service logs, remote_mcp_sessions.log). External-service logs are under `.luna/logs/`.
+- Remote MCP session logs:
+  - `logs/remote_mcp_sessions.log`: Detailed connection logs, tool discovery, health status
+  - `logs/remote_mcp_tools_manifest.json`: JSON manifest with server health, tool counts, and individual tool metadata
 - Supervisor health endpoint: `GET /api/supervisor/health` (proxied via Caddy at `/api/supervisor/health`).
 - Supervisor state file: `supervisor/state.json` enumerates each service with PID, port, status, and last health check time.
 - Health monitoring thread (within supervisor) checks external services every 30 seconds and restarts unhealthy services when allowed.

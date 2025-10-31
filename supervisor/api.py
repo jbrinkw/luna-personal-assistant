@@ -1507,6 +1507,144 @@ def upload_external_service(request: ServiceUploadRequest):
         raise HTTPException(status_code=500, detail=f"Failed to upload service: {str(e)}")
 
 
+# ============================================================================
+# Remote MCP Server Management Endpoints
+# ============================================================================
+
+class AddMCPServerRequest(BaseModel):
+    url: str
+
+
+class MCPServerUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    tool_updates: Optional[Dict[str, Dict[str, bool]]] = None  # tool_name -> {enabled: bool}
+
+
+@app.post('/remote-mcp/add')
+async def add_remote_mcp_server(request: AddMCPServerRequest):
+    """Add or update remote MCP server by URL"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    try:
+        import asyncio
+        from core.utils.remote_mcp_loader import async_add_or_update_server_from_url
+        
+        # Load server from URL
+        server_entry = await async_add_or_update_server_from_url(
+            supervisor_instance.master_config,
+            request.url
+        )
+        
+        # Save master config
+        supervisor_instance.save_master_config()
+        
+        return {
+            "success": True,
+            "message": f"Successfully added/updated server: {server_entry['server_id']}",
+            "server": server_entry
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to add MCP server: {str(e)}")
+
+
+@app.get('/remote-mcp/list')
+def list_remote_mcp_servers():
+    """List all remote MCP servers"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    remote_servers = supervisor_instance.master_config.get('remote_mcp_servers', {})
+    return {"servers": remote_servers}
+
+
+@app.delete('/remote-mcp/{server_id}')
+def remove_remote_mcp_server(server_id: str):
+    """Remove a remote MCP server"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    try:
+        from core.utils.remote_mcp_loader import remove_server
+        
+        # Remove from config
+        removed = remove_server(supervisor_instance.master_config, server_id)
+        
+        if not removed:
+            raise HTTPException(status_code=404, detail=f"Server not found: {server_id}")
+        
+        # Save master config
+        supervisor_instance.save_master_config()
+        
+        return {
+            "success": True,
+            "message": f"Successfully removed server: {server_id}"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to remove server: {str(e)}")
+
+
+@app.patch('/remote-mcp/{server_id}')
+def update_remote_mcp_server(server_id: str, update: MCPServerUpdate):
+    """Update server or tool enabled status"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    try:
+        remote_servers = supervisor_instance.master_config.get('remote_mcp_servers', {})
+        
+        if server_id not in remote_servers:
+            raise HTTPException(status_code=404, detail=f"Server not found: {server_id}")
+        
+        server_config = remote_servers[server_id]
+        
+        # Update server-level enabled status
+        if update.enabled is not None:
+            server_config['enabled'] = update.enabled
+        
+        # Update tool-level enabled status
+        if update.tool_updates:
+            for tool_name, tool_update in update.tool_updates.items():
+                if tool_name in server_config.get('tools', {}):
+                    if 'enabled' in tool_update:
+                        server_config['tools'][tool_name]['enabled'] = tool_update['enabled']
+        
+        # Save master config
+        supervisor_instance.save_master_config()
+        
+        return {
+            "success": True,
+            "message": f"Successfully updated server: {server_id}",
+            "server": server_config
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update server: {str(e)}")
+
+
+@app.get('/tools/all')
+def get_all_tools():
+    """Get all tools from all sources (extensions and remote MCP servers)"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    try:
+        from core.utils.tool_discovery import get_all_tools
+        
+        all_tools = get_all_tools()
+        
+        return all_tools
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to get tools: {str(e)}")
+
+
 def run_api(host='127.0.0.1', port=9999):
     """Run the API server"""
     uvicorn.run(app, host=host, port=port, log_level="info")

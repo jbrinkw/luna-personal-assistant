@@ -583,6 +583,66 @@ body {
   gap: 15px;
 }
 
+.update-manager-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 10px;
+  min-width: 44px;
+  flex: none;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #e8eaed;
+  transition: all 0.2s ease;
+}
+
+.update-manager-button:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.update-manager-button .update-manager-icon {
+  font-size: 16px;
+}
+
+.update-manager-button .update-manager-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.update-manager-button .update-manager-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #202124;
+  color: #fbbc04;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  min-width: 26px;
+}
+
+.update-manager-button.has-pending {
+  background: #ff9800;
+  border-color: #ff9800;
+  color: #202124;
+  box-shadow: 0 6px 14px rgba(255, 152, 0, 0.25);
+  padding-right: 14px;
+}
+
+.update-manager-button.has-pending:hover {
+  background: #f57c00;
+  border-color: #f57c00;
+}
+
+.update-manager-button.has-pending .update-manager-badge {
+  background: rgba(32, 33, 36, 0.85);
+  color: #ffeb3b;
+}
+
 .pending-changes-badge {
   background: #ff9800;
   color: white;
