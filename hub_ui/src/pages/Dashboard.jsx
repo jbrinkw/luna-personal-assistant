@@ -23,12 +23,14 @@ export default function Dashboard() {
   const [agents, setAgents] = useState([]);
   const [externalServices, setExternalServices] = useState({});
   const [remoteMcpServers, setRemoteMcpServers] = useState([]);
+  const [localMcpServers, setLocalMcpServers] = useState([]);
 
   useEffect(() => {
     checkServices();
     loadAgents();
     loadExternalServices();
     loadRemoteMcpServers();
+    loadLocalMcpServers();
   }, []);
 
   const checkServices = async () => {
@@ -43,12 +45,12 @@ export default function Dashboard() {
       const res = await fetch('/api/supervisor/services/status');
       if (res.ok) {
         const data = await res.json();
-        const mcpService = data.services?.mcp_server;
-        if (mcpService && mcpService.status === 'running') {
-          setMcpStatus('online');
-        } else {
-          setMcpStatus('offline');
-        }
+        const services = data.services || {};
+        // Consider MCP "online" if any mcp_server_* is running
+        const anyMcpRunning = Object.entries(services).some(([key, val]) =>
+          key.startsWith('mcp_server_') && (val?.status === 'running')
+        );
+        setMcpStatus(anyMcpRunning ? 'online' : 'offline');
       } else {
         setMcpStatus('offline');
       }
@@ -83,6 +85,17 @@ export default function Dashboard() {
       setRemoteMcpServers(serversArray);
     } catch (e) {
       console.error('Failed to load remote MCP servers:', e);
+    }
+  };
+
+  const loadLocalMcpServers = async () => {
+    try {
+      const data = MCPApi.listLocalServers
+        ? await MCPApi.listLocalServers()
+        : await (await fetch('/api/supervisor/mcp-servers/list')).json();
+      setLocalMcpServers(data.servers || []);
+    } catch (e) {
+      console.error('Failed to load local MCP servers:', e);
     }
   };
 
@@ -247,11 +260,21 @@ export default function Dashboard() {
                       <span className="text-strong">Agent API</span>
                       <span className="text-muted text-xs">{AGENT_API}</span>
                     </div>
-                    <div className="dashboard-row-tight">
-                      <StatusIndicator status={mcpStatus} />
-                      <span className="text-strong">MCP Server</span>
-                      <span className="text-muted text-xs">{MCP_API}</span>
-                    </div>
+                    {localMcpServers.length === 0 ? (
+                      <div className="dashboard-row-tight">
+                        <StatusIndicator status={mcpStatus} />
+                        <span className="text-strong">MCP Server</span>
+                        <span className="text-muted text-xs">/api/mcp-main</span>
+                      </div>
+                    ) : (
+                      localMcpServers.map(s => (
+                        <div key={s.name} className="dashboard-row-tight">
+                          <StatusIndicator status={s.status || 'unknown'} />
+                          <span className="text-strong">MCP Server ({s.name})</span>
+                          <span className="text-muted text-xs">/api/mcp-{s.name}{typeof s.tool_count === 'number' ? ` • ${s.tool_count} tools active` : ''}</span>
+                        </div>
+                      ))
+                    )}
                     <div className="text-muted text-sm mt-xs">
                       {agents.length} Active Agents
                     </div>

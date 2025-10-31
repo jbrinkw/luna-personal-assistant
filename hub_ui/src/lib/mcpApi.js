@@ -57,5 +57,34 @@ export const MCPApi = {
   async getAllTools() {
     return fetchJSON(`${SUPERVISOR_API}/tools/all`);
   },
-};
 
+  // Local MCP servers (multi-server)
+  async listLocalServers() {
+    return fetchJSON(`${SUPERVISOR_API}/mcp-servers/list`);
+  },
+  async createLocalServer(name) {
+    return fetchJSON(`${SUPERVISOR_API}/mcp-servers/create`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+  },
+  async updateLocalServer(name, updates) {
+    return fetchJSON(`${SUPERVISOR_API}/mcp-servers/${encodeURIComponent(name)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  },
+  async deleteLocalServer(name) {
+    return fetchJSON(`${SUPERVISOR_API}/mcp-servers/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    });
+  },
+  async getServerTools(name) {
+    return fetchJSON(`${SUPERVISOR_API}/mcp-servers/${encodeURIComponent(name)}/tools`);
+  },
+  async regenerateLocalServerKey(name) {
+    return fetchJSON(`${SUPERVISOR_API}/mcp-servers/${encodeURIComponent(name)}/regenerate-key`, {
+      method: 'POST',
+    });
+  },
+};
