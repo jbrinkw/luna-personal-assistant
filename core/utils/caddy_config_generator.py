@@ -104,55 +104,94 @@ def generate_caddyfile(repo_path, output_path=None):
     lines.extend([
         "    }",
         "    ",
-        "    # MCP Server OAuth discovery endpoints (public for OAuth clients)",
-        "    # Rewrite to /api/.well-known/* for the MCP server",
-        "    handle /.well-known/* {",
-        "        # CORS headers",
-        "        header Access-Control-Allow-Origin *",
-        "        header Access-Control-Allow-Methods \"GET, POST, PUT, DELETE, OPTIONS\"",
-        "        header Access-Control-Allow-Headers \"Authorization, Content-Type\"",
-        "        header Access-Control-Allow-Credentials true",
-        "        ",
-        "        # Rewrite /.well-known/* to /api/.well-known/* and proxy to MCP",
-        "        rewrite * /api{uri}",
-        "        reverse_proxy 127.0.0.1:8766",
-        "    }",
-        "    ",
-        "    # MCP Server and OAuth endpoints (public for AI clients)",
-        "    handle /api/* {",
-        "        # CORS preflight - respond immediately to OPTIONS requests",
-        "        @options method OPTIONS",
-        "        handle @options {",
-        "            header Access-Control-Allow-Origin *",
-        "            header Access-Control-Allow-Methods \"GET, POST, PUT, DELETE, OPTIONS\"",
-        "            header Access-Control-Allow-Headers \"Authorization, Content-Type\"",
-        "            header Access-Control-Allow-Credentials true",
-        "            respond 200",
-        "        }",
-        "        ",
-        "        # Route /api/mcp, /api/authorize, /api/token, /api/callback to MCP server",
-        "        # No path stripping - ASGI app handles full paths",
-        "        @mcp_routes path /api/mcp* /api/authorize* /api/token* /api/auth/* /api/register*",
-        "        handle @mcp_routes {",
-        "            # CORS headers for actual requests",
-        "            header Access-Control-Allow-Origin *",
-        "            header Access-Control-Allow-Methods \"GET, POST, PUT, DELETE, OPTIONS\"",
-        "            header Access-Control-Allow-Headers \"Authorization, Content-Type\"",
-        "            header Access-Control-Allow-Credentials true",
     ])
-    if mcp_auth_token:
+
+    # MCP server routing
+    mcp_servers_cfg = master_config.get("mcp_servers", {}) or {}
+    enabled_mcp_servers = {
+        name: cfg for name, cfg in mcp_servers_cfg.items() if cfg.get("enabled", True)
+    }
+
+    main_cfg = enabled_mcp_servers.get("main")
+    additional_servers = {
+        name: cfg for name, cfg in enabled_mcp_servers.items() if name != "main"
+    }
+
+    for name, cfg in additional_servers.items():
+        port = cfg.get("port", 8766)
         lines.extend([
-            "            reverse_proxy 127.0.0.1:8766 {",
-            f'                header_up Authorization "Bearer {mcp_auth_token}"',
-            "            }",
+            f"    handle /api/mcp-{name}/* {{",
+            "        @options method OPTIONS",
+            "        handle @options {",
+            "            header Access-Control-Allow-Origin *",
+            "            header Access-Control-Allow-Methods \"GET, POST, PUT, DELETE, OPTIONS\"",
+            "            header Access-Control-Allow-Headers \"Authorization, Content-Type\"",
+            "            header Access-Control-Allow-Credentials true",
+            "            respond 200",
+            "        }",
+            "        header Access-Control-Allow-Origin *",
+            "        header Access-Control-Allow-Methods \"GET, POST, PUT, DELETE, OPTIONS\"",
+            "        header Access-Control-Allow-Headers \"Authorization, Content-Type\"",
+            "        header Access-Control-Allow-Credentials true",
+            f"        uri strip_prefix /api/mcp-{name}",
+            f"        reverse_proxy 127.0.0.1:{port}",
+            "    }",
+            "    ",
+        ])
+
+    if main_cfg:
+        main_port = main_cfg.get("port", 8766)
+        lines.extend([
+            "    # MCP Main Server (GitHub OAuth)",
+            "    handle /api/* {",
+            "        # CORS preflight - respond immediately to OPTIONS requests",
+            "        @options method OPTIONS",
+            "        handle @options {",
+            "            header Access-Control-Allow-Origin *",
+            "            header Access-Control-Allow-Methods \"GET, POST, PUT, DELETE, OPTIONS\"",
+            "            header Access-Control-Allow-Headers \"Authorization, Content-Type\"",
+            "            header Access-Control-Allow-Credentials true",
+            "            respond 200",
+            "        }",
+            "        ",
+            "        @mcp_main path /api/mcp* /api/authorize* /api/token* /api/auth/* /api/register*",
+            "        handle @mcp_main {",
+            "            # CORS headers for actual requests",
+            "            header Access-Control-Allow-Origin *",
+            "            header Access-Control-Allow-Methods \"GET, POST, PUT, DELETE, OPTIONS\"",
+            "            header Access-Control-Allow-Headers \"Authorization, Content-Type\"",
+            "            header Access-Control-Allow-Credentials true",
+        ])
+        if mcp_auth_token:
+            lines.extend([
+                f"            reverse_proxy 127.0.0.1:{main_port} {{",
+                f'                header_up Authorization "Bearer {mcp_auth_token}"',
+                "            }",
+            ])
+        else:
+            lines.append(f"            reverse_proxy 127.0.0.1:{main_port}")
+        lines.extend([
+            "        }",
+            "    }",
+            "    ",
+            "    # MCP OAuth discovery endpoints",
+            "    handle /.well-known/* {",
+            "        header Access-Control-Allow-Origin *",
+            "        header Access-Control-Allow-Methods \"GET, POST, PUT, DELETE, OPTIONS\"",
+            "        header Access-Control-Allow-Headers \"Authorization, Content-Type\"",
+            "        header Access-Control-Allow-Credentials true",
+            f"        reverse_proxy 127.0.0.1:{main_port}",
+            "    }",
+            "    ",
         ])
     else:
-        lines.append("            reverse_proxy 127.0.0.1:8766")
-    lines.extend([
-        "        }",
-        "    }",
-        "    ",
-    ])
+        lines.extend([
+            "    # MCP OAuth discovery endpoints",
+            "    handle /.well-known/* {",
+            "        respond 503",
+            "    }",
+            "    ",
+        ])
     
     # Supervisor API
     lines.extend([

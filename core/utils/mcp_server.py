@@ -7,6 +7,7 @@ Auto-discovers and registers all MCP-enabled tools from Luna extensions.
 import os
 import sys
 import argparse
+import secrets
 from typing import Any, Callable, List
 from pathlib import Path
 
@@ -28,6 +29,8 @@ try:
     from fastmcp.server.auth import AccessToken
     from starlette.applications import Starlette
     from starlette.routing import Mount
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.responses import JSONResponse
     import uvicorn
     import httpx
 except Exception as e:
@@ -35,7 +38,7 @@ except Exception as e:
         "fastmcp and starlette are required. Install with: pip install fastmcp starlette uvicorn"
     ) from e
 
-from core.utils.tool_discovery import get_mcp_enabled_tools
+from core.utils.tool_discovery import get_mcp_enabled_tools, get_mcp_enabled_tools_for_server
 
 
 class RestrictedGitHubTokenVerifier(GitHubTokenVerifier):
@@ -156,8 +159,13 @@ def _register_tools(mcp: "FastMCP", tools: List[Callable[..., Any]]) -> int:
     import inspect
     
     count = 0
+    print(f"[MCP] Registering {len(tools)} tools...", flush=True)
     for fn in tools:
         try:
+            tool_name = getattr(fn, '__name__', 'unknown')
+            tool_type = "remote" if isinstance(fn, MCPRemoteTool) else "local"
+            print(f"[MCP]   - {tool_name} ({tool_type})", flush=True)
+            
             # Handle remote MCP tools differently
             if isinstance(fn, MCPRemoteTool):
                 # Create a proper function with explicit parameters from schema
@@ -223,95 +231,136 @@ def _register_tools(mcp: "FastMCP", tools: List[Callable[..., Any]]) -> int:
                     wrapper_fn = tool_func
                 
                 mcp.tool(wrapper_fn)
+                print(f"[MCP]     ✓ Registered remote tool: {tool_name}", flush=True)
                 count += 1
             else:
                 # Regular local tool
                 mcp.tool(fn)
+                print(f"[MCP]     ✓ Registered local tool: {tool_name}", flush=True)
                 count += 1
         except Exception as e:
             # Skip tools that fail to register
-            print(f"[WARNING] Failed to register tool {getattr(fn, '__name__', 'unknown')}: {e}")
+            print(f"[MCP]     ✗ Failed to register tool {getattr(fn, '__name__', 'unknown')}: {e}", flush=True)
             import traceback
             traceback.print_exc()
             continue
     return count
 
 
+class APIKeyMiddleware(BaseHTTPMiddleware):
+    """Simple bearer-token middleware for API key protected MCP servers."""
+
+    def __init__(self, app, api_key: str):
+        super().__init__(app)
+        self._api_key = api_key
+
+    async def dispatch(self, request, call_next):  # type: ignore[override]
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
+        auth_header = request.headers.get("authorization", "")
+        token = ""
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header.split(" ", 1)[1].strip()
+        else:
+            token = request.headers.get("x-api-key", "")
+
+        if token and secrets.compare_digest(token, self._api_key):
+            return await call_next(request)
+
+        return JSONResponse(
+            {"error": "unauthorized", "detail": "Missing or invalid API key"},
+            status_code=401,
+        )
+
+
 def main(argv: List[str]) -> int:
     """Main entry point for Anthropic-compatible MCP server."""
     parser = argparse.ArgumentParser(description="Luna MCP server for Anthropic Claude")
     parser.add_argument("--name", default="Luna MCP", help="MCP server name")
+    parser.add_argument("--server-name", dest="server_name", default=None, help="Server key from master_config.mcp_servers (e.g., 'main')")
     parser.add_argument("--transport", choices=["sse", "stdio", "http", "streamable-http"], default="streamable-http", help="Transport protocol")
     parser.add_argument("--host", default="0.0.0.0", help="Host for SSE (0.0.0.0 for network access)")
     parser.add_argument("--port", type=int, default=8765, help="Port for SSE")
+    parser.add_argument("--api-key", dest="api_key", default=None, help="API key for bearer auth (non-main servers)")
     args = parser.parse_args(argv)
 
-    # Get URLs for OAuth configuration
-    # base_url: Where OAuth endpoints live (e.g., https://lunahub.dev/api)
-    # issuer_url: Where .well-known discovery lives (e.g., https://lunahub.dev)
-    base_url = os.getenv("PUBLIC_URL", "https://lunahub.dev/api")
+    server_name = args.server_name or "main"
+    is_main_server = server_name == "main"
+    use_oauth = args.api_key is None
+
+    if use_oauth and not is_main_server:
+        print("[ERROR] Only the 'main' MCP server may use GitHub OAuth. Provide --api-key for other servers.")
+        return 1
+    if not use_oauth and is_main_server:
+        print("[ERROR] The 'main' MCP server must use GitHub OAuth (do not supply --api-key).")
+        return 1
+
+    public_url_root = os.getenv("PUBLIC_URL", "https://lunahub.dev/api").rstrip('/')
     issuer_url = os.getenv("ISSUER_URL", "https://lunahub.dev")
-    
-    print(f"[MCP] Base URL (OAuth endpoints): {base_url}")
-    print(f"[MCP] Issuer URL (discovery): {issuer_url}")
-    
-    # Get MCP-specific GitHub credentials
-    # MCP uses separate OAuth app from Hub UI for cleaner separation
-    client_id = os.getenv("MCP_GITHUB_CLIENT_ID")
-    client_secret = os.getenv("MCP_GITHUB_CLIENT_SECRET")
-    allowed_username = os.getenv("ALLOWED_GITHUB_USERNAME")
-    
-    if not client_id or not client_secret:
-        print("[ERROR] MCP_GITHUB_CLIENT_ID and MCP_GITHUB_CLIENT_SECRET not set in environment")
-        print("\nTo set up MCP GitHub OAuth:")
-        print("  1. Register a NEW OAuth app at: https://github.com/settings/developers")
-        print(f"  2. Set redirect URI to: {base_url}/auth/callback")
-        print("  3. Add credentials to .env:")
-        print("     MCP_GITHUB_CLIENT_ID=your_mcp_client_id")
-        print("     MCP_GITHUB_CLIENT_SECRET=your_mcp_client_secret")
-        print("\nNote: This is separate from GITHUB_CLIENT_ID used by Hub UI")
-        return 1
-    
-    # Log username restriction status
-    if allowed_username:
-        print(f"[MCP] Access restricted to GitHub user: {allowed_username}")
-    else:
-        print("[MCP] WARNING: ALLOWED_GITHUB_USERNAME not set - any GitHub user can connect")
-        print("[MCP] Set ALLOWED_GITHUB_USERNAME in .env to restrict access")
-    
-    # Create MCP server with GitHub OAuth
-    print("[MCP] Setting up OAuth 2.1 authentication for Anthropic Claude")
-    print("[MCP] Provider: GitHub")
+    server_suffix = "" if is_main_server else f"/mcp-{server_name}"
+    base_url = f"{public_url_root}{server_suffix}"
+
     print(f"[MCP] Base URL: {base_url}")
-    
-    try:
-        # Create GitHub auth provider with username restriction
-        # base_url: OAuth operational endpoints (/authorize, /token, /callback)
-        auth_provider = RestrictedGitHubProvider(
-            client_id=client_id,
-            client_secret=client_secret,
-            base_url=base_url,
-            allowed_username=allowed_username
-        )
-        
-        # Create FastMCP with auth
-        mcp = FastMCP(
-            name=args.name,
-            auth=auth_provider
-        )
-        
-        print("[MCP] ✓ OAuth 2.1 authentication enabled")
-        print("[MCP] Users will authenticate via GITHUB")
-        
-    except Exception as e:
-        print(f"[ERROR] Failed to set up OAuth: {e}")
-        import traceback
-        traceback.print_exc()
-        print("[ERROR] MCP server cannot start without authentication")
-        return 1
+    print(f"[MCP] Issuer URL (discovery): {issuer_url}")
+
+    display_name = args.name if args.name else "Luna MCP"
+    if server_name and display_name == "Luna MCP":
+        display_name = f"Luna MCP - {server_name}"
+
+    if use_oauth:
+        client_id = os.getenv("MCP_GITHUB_CLIENT_ID")
+        client_secret = os.getenv("MCP_GITHUB_CLIENT_SECRET")
+        allowed_username = os.getenv("ALLOWED_GITHUB_USERNAME")
+
+        if not client_id or not client_secret:
+            print("[ERROR] MCP_GITHUB_CLIENT_ID and MCP_GITHUB_CLIENT_SECRET not set in environment")
+            print("\nTo set up MCP GitHub OAuth:")
+            print("  1. Register a NEW OAuth app at: https://github.com/settings/developers")
+            print(f"  2. Set redirect URI to: {base_url}/auth/callback")
+            print("  3. Add credentials to .env:")
+            print("     MCP_GITHUB_CLIENT_ID=your_mcp_client_id")
+            print("     MCP_GITHUB_CLIENT_SECRET=your_mcp_client_secret")
+            print("\nNote: This is separate from GITHUB_CLIENT_ID used by Hub UI")
+            return 1
+
+        if allowed_username:
+            print(f"[MCP] Access restricted to GitHub user: {allowed_username}")
+        else:
+            print("[MCP] WARNING: ALLOWED_GITHUB_USERNAME not set - any GitHub user can connect")
+            print("[MCP] Set ALLOWED_GITHUB_USERNAME in .env to restrict access")
+
+        print("[MCP] Setting up OAuth 2.1 authentication for Anthropic Claude")
+        print("[MCP] Provider: GitHub")
+        print(f"[MCP] OAuth Base URL: {base_url}")
+
+        try:
+            auth_provider = RestrictedGitHubProvider(
+                client_id=client_id,
+                client_secret=client_secret,
+                base_url=base_url,
+                allowed_username=allowed_username
+            )
+
+            mcp = FastMCP(name=display_name, auth=auth_provider)
+            print("[MCP] ✓ OAuth 2.1 authentication enabled")
+            print("[MCP] Users will authenticate via GITHUB")
+
+        except Exception as e:
+            print(f"[ERROR] Failed to set up OAuth: {e}")
+            import traceback
+            traceback.print_exc()
+            print("[ERROR] MCP server cannot start without authentication")
+            return 1
+    else:
+        print("[MCP] API Key authentication enabled")
+        print("[MCP] Clients must send: Authorization: Bearer <api_key>")
+        print(f"[MCP] API Key: {args.api_key}")
+        mcp = FastMCP(name=display_name)
 
     # Initialize remote MCP session manager if configured
     session_manager = None
+    master_config = {}
     try:
         import json
         from pathlib import Path
@@ -337,7 +386,14 @@ def main(argv: List[str]) -> int:
     # Load and register MCP-enabled tools (local + remote)
     print("[MCP] Discovering tools from all sources...", flush=True)
     try:
-        tools = get_mcp_enabled_tools(session_manager=session_manager)
+        if args.server_name:
+            tools = get_mcp_enabled_tools_for_server(
+                server_name=args.server_name,
+                master_config=master_config,
+                session_manager=session_manager,
+            )
+        else:
+            tools = get_mcp_enabled_tools(session_manager=session_manager)
         print(f"[MCP] Found {len(tools)} total tools (local + remote)", flush=True)
         registered = _register_tools(mcp, tools)
         print(f"[MCP] Successfully registered {registered} tools", flush=True)
@@ -358,65 +414,77 @@ def main(argv: List[str]) -> int:
         print("[MCP] Using ASGI mounting for subpath support...")
         
         try:
-            # Create MCP ASGI app mounted at /mcp
             mcp_app = mcp.http_app(path="/mcp")
-            
-            # Well-known routes will be handled by the MCP app itself
-            # FastMCP automatically creates OAuth discovery endpoints
+
             well_known_routes = []
-            print("[MCP] ⚠ OAuth discovery handled by MCP app (no separate well-known routes)")
-            
-            # Create Starlette app with proper mounting
-            # /api/* → MCP app (includes /api/mcp, /api/authorize, /api/token, etc.)
-            # /.well-known/* → OAuth discovery routes at root
+            if use_oauth:
+                print("[MCP] ⚠ OAuth discovery handled by MCP app (no separate well-known routes)")
+
+            mount_path = "/api" if use_oauth else "/"
             app = Starlette(
                 routes=[
-                    Mount("/api", mcp_app),
+                    Mount(mount_path, mcp_app),
                     *well_known_routes
                 ],
                 lifespan=getattr(mcp_app, 'lifespan', None)
             )
-            
+
+            if not use_oauth and args.api_key:
+                app.add_middleware(APIKeyMiddleware, api_key=args.api_key)
+
             print(f"\n{'='*60}")
-            print(f"[MCP] {args.name}")
+            print(f"[MCP] {display_name}")
             print(f"[MCP] {registered} tools registered")
             print(f"[MCP] Serving via {transport_name} at {url}")
             print(f"[MCP] MCP Endpoint: {base_url}/mcp")
-            print(f"[MCP] OAuth Authorize: {base_url}/authorize")
-            print(f"[MCP] OAuth Discovery: {issuer_url}/.well-known/oauth-authorization-server")
-            print(f"\n[ANTHROPIC] Add to Claude:")
-            print(f"  MCP Server URL: {base_url}/mcp")
-            print(f"  OAuth Provider: GITHUB")
+            if use_oauth:
+                print(f"[MCP] OAuth Authorize: {base_url}/authorize")
+                print(f"[MCP] OAuth Discovery: {issuer_url}/.well-known/oauth-authorization-server")
+                print(f"\n[ANTHROPIC] Add to Claude:")
+                print(f"  MCP Server URL: {base_url}/mcp")
+                print(f"  OAuth Provider: GITHUB")
+            else:
+                print(f"[MCP] Authentication: API Key (Bearer)")
+                print(f"[MCP] Required header: Authorization: Bearer {args.api_key}")
+                print(f"\n[CLIENT SETUP]")
+                print(f"  MCP Server URL: {base_url}/mcp")
+                print("  Header     : Authorization: Bearer <your_api_key>")
             print(f"{'='*60}\n")
-            
-            # Run with Uvicorn instead of mcp.run()
+
             uvicorn.run(app, host=args.host, port=args.port, log_level="info")
-            
+
         except Exception as e:
             print(f"[ERROR] Failed to create ASGI app: {e}")
             import traceback
             traceback.print_exc()
             print("[INFO] Falling back to standard mcp.run()...")
-            
-            # Fallback to original approach
+
             print(f"\n{'='*60}")
-            print(f"[MCP] {args.name}")
+            print(f"[MCP] {display_name}")
             print(f"[MCP] {registered} tools registered")
             print(f"[MCP] Serving via {transport_name} at {url}")
             print(f"[MCP] Public URL: {base_url}")
-            print(f"\n[ANTHROPIC] Add to Claude:")
-            print(f"  MCP Server URL: {base_url}")
-            print(f"  OAuth Provider: GITHUB")
+            if use_oauth:
+                print(f"\n[ANTHROPIC] Add to Claude:")
+                print(f"  MCP Server URL: {base_url}")
+                print(f"  OAuth Provider: GITHUB")
+            else:
+                print(f"\n[CLIENT SETUP]")
+                print(f"  MCP Server URL: {base_url}")
+                print("  Header     : Authorization: Bearer <your_api_key>")
             print(f"{'='*60}\n")
-            
+
             if args.transport == "streamable-http":
                 mcp.run(transport=args.transport, host=args.host, port=args.port, path="/")
             else:
                 mcp.run(transport=args.transport, host=args.host, port=args.port)
     else:
-        print(f"[MCP] {args.name}: {registered} tools registered")
+        print(f"[MCP] {display_name}: {registered} tools registered")
         print(f"[MCP] Serving via STDIO")
-        print(f"[WARNING] OAuth not applicable for STDIO transport")
+        if use_oauth:
+            print(f"[WARNING] OAuth not applicable for STDIO transport")
+        else:
+            print("[INFO] API key not required for STDIO transport")
         mcp.run(transport="stdio")
 
     return 0
@@ -424,4 +492,3 @@ def main(argv: List[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
-

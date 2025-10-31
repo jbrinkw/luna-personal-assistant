@@ -38,7 +38,7 @@ Luna runs as a constellation of cooperating processes launched and supervised by
 - **Caddy reverse proxy**: the single HTTP entry point. It terminates TLS (where applicable), injects auth headers, rewrites OAuth discovery routes, and proxies traffic to the internal services.
 - **GitHub OAuth auth service**: provides `/auth/login`/`/auth/callback`/`/auth/me`/`/auth/logout`, issues signed cookies, and (optionally) persists sessions in Postgres.
 - **Agent API**: an OpenAI-compatible FastAPI server that auto-discovers LangChain tools and generates an `AGENT_API_KEY` stored in `.env`.
-- **MCP server**: a FastMCP instance using GitHub OAuth, surfaced externally through Caddy under `/api/mcp`. Supports both local extension tools and remote Smithery MCP servers.
+- **MCP server(s)**: the hub always runs a `main` FastMCP instance using GitHub OAuth and exposed at `/api/mcp`. Additional hub instances (e.g., `research`, `smarthome`) are optional; they run with API-key auth and are exposed at `/api/mcp-{name}`. Every hub shares the same tool discovery (local extensions + remote MCP servers).
 - **Extensions & services**: each extension may include tools, a frontend (`ui/start.sh`), and background services. Ports are assigned deterministically and persisted in `master_config.json`.
 - **External services**: Dockerized infrastructure components (Postgres, Grocy, etc.) managed via `ExternalServicesManager`; definitions live under `external_services/` with runtime metadata in `.luna/external_services.json`.
 
@@ -141,7 +141,8 @@ All external traffic should flow through Caddy; direct localhost access is possi
 | `/auth/*`                     | Auth service (8765)   | GitHub OAuth login/logout/session APIs |
 | `/api/agent*`                 | Agent API (8080)      | Caddy injects `Authorization: Bearer <AGENT_API_KEY>` when available |
 | `/.well-known/*`              | MCP (8766)            | Rewritten to `/api/.well-known/*` handled by FastMCP |
-| `/api/mcp`, `/api/authorize`, `/api/token`, `/api/register` | MCP (8766) | GitHub OAuth-protected integration for Anthropic clients |
+| `/api/mcp`, `/api/authorize`, `/api/token`, `/api/register` | MCP main (8766) | GitHub OAuth-protected hub (`main`) |
+| `/api/mcp-{name}/*`           | Named MCP hubs        | API key required (`Authorization: Bearer <key>`) |
 | `/api/supervisor/*`           | Supervisor API (9999) | Config/queue/env/external-service management |
 | `/api/<extension>/*`          | Extension service ports | Populated from `master_config.port_assignments.services` |
 | `/ext/<extension>/`           | Extension UI ports    | Trailing slash enforced by default unless disabled in `config.json` |
@@ -193,6 +194,25 @@ Holds the authoritative view of extensions, tool configs, port assignments, and 
       }
     }
   },
+  "mcp_servers": {
+    "main": {
+      "name": "main",
+      "port": 8766,
+      "enabled": true,
+      "tool_config": {
+        "web_search_exa": { "enabled_in_mcp": true }
+      }
+    },
+    "smarthome": {
+      "name": "smarthome",
+      "port": 8767,
+      "enabled": true,
+      "api_key": "...",  // supervisor also writes this to .env as MCP_SERVER_SMARTHOME_API_KEY
+      "tool_config": {
+        "home_assistant": { "enabled_in_mcp": true }
+      }
+    }
+  },
   "port_assignments": {
     "extensions": {
       "automation_memory": 5200
@@ -209,6 +229,8 @@ Holds the authoritative view of extensions, tool configs, port assignments, and 
   }
 }
 ```
+
+- Every non-`main` MCP server entry includes an `api_key`. The supervisor generates these (strong random values) and mirrors them into `.env` as `MCP_SERVER_<NAME>_API_KEY`. The Hub UI surfaces the key for copying/regeneration; only the `main` server relies on GitHub OAuth.
 
 ### 6.2 Config Sync (`core/scripts/config_sync.py`)
 - Discovers extension directories and ensures each has an entry in `master_config.extensions` with `enabled`/`source` metadata.
@@ -330,9 +352,15 @@ Luna supports loading tools from remote Smithery MCP servers, enabling access to
    - `add_or_update_server(master_config, server_data)`: Adds/updates server in config, preserves enabled states
    - `async_add_or_update_server_from_url(master_config, url)`: Main entry point for adding servers
 
-2. **`core/utils/remote_mcp_session_manager.py`** - Persistent Connections
+2. **`core/utils/remote_mcp_session_manager.py`** - Persistent Connections & Global Singleton
    - `PersistentMCPSession`: Manages single persistent MCP connection using background thread + event loop
-   - `RemoteMCPSessionManager`: Manages multiple sessions, initialized at MCP server startup
+   - `RemoteMCPSessionManager`: Manages multiple sessions
+   - **Global Session Manager Singleton**: 
+     - `get_global_session_manager()`: Returns singleton instance, initializes on first call from `master_config.json`
+     - `reset_global_session_manager()`: Resets singleton for configuration changes
+     - Thread-safe with locking (`_global_session_lock`)
+     - Handles both sync and async contexts (uses background thread for async contexts)
+     - Initialized once at startup, reused across all tool discovery calls
    - Maintains health tracking in `self._session_health` with connection status, timestamps, tool counts
    - Logs to `logs/remote_mcp_sessions.log` with detailed initialization info
    - Generates `logs/remote_mcp_tools_manifest.json` with comprehensive tool inventory and health status
@@ -340,7 +368,11 @@ Luna supports loading tools from remote Smithery MCP servers, enabling access to
 3. **`core/utils/tool_discovery.py`** - Unified Tool Loading
    - `MCPRemoteTool`: Wrapper class that makes remote tools callable, stores server_id, tool_name, schemas
    - `get_all_tools()`: Returns tools grouped by source (extensions, remote_mcp_servers) for Hub UI
-   - `get_mcp_enabled_tools(session_manager)`: Combines local + remote tools for MCP server registration
+   - `get_mcp_enabled_tools(session_manager=None)`: Combines local + remote tools for MCP server registration
+     - `session_manager` parameter now optional - automatically uses global session manager if None
+   - `get_mcp_enabled_tools_for_server(server_name, master_config=None, session_manager=None)`: Server-specific tool loading
+     - Automatically falls back to global session manager when `session_manager=None`
+     - No need to pass session manager in most cases
    - Loads tools from all sources: local extensions via `extension_discovery`, remote servers from `master_config.remote_mcp_servers`
 
 **Configuration:**
@@ -369,16 +401,13 @@ Remote MCP servers stored in `master_config.json` under `remote_mcp_servers`:
 - `DELETE /api/supervisor/remote-mcp/{server_id}` - Remove server
 - `GET /api/supervisor/tools/all` - Get all tools from all sources
 
-**Hub UI - Tool Manager (`/tools`):**
-- Text input to add Smithery MCP URLs
-- Collapsible cards for each remote MCP server with:
-  - Server enable/disable toggle
-  - Individual tool enable/disable toggles
-  - Tool descriptions and schema preview
-- Collapsible cards for local extensions with:
-  - Extension enable/disable toggle
-  - Individual tool MCP exposure toggles
-- Changes require Luna restart to take effect
+**Hub UI - Tool/MCP Manager (`/tools`):**
+- Top-of-page selector lists all hub MCP servers; selecting one scopes the tool toggles below.
+- Non-`main` hubs display their API key with copy + regenerate controls (keys are regenerated via Supervisor API).
+- `main` remains GitHub OAuth only and cannot be renamed or deleted from the UI.
+- Remote MCP server cards (existing UI) let you manage Smithery integrations; their tool toggles now enable/disable tools for the active hub server.
+- Local extension cards retain the original enable/disable UI but also target the active hub server’s tool_config.
+- Changes still require a Luna restart to take effect.
 
 **Logging & Health:**
 - `logs/remote_mcp_sessions.log`: Detailed connection logs, tool enumeration, initialization status
@@ -389,17 +418,24 @@ Remote MCP servers stored in `master_config.json` under `remote_mcp_servers`:
   - Timestamps for health checks
 
 **Tool Registration Flow:**
-1. MCP server startup initializes `RemoteMCPSessionManager` with `master_config`
+1. MCP server startup initializes `RemoteMCPSessionManager` with `master_config` (for that server instance)
 2. Session manager connects to all enabled remote servers, logs connection status
-3. `tool_discovery.get_mcp_enabled_tools()` loads local + remote tools
+3. `tool_discovery.get_mcp_enabled_tools_for_server(server_name)` loads local + remote tools
+   - If no session_manager passed, automatically uses global session manager singleton
+   - Global session manager initialized lazily on first call
+   - Handles both sync and async contexts transparently
 4. Remote `MCPRemoteTool` instances converted to proper functions with explicit parameters from JSON schemas
 5. All tools registered with FastMCP's `@tool` decorator
 6. MCP server serves combined tool set to Anthropic Claude clients
 
-**Key Features:**
+**Global Session Manager Benefits:**
+- **Efficient**: Remote MCP connections initialized once, reused across all tool discovery calls
+- **Simple API**: No need to pass `session_manager` parameter - it's automatic
+- **Thread-Safe**: Singleton protected with locks
+- **Context-Aware**: Detects async contexts and initializes in background thread to avoid event loop conflicts
+- **Persistent**: Connections maintained in background threads across entire application lifecycle
 - Single source of truth: `master_config.json` (no config sync needed)
 - Preserves enabled states across server updates
-- Persistent connections maintained in background threads
 - Comprehensive health tracking and logging
 - Seamless integration with local extension tools
 - Tool calls delegated to remote MCP servers via session manager
@@ -420,6 +456,7 @@ Remote MCP servers stored in `master_config.json` under `remote_mcp_servers`:
   - Toggling remote MCP servers and individual tools on/off
   - Toggling local extension tools' MCP exposure
   - Viewing tool descriptions and schemas
+- Header keeps a persistent Update Manager control beside Restart; it always links to `/queue` and expands with a pending-change count when updates are queued. The Dashboard quick-actions row features Tool Manager (`/tools`) in place of the former Update Manager tile.
 - External Services pages call `/api/external-services/*` endpoints for install/start/stop and display UI links generated by Caddy.
 - Environment Key Manager interacts exclusively with `/api/supervisor/keys/*` endpoints.
 - System controls (restart/shutdown) use `/api/supervisor/restart` and `/api/supervisor/shutdown`.

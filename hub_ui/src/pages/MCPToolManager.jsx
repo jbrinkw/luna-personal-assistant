@@ -13,10 +13,32 @@ function MCPToolManager() {
   const [expandedServers, setExpandedServers] = useState({});
   const [expandedExtensions, setExpandedExtensions] = useState({});
   const [toast, setToast] = useState(null);
+  
+  // Local multi-MCP servers
+  const [localServers, setLocalServers] = useState([]);
+  const [activeServer, setActiveServer] = useState(null);
+  const [serverTools, setServerTools] = useState([]);
+  const [creatingLocal, setCreatingLocal] = useState(false);
+  const [newLocalName, setNewLocalName] = useState('');
+  const [renameDraft, setRenameDraft] = useState('');
+  const activeServerInfo = localServers.find(s => s.name === activeServer) || null;
 
   useEffect(() => {
     loadTools();
+    loadLocalServers();
   }, []);
+
+  useEffect(() => {
+    if (activeServer) {
+      loadServerTools(activeServer);
+    }
+  }, [activeServer]);
+
+  // Keep renameDraft synced with the selected server
+  useEffect(() => {
+    const s = localServers.find(x => x.name === activeServer);
+    setRenameDraft(s ? s.name : '');
+  }, [activeServer, localServers]);
 
   const loadTools = async () => {
     try {
@@ -34,6 +56,293 @@ function MCPToolManager() {
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 5000);
+  };
+
+  // Local server helpers
+  const loadLocalServers = async () => {
+    try {
+      const data = MCPApi.listLocalServers
+        ? await MCPApi.listLocalServers()
+        : await (await fetch('/api/supervisor/mcp-servers/list')).json();
+      const list = data.servers || [];
+      setLocalServers(list);
+      if (!activeServer && list.length > 0) {
+        const mainEntry = list.find(s => s.name === 'main');
+        setActiveServer((mainEntry && mainEntry.name) || list[0].name);
+      }
+      // Keep rename input in sync with active server
+      const current = list.find(s => s.name === activeServer);
+      setRenameDraft(current ? current.name : '');
+    } catch (err) {
+      console.error('Failed to load local servers', err);
+    }
+  };
+
+  const loadServerTools = async (name) => {
+    try {
+      const data = MCPApi.getServerTools
+        ? await MCPApi.getServerTools(name)
+        : await (await fetch(`/api/supervisor/mcp-servers/${encodeURIComponent(name)}/tools`)).json();
+      setServerTools(data.tools || []);
+    } catch (err) {
+      console.error('Failed to load server tools', err);
+    }
+  };
+
+  const createLocalServer = async () => {
+    const name = newLocalName.trim();
+    if (!name) {
+      showToast('Enter a server name', 'error');
+      return;
+    }
+    setCreatingLocal(true);
+    try {
+      let result;
+      if (MCPApi.createLocalServer) {
+        result = await MCPApi.createLocalServer(name);
+      } else {
+        const res = await fetch('/api/supervisor/mcp-servers/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name })
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || `HTTP ${res.status}`);
+        }
+        result = await res.json();
+      }
+      setNewLocalName('');
+      await loadLocalServers();
+      setActiveServer(name);
+      const keyText = result?.server?.api_key ? ` API Key: ${result.server.api_key}` : '';
+      showToast(`Server created.${keyText ? ` ${keyText}` : ''}`);
+    } catch (err) {
+      showToast(`Failed to create server: ${err.message}`, 'error');
+    } finally {
+      setCreatingLocal(false);
+    }
+  };
+
+  const deleteLocalServer = async (name) => {
+    if (!confirm(`Delete server ${name}?`)) return;
+    try {
+      if (MCPApi.deleteLocalServer) {
+        await MCPApi.deleteLocalServer(name);
+      } else {
+        await fetch(`/api/supervisor/mcp-servers/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      }
+      await loadLocalServers();
+      if (activeServer === name) setActiveServer(null);
+      setServerTools([]);
+      showToast('Server deleted');
+    } catch (err) {
+      showToast(`Failed to delete: ${err.message}`, 'error');
+    }
+  };
+
+  const toggleLocalServer = async (name, enabled) => {
+    try {
+      if (MCPApi.updateLocalServer) {
+        await MCPApi.updateLocalServer(name, { enabled: !enabled });
+      } else {
+        await fetch(`/api/supervisor/mcp-servers/${encodeURIComponent(name)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !enabled }) });
+      }
+      await loadLocalServers();
+      showToast(`Server ${!enabled ? 'enabled' : 'disabled'}`);
+    } catch (err) {
+      showToast(`Failed to update: ${err.message}`, 'error');
+    }
+  };
+
+  const toggleServerTool = async (toolName, currentlyEnabled) => {
+    if (!activeServer) return;
+    try {
+      const payload = { tool_updates: { [toolName]: { enabled_in_mcp: !currentlyEnabled } } };
+      if (MCPApi.updateLocalServer) {
+        await MCPApi.updateLocalServer(activeServer, payload);
+      } else {
+        await fetch(`/api/supervisor/mcp-servers/${encodeURIComponent(activeServer)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      }
+      await loadServerTools(activeServer);
+    } catch (err) {
+      showToast(`Failed to update tool: ${err.message}`, 'error');
+    }
+  };
+
+  const copyApiKey = async (key) => {
+    try {
+      await navigator.clipboard.writeText(key);
+      showToast('API key copied');
+    } catch (err) {
+      showToast(`Failed to copy: ${err.message}`, 'error');
+    }
+  };
+
+  const regenerateApiKey = async () => {
+    if (!activeServerInfo || activeServerInfo.name === 'main') return;
+    try {
+      if (MCPApi.regenerateLocalServerKey) {
+        await MCPApi.regenerateLocalServerKey(activeServerInfo.name);
+      } else {
+        const res = await fetch(`/api/supervisor/mcp-servers/${encodeURIComponent(activeServerInfo.name)}/regenerate-key`, { method: 'POST' });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || `HTTP ${res.status}`);
+        }
+      }
+      await loadLocalServers();
+      showToast('API key regenerated');
+    } catch (err) {
+      showToast(`Failed to regenerate key: ${err.message}`, 'error');
+    }
+  };
+
+  // Bulk enable/disable operations
+  const toggleAllExtensionTools = async (enabled) => {
+    if (!activeServer) return;
+    try {
+      const toolUpdates = {};
+      extensions.forEach(ext => {
+        ext.tools.forEach(tool => {
+          toolUpdates[tool.name] = { enabled_in_mcp: enabled };
+        });
+      });
+      
+      const payload = { tool_updates: toolUpdates };
+      if (MCPApi.updateLocalServer) {
+        await MCPApi.updateLocalServer(activeServer, payload);
+      } else {
+        await fetch(`/api/supervisor/mcp-servers/${encodeURIComponent(activeServer)}`, { 
+          method: 'PATCH', 
+          headers: { 'Content-Type': 'application/json' }, 
+          body: JSON.stringify(payload) 
+        });
+      }
+      await loadServerTools(activeServer);
+      showToast(`${enabled ? 'Enabled' : 'Disabled'} all extension tools`);
+    } catch (err) {
+      showToast(`Failed to update tools: ${err.message}`, 'error');
+    }
+  };
+
+  const toggleAllRemoteMCPTools = async (enabled) => {
+    if (!activeServer) return;
+    try {
+      const toolUpdates = {};
+      remoteServers.forEach(server => {
+        Object.keys(server.tools || {}).forEach(toolName => {
+          toolUpdates[toolName] = { enabled_in_mcp: enabled };
+        });
+      });
+      
+      const payload = { tool_updates: toolUpdates };
+      if (MCPApi.updateLocalServer) {
+        await MCPApi.updateLocalServer(activeServer, payload);
+      } else {
+        await fetch(`/api/supervisor/mcp-servers/${encodeURIComponent(activeServer)}`, { 
+          method: 'PATCH', 
+          headers: { 'Content-Type': 'application/json' }, 
+          body: JSON.stringify(payload) 
+        });
+      }
+      await loadServerTools(activeServer);
+      showToast(`${enabled ? 'Enabled' : 'Disabled'} all remote MCP tools`);
+    } catch (err) {
+      showToast(`Failed to update tools: ${err.message}`, 'error');
+    }
+  };
+
+  const toggleAllToolsGlobal = async (enabled) => {
+    if (!activeServer) return;
+    try {
+      const toolUpdates = {};
+      
+      // Add all extension tools
+      extensions.forEach(ext => {
+        ext.tools.forEach(tool => {
+          toolUpdates[tool.name] = { enabled_in_mcp: enabled };
+        });
+      });
+      
+      // Add all remote MCP tools
+      remoteServers.forEach(server => {
+        Object.keys(server.tools || {}).forEach(toolName => {
+          toolUpdates[toolName] = { enabled_in_mcp: enabled };
+        });
+      });
+      
+      const payload = { tool_updates: toolUpdates };
+      if (MCPApi.updateLocalServer) {
+        await MCPApi.updateLocalServer(activeServer, payload);
+      } else {
+        await fetch(`/api/supervisor/mcp-servers/${encodeURIComponent(activeServer)}`, { 
+          method: 'PATCH', 
+          headers: { 'Content-Type': 'application/json' }, 
+          body: JSON.stringify(payload) 
+        });
+      }
+      await loadServerTools(activeServer);
+      showToast(`${enabled ? 'Enabled' : 'Disabled'} all tools globally`);
+    } catch (err) {
+      showToast(`Failed to update tools: ${err.message}`, 'error');
+    }
+  };
+
+  const toggleAllToolsInExtension = async (extName, enabled) => {
+    if (!activeServer) return;
+    try {
+      const ext = extensions.find(e => e.name === extName);
+      if (!ext) return;
+      
+      const toolUpdates = {};
+      ext.tools.forEach(tool => {
+        toolUpdates[tool.name] = { enabled_in_mcp: enabled };
+      });
+      
+      const payload = { tool_updates: toolUpdates };
+      if (MCPApi.updateLocalServer) {
+        await MCPApi.updateLocalServer(activeServer, payload);
+      } else {
+        await fetch(`/api/supervisor/mcp-servers/${encodeURIComponent(activeServer)}`, { 
+          method: 'PATCH', 
+          headers: { 'Content-Type': 'application/json' }, 
+          body: JSON.stringify(payload) 
+        });
+      }
+      await loadServerTools(activeServer);
+      showToast(`${enabled ? 'Enabled' : 'Disabled'} all tools in ${extName}`);
+    } catch (err) {
+      showToast(`Failed to update tools: ${err.message}`, 'error');
+    }
+  };
+
+  const toggleAllToolsInRemoteServer = async (serverId, enabled) => {
+    if (!activeServer) return;
+    try {
+      const server = remoteServers.find(s => s.server_id === serverId);
+      if (!server) return;
+      
+      const toolUpdates = {};
+      Object.keys(server.tools || {}).forEach(toolName => {
+        toolUpdates[toolName] = { enabled_in_mcp: enabled };
+      });
+      
+      const payload = { tool_updates: toolUpdates };
+      if (MCPApi.updateLocalServer) {
+        await MCPApi.updateLocalServer(activeServer, payload);
+      } else {
+        await fetch(`/api/supervisor/mcp-servers/${encodeURIComponent(activeServer)}`, { 
+          method: 'PATCH', 
+          headers: { 'Content-Type': 'application/json' }, 
+          body: JSON.stringify(payload) 
+        });
+      }
+      await loadServerTools(activeServer);
+      showToast(`${enabled ? 'Enabled' : 'Disabled'} all tools in ${serverId}`);
+    } catch (err) {
+      showToast(`Failed to update tools: ${err.message}`, 'error');
+    }
   };
 
   const handleAddServer = async () => {
@@ -79,42 +388,20 @@ function MCPToolManager() {
     }
   };
 
-  const handleToggleRemoteTool = async (serverId, toolName, currentlyEnabled) => {
-    try {
-      await MCPApi.updateServer(serverId, {
-        tool_updates: {
-          [toolName]: { enabled: !currentlyEnabled }
-        }
-      });
-      showToast(`Tool ${!currentlyEnabled ? 'enabled' : 'disabled'}`);
-      await loadTools();
-    } catch (err) {
-      showToast(`Failed to update tool: ${err.message}`, 'error');
-    }
-  };
-
   const handleToggleExtension = async (extName, currentlyEnabled) => {
     try {
       await ConfigAPI.updateExtension(extName, { enabled: !currentlyEnabled });
       showToast(`Extension ${!currentlyEnabled ? 'enabled' : 'disabled'}`);
       await loadTools();
+      if (activeServer) {
+        await loadServerTools(activeServer);
+      }
     } catch (err) {
       showToast(`Failed to update extension: ${err.message}`, 'error');
     }
   };
 
-  const handleToggleLocalTool = async (toolName, currentConfig) => {
-    try {
-      await ConfigAPI.updateTool(toolName, {
-        ...currentConfig,
-        enabled_in_mcp: !currentConfig.enabled_in_mcp
-      });
-      showToast(`Tool ${!currentConfig.enabled_in_mcp ? 'enabled' : 'disabled'} in MCP`);
-      await loadTools();
-    } catch (err) {
-      showToast(`Failed to update tool: ${err.message}`, 'error');
-    }
-  };
+  // Old global toggle removed; we now toggle per active server
 
   const toggleServer = (serverId) => {
     setExpandedServers(prev => ({ ...prev, [serverId]: !prev[serverId] }));
@@ -122,6 +409,45 @@ function MCPToolManager() {
 
   const toggleExtension = (extName) => {
     setExpandedExtensions(prev => ({ ...prev, [extName]: !prev[extName] }));
+  };
+
+  const isToolEnabledForActive = (toolName) => {
+    return !!(serverTools.find(t => t.name === toolName)?.enabled_in_mcp);
+  };
+
+  // Helper to count active tools in a remote server
+  const getRemoteServerActiveCount = (server) => {
+    if (!server.tools) return 0;
+    const toolNames = Object.keys(server.tools);
+    return toolNames.filter(toolName => isToolEnabledForActive(toolName)).length;
+  };
+
+  // Helper to count active tools in an extension
+  const getExtensionActiveCount = (ext) => {
+    if (!ext.tools) return 0;
+    return ext.tools.filter(tool => isToolEnabledForActive(tool.name)).length;
+  };
+
+  // Helper to get total active/total counts for all remote servers
+  const getRemoteTotalCounts = () => {
+    let active = 0;
+    let total = 0;
+    remoteServers.forEach(server => {
+      active += getRemoteServerActiveCount(server);
+      total += server.tool_count || 0;
+    });
+    return { active, total };
+  };
+
+  // Helper to get total active/total counts for all extensions
+  const getExtensionTotalCounts = () => {
+    let active = 0;
+    let total = 0;
+    extensions.forEach(ext => {
+      active += getExtensionActiveCount(ext);
+      total += ext.tool_count || 0;
+    });
+    return { active, total };
   };
 
   if (loading) {
@@ -137,8 +463,8 @@ function MCPToolManager() {
       <div className="page-container">
         <div className="page-header">
           <div>
-            <h1>🔧 MCP Tool Manager</h1>
-            <p className="page-subtitle">Manage remote MCP servers and local extension tools</p>
+            <h1>🔧 Tool/MCP Manager</h1>
+            <p className="page-subtitle">Manage local MCP servers, remote MCP servers, and extension tools</p>
           </div>
         </div>
         <div className="error-message">
@@ -160,60 +486,256 @@ function MCPToolManager() {
         </div>
       )}
 
-      <div className="page-header">
-        <div>
-          <h1>🔧 MCP Tool Manager</h1>
-          <p className="page-subtitle">Manage remote MCP servers and local extension tools</p>
+        <div className="page-header">
+          <div>
+            <h1>🔧 Tool/MCP Manager</h1>
+            <p className="page-subtitle">Manage local MCP servers, remote MCP servers, and extension tools</p>
+          </div>
         </div>
-      </div>
 
-      <div className="warning-banner" style={{ marginBottom: '24px', padding: '16px', background: 'rgba(255, 193, 7, 0.1)', border: '1px solid rgba(255, 193, 7, 0.3)', borderRadius: '8px', color: '#ffc107' }}>
+      <div className="warning-banner">
         <strong>⚠️ Note:</strong> Changes require Luna restart to take effect
       </div>
 
+      {/* MCP Server selector (applies to all sections below) */}
+      <div className="mcp-servers-section">
+        <div className="mcp-server-selector">
+          <div className="server-pills">
+            {localServers.map(s => {
+              const path = `/api/mcp-${s.name}`;
+              const count = typeof s.tool_count === 'number' ? s.tool_count : null;
+              return (
+                <Button
+                  key={s.name}
+                  variant={s.name === activeServer ? 'primary' : 'secondary'}
+                  onClick={() => setActiveServer(s.name)}
+                  className="server-pill"
+                  title={`${path}`}
+                >
+                  <span className="server-pill-name">{s.name}</span>
+                  <span className="server-pill-path">{path}</span>
+                  {count !== null && <span className="server-pill-count">• {count} tools</span>}
+                  {!s.enabled && <span className="server-pill-disabled">(disabled)</span>}
+                </Button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Global Bulk Actions */}
+        {activeServer && (
+          <div className="bulk-actions-bar">
+            <span className="bulk-actions-label">Quick Actions for {activeServer}:</span>
+            <div className="bulk-actions-buttons">
+              <Button 
+                variant="secondary" 
+                size="sm"
+                onClick={() => toggleAllToolsGlobal(true)}
+              >
+                Enable All Tools
+              </Button>
+              <Button 
+                variant="secondary" 
+                size="sm"
+                onClick={() => toggleAllToolsGlobal(false)}
+              >
+                Disable All Tools
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Server Management Cards */}
+        <div className="server-management-grid">
+          {/* Active Server Management */}
+          {activeServerInfo && (
+            <div className="extension-card">
+              <h3 className="server-management-title">
+                {activeServerInfo.name === 'main' ? 'Main MCP Server' : `Manage ${activeServerInfo.name}`}
+              </h3>
+              {activeServerInfo.name === 'main' ? (
+                <p className="text-muted">GitHub OAuth is used for authentication on the main MCP server.</p>
+              ) : (
+                <>
+                  <div className="server-management-section">
+                    <label className="input-label">Server Name</label>
+                    <div className="input-button-group">
+                      <input
+                        className="mcp-input"
+                        value={renameDraft}
+                        onChange={(e) => setRenameDraft(e.target.value)}
+                        placeholder="Server name"
+                      />
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={async () => {
+                          const newName = (renameDraft || '').trim();
+                          if (!activeServerInfo || !newName || newName === activeServerInfo.name) return;
+                          try {
+                            if (MCPApi.updateLocalServer) {
+                              await MCPApi.updateLocalServer(activeServerInfo.name, { name: newName });
+                            } else {
+                              await fetch(`/api/supervisor/mcp-servers/${encodeURIComponent(activeServerInfo.name)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newName }) });
+                            }
+                            setActiveServer(newName);
+                            await loadLocalServers();
+                            showToast('Server renamed');
+                          } catch (err) {
+                            showToast(`Rename failed: ${err.message}`, 'error');
+                          }
+                        }}
+                      >
+                        Save
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        onClick={() => deleteLocalServer(activeServerInfo.name)}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="server-management-section">
+                    <label className="input-label">API Key</label>
+                    <div className="api-key-display">
+                      <code className="api-key-code">{activeServerInfo.api_key || '—'}</code>
+                      <div className="api-key-actions">
+                        <Button 
+                          variant="secondary" 
+                          size="sm"
+                          onClick={() => copyApiKey(activeServerInfo.api_key || '')} 
+                          disabled={!activeServerInfo.api_key}
+                        >
+                          Copy
+                        </Button>
+                        <Button 
+                          variant="secondary" 
+                          size="sm"
+                          onClick={regenerateApiKey}
+                        >
+                          Regenerate
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Create New Server */}
+          <div className="extension-card">
+            <h3 className="server-management-title">Create New MCP Server</h3>
+            <div className="server-management-section">
+              <label className="input-label">Server Name</label>
+              <div className="input-button-group">
+                <input
+                  className="mcp-input"
+                  placeholder="e.g., research, smarthome"
+                  value={newLocalName}
+                  onChange={e => setNewLocalName(e.target.value)}
+                />
+                <Button 
+                  onClick={createLocalServer} 
+                  disabled={creatingLocal}
+                  size="sm"
+                >
+                  {creatingLocal ? 'Creating...' : 'Create'}
+                </Button>
+              </div>
+              <p className="input-help-text">
+                Each MCP server gets its own API endpoint and authentication
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Remote MCP Servers management (provider-level). Active server selection above applies to toggles below in Tools section. */}
+
       {/* Add Remote MCP Server */}
-      <div className="extension-card" style={{ marginBottom: '24px' }}>
-        <h2 style={{ margin: '0 0 16px 0', fontSize: '20px', color: '#e8eaed' }}>Add Remote MCP Server</h2>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <input
-            type="text"
-            value={newServerUrl}
-            onChange={(e) => setNewServerUrl(e.target.value)}
-            placeholder="Paste Smithery MCP URL here..."
-            disabled={addingServer}
-            className="form-input"
-            style={{ flex: 1 }}
-            onKeyPress={(e) => {
-              if (e.key === 'Enter' && newServerUrl.trim()) handleAddServer();
-            }}
-          />
-          <Button
-            onClick={handleAddServer}
-            disabled={addingServer || !newServerUrl.trim()}
-          >
-            {addingServer ? 'Adding...' : 'Add Server'}
-          </Button>
+      <div className="extension-card mcp-section-card">
+        <h3 className="server-management-title">Add Remote MCP Server</h3>
+        <div className="server-management-section">
+          <label className="input-label">Smithery MCP Server URL</label>
+          <div className="input-button-group">
+            <input
+              type="text"
+              value={newServerUrl}
+              onChange={(e) => setNewServerUrl(e.target.value)}
+              placeholder="https://mcp.example.com/..."
+              disabled={addingServer}
+              className="mcp-input"
+              onKeyPress={(e) => {
+                if (e.key === 'Enter' && newServerUrl.trim()) handleAddServer();
+              }}
+            />
+            <Button
+              onClick={handleAddServer}
+              disabled={addingServer || !newServerUrl.trim()}
+              size="sm"
+            >
+              {addingServer ? 'Adding...' : 'Add Server'}
+            </Button>
+          </div>
+          <p className="input-help-text">
+            Connect to external MCP servers like Exa, Context7, and more
+          </p>
         </div>
       </div>
 
       {/* Remote MCP Servers */}
-      <div style={{ marginBottom: '32px' }}>
-        <h2 style={{ fontSize: '24px', color: '#e8eaed', marginBottom: '16px' }}>Remote MCP Servers ({remoteServers.length})</h2>
+      <div className="mcp-section">
+        <div className="section-header">
+          <h2 className="section-title">
+            Remote MCP Servers ({remoteServers.length})
+            {activeServer && remoteServers.length > 0 && (
+              <span className="section-tool-count">
+                {' • '}
+                <span className="stat-active">{getRemoteTotalCounts().active}</span>
+                <span className="stat-separator"> / </span>
+                <span className="stat-total">{getRemoteTotalCounts().total}</span>
+                {' tools active'}
+              </span>
+            )}
+          </h2>
+          {remoteServers.length > 0 && activeServer && (
+            <div className="bulk-actions-buttons">
+              <Button 
+                variant="secondary" 
+                size="sm"
+                onClick={() => toggleAllRemoteMCPTools(true)}
+              >
+                Enable All
+              </Button>
+              <Button 
+                variant="secondary" 
+                size="sm"
+                onClick={() => toggleAllRemoteMCPTools(false)}
+              >
+                Disable All
+              </Button>
+            </div>
+          )}
+        </div>
         {remoteServers.length === 0 ? (
-          <div className="empty-state" style={{ padding: '40px 20px' }}>
-            <div className="empty-state-icon" style={{ fontSize: '48px' }}>🌐</div>
-            <h3 style={{ fontSize: '18px', color: '#9aa0a6', margin: '0' }}>No remote MCP servers configured</h3>
-            <p style={{ color: '#9aa0a6', fontSize: '14px', marginTop: '8px' }}>Add a Smithery MCP server URL above to get started</p>
+          <div className="empty-state">
+            <div className="empty-state-icon">🌐</div>
+            <h3>No remote MCP servers configured</h3>
+            <p>Add a Smithery MCP server URL above to get started</p>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div className="cards-list">
             {remoteServers.map(server => (
               <div key={server.server_id} className="extension-card">
                 <div className="extension-card-header">
-                  <div className="extension-card-title" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div className="extension-card-title-with-toggle">
                     <button
                       onClick={() => toggleServer(server.server_id)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: '#8ab4f8', padding: 0 }}
+                      className="expand-toggle-btn"
                     >
                       {expandedServers[server.server_id] ? '▼' : '▶'}
                     </button>
@@ -222,7 +744,18 @@ function MCPToolManager() {
                       <div className="extension-stats">
                         <div className="stat">
                           <span className="stat-icon">🛠️</span>
-                          <span>{server.tool_count} tools</span>
+                          <span>
+                            {activeServer ? (
+                              <>
+                                <span className="stat-active">{getRemoteServerActiveCount(server)}</span>
+                                <span className="stat-separator"> / </span>
+                                <span className="stat-total">{server.tool_count}</span>
+                                <span> tools active</span>
+                              </>
+                            ) : (
+                              <>{server.tool_count} tools</>
+                            )}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -238,6 +771,24 @@ function MCPToolManager() {
                 </div>
 
                 <div className="extension-card-actions">
+                  {activeServer && (
+                    <>
+                      <Button 
+                        variant="secondary" 
+                        onClick={() => toggleAllToolsInRemoteServer(server.server_id, true)}
+                        size="sm"
+                      >
+                        Enable All Tools
+                      </Button>
+                      <Button 
+                        variant="secondary" 
+                        onClick={() => toggleAllToolsInRemoteServer(server.server_id, false)}
+                        size="sm"
+                      >
+                        Disable All Tools
+                      </Button>
+                    </>
+                  )}
                   <Button 
                     variant="danger" 
                     onClick={() => handleDeleteServer(server.server_id)}
@@ -248,41 +799,45 @@ function MCPToolManager() {
                 </div>
 
                 {expandedServers[server.server_id] && (
-                  <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #3c4043' }}>
+                  <div className="expanded-content">
                     <div className="tools-list">
-                      {Object.entries(server.tools || {}).map(([toolName, toolConfig]) => (
-                        <div key={toolName} className="tool-card">
-                          <div className="tool-header">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                              <div style={{ flex: 1 }}>
-                                <h3>{toolName}</h3>
-                                {toolConfig.docstring && (
-                                  <p className="tool-description">
-                                    {toolConfig.docstring.substring(0, 200)}
-                                    {toolConfig.docstring.length > 200 ? '...' : ''}
-                                  </p>
-                                )}
+                      {Object.entries(server.tools || {}).map(([toolName, toolConfig]) => {
+                        const enabledForActive = isToolEnabledForActive(toolName);
+                        return (
+                          <div key={toolName} className="tool-card">
+                            <div className="tool-header">
+                              <div className="tool-header-content">
+                                <div className="tool-header-left">
+                                  <h3>{toolName}</h3>
+                                  {toolConfig.docstring && (
+                                    <p className="tool-description">
+                                      {toolConfig.docstring.substring(0, 200)}
+                                      {toolConfig.docstring.length > 200 ? '...' : ''}
+                                    </p>
+                                  )}
+                                </div>
+                                <label className="checkbox-label">
+                                  <input
+                                    type="checkbox"
+                                    checked={enabledForActive}
+                                    onChange={() => toggleServerTool(toolName, enabledForActive)}
+                                    disabled={!activeServer}
+                                  />
+                                  <span>Enabled</span>
+                                </label>
                               </div>
-                              <label className="checkbox-label">
-                                <input
-                                  type="checkbox"
-                                  checked={toolConfig.enabled}
-                                  onChange={() => handleToggleRemoteTool(server.server_id, toolName, toolConfig.enabled)}
-                                />
-                                <span>Enabled</span>
-                              </label>
                             </div>
+                            {toolConfig.input_schema && (
+                              <details className="schema-details">
+                                <summary className="schema-summary">View Schema</summary>
+                                <pre className="schema-pre">
+                                  {JSON.stringify(toolConfig.input_schema, null, 2)}
+                                </pre>
+                              </details>
+                            )}
                           </div>
-                          {toolConfig.input_schema && (
-                            <details style={{ marginTop: '12px' }}>
-                              <summary style={{ cursor: 'pointer', color: '#8ab4f8', fontSize: '14px' }}>View Schema</summary>
-                              <pre style={{ background: '#28292c', padding: '12px', borderRadius: '4px', overflow: 'auto', maxHeight: '200px', fontSize: '12px', marginTop: '8px' }}>
-                                {JSON.stringify(toolConfig.input_schema, null, 2)}
-                              </pre>
-                            </details>
-                          )}
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -292,24 +847,60 @@ function MCPToolManager() {
         )}
       </div>
 
-      {/* Local Extension Tools */}
-      <div>
-        <h2 style={{ fontSize: '24px', color: '#e8eaed', marginBottom: '16px' }}>Local Extension Tools ({extensions.length})</h2>
+      {/* All Available Tools (local + remote) with per-server selection */}
+      <div className="mcp-section">
+        <div className="section-header">
+          <div>
+            <h2 className="section-title">
+              Local Extension Tools ({extensions.length})
+              {activeServer && extensions.length > 0 && (
+                <span className="section-tool-count">
+                  {' • '}
+                  <span className="stat-active">{getExtensionTotalCounts().active}</span>
+                  <span className="stat-separator"> / </span>
+                  <span className="stat-total">{getExtensionTotalCounts().total}</span>
+                  {' tools active'}
+                </span>
+              )}
+            </h2>
+            <span className="section-subtitle">
+              {activeServer ? `Active MCP: ${activeServer}` : 'Select an MCP server above'}
+            </span>
+          </div>
+          {extensions.length > 0 && activeServer && (
+            <div className="bulk-actions-buttons">
+              <Button 
+                variant="secondary" 
+                size="sm"
+                onClick={() => toggleAllExtensionTools(true)}
+              >
+                Enable All
+              </Button>
+              <Button 
+                variant="secondary" 
+                size="sm"
+                onClick={() => toggleAllExtensionTools(false)}
+              >
+                Disable All
+              </Button>
+            </div>
+          )}
+        </div>
         {extensions.length === 0 ? (
-          <div className="empty-state" style={{ padding: '40px 20px' }}>
-            <div className="empty-state-icon" style={{ fontSize: '48px' }}>🔧</div>
-            <h3 style={{ fontSize: '18px', color: '#9aa0a6', margin: '0' }}>No extensions with tools found</h3>
-            <p style={{ color: '#9aa0a6', fontSize: '14px', marginTop: '8px' }}>Install extensions from the Extension Manager to see their tools here</p>
+          <div className="empty-state">
+            <div className="empty-state-icon">🔧</div>
+            <h3>No extensions with tools found</h3>
+            <p>Install extensions from the Extension Manager to see their tools here</p>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div className="cards-list">
             {extensions.map(ext => (
               <div key={ext.name} className="extension-card">
                 <div className="extension-card-header">
-                  <div className="extension-card-title" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div className="extension-card-title-with-toggle">
                     <button
                       onClick={() => toggleExtension(ext.name)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: '#8ab4f8', padding: 0 }}
+                      className="expand-toggle-btn"
                     >
                       {expandedExtensions[ext.name] ? '▼' : '▶'}
                     </button>
@@ -318,7 +909,18 @@ function MCPToolManager() {
                       <div className="extension-stats">
                         <div className="stat">
                           <span className="stat-icon">🛠️</span>
-                          <span>{ext.tool_count} tools</span>
+                          <span>
+                            {activeServer ? (
+                              <>
+                                <span className="stat-active">{getExtensionActiveCount(ext)}</span>
+                                <span className="stat-separator"> / </span>
+                                <span className="stat-total">{ext.tool_count}</span>
+                                <span> tools active</span>
+                              </>
+                            ) : (
+                              <>{ext.tool_count} tools</>
+                            )}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -333,41 +935,69 @@ function MCPToolManager() {
                   </label>
                 </div>
 
+                <div className="extension-card-actions">
+                  {activeServer && (
+                    <>
+                      <Button 
+                        variant="secondary" 
+                        onClick={() => toggleAllToolsInExtension(ext.name, true)}
+                        size="sm"
+                      >
+                        Enable All Tools
+                      </Button>
+                      <Button 
+                        variant="secondary" 
+                        onClick={() => toggleAllToolsInExtension(ext.name, false)}
+                        size="sm"
+                      >
+                        Disable All Tools
+                      </Button>
+                    </>
+                  )}
+                </div>
+
                 {expandedExtensions[ext.name] && (
-                  <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #3c4043' }}>
+                  <div className="expanded-content">
                     <div className="tools-list">
-                      {ext.tools.map(tool => (
-                        <div key={tool.name} className="tool-card">
-                          <div className="tool-header">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px' }}>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
-                                  <h3 style={{ margin: 0 }}>{tool.name}</h3>
-                                  {tool.passthrough && (
-                                    <span className="version-tag" style={{ background: 'rgba(76, 175, 80, 0.15)', color: '#4caf50' }}>
-                                      Passthrough
-                                    </span>
+                      {ext.tools.map(tool => {
+                        const enabled = isToolEnabledForActive(tool.name);
+                        return (
+                          <div key={tool.name} className="tool-card">
+                            <div className="tool-header">
+                              <div className="tool-header-content">
+                                <div className="tool-header-left">
+                                  <div className="tool-name-row">
+                                    <h3>{tool.name}</h3>
+                                    {tool.passthrough && (
+                                      <span className="version-tag passthrough-tag">
+                                        Passthrough
+                                      </span>
+                                    )}
+                                  </div>
+                                  {tool.docstring && (
+                                    <p className="tool-description">
+                                      {tool.docstring.split('\n')[0].substring(0, 150)}
+                                      {tool.docstring.length > 150 ? '...' : ''}
+                                    </p>
                                   )}
                                 </div>
-                                {tool.docstring && (
-                                  <p className="tool-description">
-                                    {tool.docstring.split('\n')[0].substring(0, 150)}
-                                    {tool.docstring.length > 150 ? '...' : ''}
-                                  </p>
-                                )}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  <span style={{ fontSize: '0.9rem', color: '#a0a0a0' }}>MCP Enabled</span>
+                                  <label className="toggle-switch">
+                                    <input
+                                      type="checkbox"
+                                      checked={enabled}
+                                      onChange={() => toggleServerTool(tool.name, enabled)}
+                                      disabled={!activeServer}
+                                    />
+                                    <span className="toggle-slider"></span>
+                                  </label>
+                                </div>
                               </div>
-                              <label className="checkbox-label">
-                                <input
-                                  type="checkbox"
-                                  checked={tool.enabled_in_mcp}
-                                  onChange={() => handleToggleLocalTool(tool.name, tool)}
-                                />
-                                <span>MCP Enabled</span>
-                              </label>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -381,4 +1011,3 @@ function MCPToolManager() {
 }
 
 export default MCPToolManager;
-

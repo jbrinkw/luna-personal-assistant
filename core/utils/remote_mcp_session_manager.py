@@ -19,6 +19,11 @@ except ImportError as e:
     ) from e
 
 
+# Global singleton instance for reuse across the application
+_global_session_manager: Optional['RemoteMCPSessionManager'] = None
+_global_session_lock = threading.Lock()
+
+
 class PersistentMCPSession:
     """Manages a persistent MCP session that can be reused across tool calls."""
     
@@ -47,19 +52,36 @@ class PersistentMCPSession:
                     await self._session.__aenter__()
                     await self._session.initialize()
                     self._initialized = True
+                except asyncio.CancelledError:
+                    # Gracefully handle cancellation during initialization
+                    print(f"[RemoteMCP] Session initialization cancelled for {self._server_id}", flush=True)
+                    self._initialized = False
+                    self._init_error = "Initialization cancelled"
                 except Exception as e:
                     print(f"[RemoteMCP] Failed to initialize session for {self._server_id}: {e}", flush=True)
                     self._initialized = False
                     self._init_error = str(e)
             
-            new_loop.run_until_complete(setup_session())
-            new_loop.run_forever()
+            try:
+                new_loop.run_until_complete(setup_session())
+                # Only run forever if initialization succeeded
+                if self._initialized:
+                    new_loop.run_forever()
+            except asyncio.CancelledError:
+                pass  # Gracefully handle cancellation
+            except Exception as e:
+                print(f"[RemoteMCP] Background loop error for {self._server_id}: {e}", flush=True)
+            finally:
+                try:
+                    new_loop.close()
+                except:
+                    pass
         
         self._loop_thread = threading.Thread(target=run_background_loop, daemon=True)
         self._loop_thread.start()
         
         # Wait for initialization with retries
-        max_wait = 3  # seconds
+        max_wait = 10  # seconds (increased for slow connections)
         wait_step = 0.2
         waited = 0
         while waited < max_wait and not self._initialized:
@@ -354,4 +376,106 @@ class RemoteMCPSessionManager:
         self._sessions.clear()
         self._initialized = False
         print("[RemoteMCP] All sessions closed", flush=True)
+
+
+# ============================================================================
+# Global Session Manager Functions
+# ============================================================================
+
+def get_global_session_manager() -> Optional['RemoteMCPSessionManager']:
+    """Get or create the global session manager singleton.
+    
+    This function initializes the session manager once on first call and
+    reuses it for all subsequent calls, making it efficient for tools that
+    need remote MCP access.
+    
+    Returns:
+        Global RemoteMCPSessionManager instance, or None if no remote servers configured
+    """
+    global _global_session_manager
+    
+    with _global_session_lock:
+        if _global_session_manager is None:
+            # Try to initialize from master_config
+            try:
+                # Calculate project root from this file's location
+                project_root = Path(__file__).resolve().parents[2]
+                master_config_path = project_root / 'core' / 'master_config.json'
+                
+                if not master_config_path.exists():
+                    print(f"[RemoteMCP] No master_config.json found, skipping global session manager", flush=True)
+                    return None
+                
+                with open(master_config_path, 'r') as f:
+                    master_config = json.load(f)
+                
+                remote_servers = master_config.get('remote_mcp_servers', {})
+                if not remote_servers:
+                    print(f"[RemoteMCP] No remote MCP servers configured", flush=True)
+                    return None
+                
+                print(f"[RemoteMCP] Initializing global session manager with {len(remote_servers)} remote server(s)...", flush=True)
+                _global_session_manager = RemoteMCPSessionManager(master_config)
+                
+                # Initialize - check if we're in an async context
+                try:
+                    # Try to get the running loop
+                    loop = asyncio.get_running_loop()
+                    # We're in an async context - schedule initialization in background
+                    print(f"[RemoteMCP] Detected async context, initializing in background thread...", flush=True)
+                    
+                    # Run initialization in a separate thread with its own loop
+                    import concurrent.futures
+                    def init_in_thread():
+                        new_loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(new_loop)
+                        try:
+                            new_loop.run_until_complete(_global_session_manager.initialize_all())
+                            return True
+                        except Exception as e:
+                            print(f"[RemoteMCP] Thread initialization error: {e}", flush=True)
+                            return False
+                        finally:
+                            new_loop.close()
+                    
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(init_in_thread)
+                        success = future.result(timeout=30)
+                        if success:
+                            print(f"[RemoteMCP] ✓ Global session manager initialized successfully", flush=True)
+                        else:
+                            raise RuntimeError("Failed to initialize in background thread")
+                            
+                except RuntimeError:
+                    # No running loop - we're in sync context
+                    print(f"[RemoteMCP] Sync context, initializing directly...", flush=True)
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        loop.run_until_complete(_global_session_manager.initialize_all())
+                        print(f"[RemoteMCP] ✓ Global session manager initialized successfully", flush=True)
+                    finally:
+                        loop.close()
+                    
+            except Exception as e:
+                print(f"[RemoteMCP] ✗ Failed to initialize global session manager: {e}", flush=True)
+                import traceback
+                traceback.print_exc()
+                _global_session_manager = None
+                return None
+        
+        return _global_session_manager
+
+
+def reset_global_session_manager():
+    """Reset the global session manager.
+    
+    Useful when configuration changes or during system restarts.
+    The next call to get_global_session_manager() will reinitialize.
+    """
+    global _global_session_manager
+    with _global_session_lock:
+        if _global_session_manager is not None:
+            print(f"[RemoteMCP] Resetting global session manager", flush=True)
+        _global_session_manager = None
 

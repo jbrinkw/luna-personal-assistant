@@ -60,6 +60,18 @@ class ServiceStatusUpdate(BaseModel):
     status: Optional[str] = None
 
 
+# Models for MCP server management
+class MCPServerCreate(BaseModel):
+    name: str
+
+
+class MCPServerUpdateRequest(BaseModel):
+    name: Optional[str] = None  # rename
+    enabled: Optional[bool] = None
+    tool_config: Optional[Dict[str, Dict[str, Any]]] = None  # full replacement
+    tool_updates: Optional[Dict[str, Dict[str, Any]]] = None  # partial updates
+
+
 def _trigger_caddy_reload(reason: str) -> None:
     """Best-effort Caddy reload via supervisor helper."""
     if not supervisor_instance:
@@ -301,6 +313,208 @@ def update_master_config(config: Dict[str, Any]):
     supervisor_instance.save_master_config()
     
     return {"updated": True}
+
+
+# ---------------------
+# MCP Servers (local)  
+# ---------------------
+
+@app.get('/mcp-servers/list')
+def mcp_servers_list():
+    """List all configured local MCP servers with status and port."""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+
+    servers = supervisor_instance.master_config.get('mcp_servers', {}) or {}
+    state = supervisor_instance.get_state().get('services', {})
+
+    result = []
+    for name, cfg in servers.items():
+        svc_key = f"mcp_server_{name}"
+        svc_state = state.get(svc_key, {})
+        tc = cfg.get('tool_config', {}) or {}
+        active_count = sum(1 for v in tc.values() if isinstance(v, dict) and v.get('enabled_in_mcp'))
+        result.append({
+            'name': name,
+            'enabled': cfg.get('enabled', True),
+            'port': cfg.get('port', 8766),
+            'status': svc_state.get('status', 'stopped'),
+            'pid': svc_state.get('pid'),
+            'tool_count': active_count,
+            'api_key': cfg.get('api_key') if name != 'main' else None,
+        })
+    return {'servers': result}
+
+
+def _next_available_mcp_port(master_config) -> int:
+    used = {cfg.get('port', 8766) for cfg in (master_config.get('mcp_servers', {}) or {}).values()}
+    for port in range(8766, 8800):
+        if port not in used:
+            return port
+    raise HTTPException(status_code=400, detail="No available MCP server ports in 8766-8799")
+
+
+@app.post('/mcp-servers/create')
+def mcp_server_create(req: MCPServerCreate):
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Server name required")
+    if name == 'main':
+        raise HTTPException(status_code=400, detail="'main' server already exists")
+
+    mcp_servers = supervisor_instance.master_config.setdefault('mcp_servers', {})
+    if name in mcp_servers:
+        raise HTTPException(status_code=400, detail="Server with this name already exists")
+
+    port = _next_available_mcp_port(supervisor_instance.master_config)
+    api_key = supervisor_instance._generate_api_key()
+    mcp_servers[name] = {
+        'name': name,
+        'port': port,
+        'enabled': True,
+        'tool_config': {},
+        'api_key': api_key,
+    }
+    supervisor_instance._set_env_var(supervisor_instance._env_key_for_server(name), api_key)
+    supervisor_instance.save_master_config()
+    return {'created': True, 'server': mcp_servers[name]}
+
+
+@app.patch('/mcp-servers/{server_name}')
+def mcp_server_update(server_name: str, req: MCPServerUpdateRequest):
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    mcp_servers = supervisor_instance.master_config.setdefault('mcp_servers', {})
+    if server_name not in mcp_servers:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    cfg = mcp_servers[server_name]
+
+    # Rename
+    if req.name and req.name != server_name:
+        if server_name == 'main':
+            raise HTTPException(status_code=400, detail="Cannot rename 'main' MCP server")
+        if req.name in mcp_servers:
+            raise HTTPException(status_code=400, detail="Target name already exists")
+        mcp_servers[req.name] = cfg
+        del mcp_servers[server_name]
+        cfg['name'] = req.name
+        old_env_key = supervisor_instance._env_key_for_server(server_name)
+        new_env_key = supervisor_instance._env_key_for_server(req.name)
+        supervisor_instance._remove_env_var(old_env_key)
+        if cfg.get('api_key'):
+            supervisor_instance._set_env_var(new_env_key, cfg['api_key'])
+        state = supervisor_instance.state.get('services', {})
+        # Also migrate state key if present
+        state = supervisor_instance.state.get('services', {})
+        old_key, new_key = f"mcp_server_{server_name}", f"mcp_server_{req.name}"
+        if old_key in state:
+            state[new_key] = state.pop(old_key)
+        server_name = req.name
+        cfg = mcp_servers[server_name]
+
+    # Enabled toggle
+    if req.enabled is not None:
+        if server_name == 'main' and not req.enabled:
+            raise HTTPException(status_code=400, detail="Cannot disable the 'main' MCP server")
+        cfg['enabled'] = bool(req.enabled)
+
+    # Replace full tool_config
+    if req.tool_config is not None:
+        cfg['tool_config'] = req.tool_config
+
+    # Partial tool updates
+    if req.tool_updates:
+        tc = cfg.setdefault('tool_config', {})
+        for tname, tupdate in req.tool_updates.items():
+            entry = tc.setdefault(tname, {})
+            if 'enabled_in_mcp' in tupdate:
+                entry['enabled_in_mcp'] = bool(tupdate['enabled_in_mcp'])
+
+    supervisor_instance.save_master_config()
+    return {'updated': True, 'server': cfg}
+
+
+@app.delete('/mcp-servers/{server_name}')
+def mcp_server_delete(server_name: str):
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    mcp_servers = supervisor_instance.master_config.setdefault('mcp_servers', {})
+    if server_name not in mcp_servers:
+        raise HTTPException(status_code=404, detail="Server not found")
+    if server_name == 'main':
+        raise HTTPException(status_code=400, detail="Cannot delete the 'main' MCP server")
+    del mcp_servers[server_name]
+    supervisor_instance._remove_env_var(supervisor_instance._env_key_for_server(server_name))
+    supervisor_instance.save_master_config()
+    return {'deleted': True}
+
+
+@app.post('/mcp-servers/{server_name}/regenerate-key')
+def mcp_server_regenerate_key(server_name: str):
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    if server_name == 'main':
+        raise HTTPException(status_code=400, detail="Main MCP server uses OAuth and has no API key")
+
+    mcp_servers = supervisor_instance.master_config.setdefault('mcp_servers', {})
+    if server_name not in mcp_servers:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    cfg = mcp_servers[server_name]
+    new_key = supervisor_instance._generate_api_key()
+    cfg['api_key'] = new_key
+    supervisor_instance._set_env_var(supervisor_instance._env_key_for_server(server_name), new_key)
+    supervisor_instance.save_master_config()
+
+    return {'api_key': new_key, 'server': cfg}
+
+
+@app.get('/mcp-servers/{server_name}/tools')
+def mcp_server_tools(server_name: str):
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    try:
+        from core.utils.tool_discovery import get_all_tools
+        # All available tools, then apply per-server config for enabled flags
+        servers = supervisor_instance.master_config.get('mcp_servers', {})
+        if server_name not in servers:
+            raise HTTPException(status_code=404, detail="Server not found")
+        per_cfg = servers[server_name].get('tool_config', {}) or {}
+
+        all_tools = get_all_tools()
+        # Flatten tool names from extensions
+        available: Dict[str, Dict[str, Any]] = {}
+        for ext in all_tools.get('extensions', []):
+            for t in ext.get('tools', []):
+                available[t['name']] = {
+                    'source': f"ext:{ext['name']}",
+                    'docstring': t.get('docstring', ''),
+                }
+        # Remote servers
+        for srv in all_tools.get('remote_mcp_servers', []):
+            tools = srv.get('tools', {}) or {}
+            for tname, tcfg in tools.items():
+                available.setdefault(tname, {
+                    'source': f"remote:{srv.get('server_id')}",
+                    'docstring': tcfg.get('docstring', ''),
+                })
+
+        # Build response with enabled flag according to this server
+        items = []
+        for tname, meta in sorted(available.items()):
+            items.append({
+                'name': tname,
+                'enabled_in_mcp': bool(per_cfg.get(tname, {}).get('enabled_in_mcp', False)),
+                'source': meta.get('source'),
+                'description': meta.get('docstring'),
+            })
+        return {'tools': items}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to load tools: {exc}")
 
 
 @app.patch('/config/master/extensions/{name}')
@@ -1637,7 +1851,8 @@ def get_all_tools():
         from core.utils.tool_discovery import get_all_tools
         
         all_tools = get_all_tools()
-        
+        # Include MCP server assignments for convenience in UI
+        all_tools['mcp_servers'] = supervisor_instance.master_config.get('mcp_servers', {})
         return all_tools
     except Exception as e:
         import traceback

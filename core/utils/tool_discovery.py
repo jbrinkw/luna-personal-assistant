@@ -222,6 +222,137 @@ def get_mcp_enabled_tools(session_manager=None) -> List[Union[Callable, MCPRemot
     return tools
 
 
+def get_mcp_enabled_tools_for_server(
+    server_name: str,
+    master_config: Optional[Dict[str, Any]] = None,
+    session_manager=None,
+) -> List[Union[Callable, MCPRemoteTool]]:
+    """Get tools enabled for a specific MCP server instance.
+
+    This loads all available tools (local extension tools with enabled_in_mcp
+    in their tool_config.json, and remote MCP tools that are enabled in
+    master_config.remote_mcp_servers) and filters them using the per-server
+    configuration found in master_config.mcp_servers[server_name].tool_config.
+
+    Args:
+        server_name: Identifier of the MCP server (e.g., "main", "research")
+        master_config: Optional preloaded master_config.json content
+        session_manager: Optional RemoteMCPSessionManager instance for remote tools
+
+    Returns:
+        List of tool callables (local) and MCPRemoteTool wrappers (remote) that
+        are enabled for this specific server.
+    """
+    print(f"[ToolDiscovery] Loading tools for MCP server: {server_name}", flush=True)
+    
+    # Resolve master_config
+    if master_config is None:
+        master_config_path = PROJECT_ROOT / 'core' / 'master_config.json'
+        try:
+            if master_config_path.exists():
+                with open(master_config_path, 'r') as f:
+                    master_config = json.load(f)
+        except Exception as e:  # noqa: BLE001
+            print(f"[ToolDiscovery] Warning: Failed to load master_config: {e}", flush=True)
+            master_config = {}
+
+    server_cfg = (master_config or {}).get('mcp_servers', {}).get(server_name, {})
+    per_server_tool_cfg: Dict[str, Dict[str, Any]] = server_cfg.get('tool_config', {}) or {}
+
+    print(f"[ToolDiscovery] Server tool_config has {len(per_server_tool_cfg)} entries", flush=True)
+
+    enabled_tools: List[Union[Callable, MCPRemoteTool]] = []
+
+    # Determine which tool names are enabled for this server
+    # If tool_config is empty, treat as all disabled by default (safer)
+    enabled_names = {
+        name for name, cfg in per_server_tool_cfg.items() if cfg.get('enabled_in_mcp', False)
+    }
+    
+    print(f"[ToolDiscovery] Enabled tool names for {server_name}: {enabled_names}", flush=True)
+
+    # 1) Local extension tools (all available, not gated by extension tool_config MCP flag)
+    try:
+        from core.utils.extension_discovery import discover_extensions
+        discovered_exts = discover_extensions()
+
+        # Consider only extensions that are enabled in master_config (default True)
+        enabled_exts = set()
+        for ext_name, ext_cfg in (master_config or {}).get('extensions', {}).items():
+            if ext_cfg.get('enabled', True):
+                enabled_exts.add(ext_name)
+        if not enabled_exts:
+            # If master_config missing, default to include all discovered
+            enabled_exts = {ext.get('name', '') for ext in discovered_exts}
+
+        for ext in discovered_exts:
+            ext_name = ext.get('name', '')
+            if ext_name not in enabled_exts:
+                continue
+            for tool in ext.get('tools', []) or []:
+                if not callable(tool):
+                    continue
+                tool_name = getattr(tool, '__name__', '')
+                if tool_name in enabled_names:
+                    enabled_tools.append(tool)
+                    print(f"[ToolDiscovery]   + Local tool: {tool_name} from {ext_name}", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[ToolDiscovery] Warning: local tool scan failed: {e}", flush=True)
+    
+    print(f"[ToolDiscovery] Found {len(enabled_tools)} local tools", flush=True)
+
+    # 2) Remote MCP tools (if a session manager is provided or available globally)
+    if session_manager is None:
+        # Try to get the global session manager
+        try:
+            from core.utils.remote_mcp_session_manager import get_global_session_manager
+            session_manager = get_global_session_manager()
+            if session_manager:
+                print(f"[ToolDiscovery] Using global session manager for {server_name}", flush=True)
+        except Exception as e:
+            print(f"[ToolDiscovery] Failed to get global session manager: {e}", flush=True)
+    
+    if session_manager:
+        print(f"[ToolDiscovery] Checking remote MCP servers for {server_name}...", flush=True)
+        remote_servers = (master_config or {}).get('remote_mcp_servers', {})
+        for server_id, remote_cfg in remote_servers.items():
+            # Skip disabled remote servers or those without a session
+            if not remote_cfg.get('enabled', True):
+                print(f"[ToolDiscovery]   - Skipping disabled remote server: {server_id}", flush=True)
+                continue
+            if not session_manager.has_session(server_id):
+                print(f"[ToolDiscovery]   - Skipping remote server (no session): {server_id}", flush=True)
+                continue
+
+            tools_dict = remote_cfg.get('tools', {})
+            print(f"[ToolDiscovery]   - Checking {len(tools_dict)} tools from {server_id}...", flush=True)
+            for tool_name, tool_cfg in tools_dict.items():
+                # Tool must be enabled at remote server level AND for this local MCP server
+                if not tool_cfg.get('enabled', True):
+                    print(f"[ToolDiscovery]     x {tool_name} (disabled at remote server level)", flush=True)
+                    continue
+                if tool_name not in enabled_names:
+                    print(f"[ToolDiscovery]     x {tool_name} (not enabled for {server_name})", flush=True)
+                    continue
+
+                # Wrap as MCPRemoteTool
+                enabled_tools.append(
+                    MCPRemoteTool(
+                        server_id=server_id,
+                        tool_name=tool_name,
+                        tool_config=tool_cfg,
+                        session_manager=session_manager,
+                    )
+                )
+                print(f"[ToolDiscovery]   + Remote tool: {tool_name} from {server_id}", flush=True)
+    else:
+        print(f"[ToolDiscovery] No session manager provided, skipping remote tools", flush=True)
+    
+    print(f"[ToolDiscovery] Total enabled tools for {server_name}: {len(enabled_tools)}", flush=True)
+
+    return enabled_tools
+
+
 def get_tool_count_by_source() -> Dict[str, int]:
     """Get count of tools by source.
     
@@ -242,4 +373,3 @@ def get_tool_count_by_source() -> Dict[str, int]:
         'remote_mcp_servers': remote_count,
         'total': local_count + remote_count
     }
-

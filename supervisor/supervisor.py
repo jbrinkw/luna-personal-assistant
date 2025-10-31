@@ -8,6 +8,7 @@ import sys
 import threading
 import subprocess
 import traceback
+import secrets
 from datetime import datetime
 from pathlib import Path
 
@@ -188,6 +189,7 @@ class Supervisor:
                 "extensions": {},
                 "tool_configs": {},
                 "remote_mcp_servers": {},
+                "mcp_servers": {},
                 "port_assignments": {
                     "extensions": {},
                     "services": {}
@@ -204,12 +206,107 @@ class Supervisor:
             self.master_config["deployment_mode"] = env_deployment_mode
         if env_public_domain:
             self.master_config["public_domain"] = env_public_domain
+
+        # Migration: initialize default MCP server if not present
+        try:
+            if "mcp_servers" not in self.master_config or not isinstance(self.master_config.get("mcp_servers"), dict):
+                self.master_config["mcp_servers"] = {}
+
+            if not self.master_config["mcp_servers"]:
+                self.log("INFO", "No mcp_servers configured. Creating default 'main' server on port 8766...")
+                # Build tool filter from existing configs (local + remote)
+                tool_filter: dict[str, dict] = {}
+                # Local tool_configs
+                for tool_name, cfg in self.master_config.get("tool_configs", {}).items():
+                    if cfg.get("enabled_in_mcp", False):
+                        tool_filter[tool_name] = {"enabled_in_mcp": True}
+                # Remote MCP tools
+                for _sid, server_cfg in self.master_config.get("remote_mcp_servers", {}).items():
+                    for tname, tcfg in (server_cfg.get("tools", {}) or {}).items():
+                        if tcfg.get("enabled", True):
+                            tool_filter.setdefault(tname, {"enabled_in_mcp": True})
+
+                self.master_config["mcp_servers"]["main"] = {
+                    "name": "main",
+                    "port": 8766,
+                    "enabled": True,
+                    "tool_config": tool_filter,
+                }
+                self.save_master_config()
+
+            updated = False
+            for name, cfg in self.master_config["mcp_servers"].items():
+                if name == "main":
+                    if cfg.pop("api_key", None) is not None:
+                        updated = True
+                    # Remove any lingering env var for main
+                    self._remove_env_var(self._env_key_for_server(name))
+                    continue
+
+                api_key = cfg.get("api_key")
+                if not api_key:
+                    api_key = self._generate_api_key()
+                    cfg["api_key"] = api_key
+                    updated = True
+                self._set_env_var(self._env_key_for_server(name), api_key)
+
+            if updated:
+                self.save_master_config()
+        except Exception as exc:
+            self.log("WARNING", f"MCP server migration skipped: {exc}")
     
     def save_master_config(self):
         """Save master_config to disk"""
         with open(self.master_config_path, 'w') as f:
             json.dump(self.master_config, f, indent=2)
         self.log("INFO", f"Saved master_config to {self.master_config_path}")
+
+    def _env_key_for_server(self, server_name: str) -> str:
+        safe = server_name.upper().replace("-", "_")
+        return f"MCP_SERVER_{safe}_API_KEY"
+
+    def _generate_api_key(self) -> str:
+        # 48 bytes -> ~64 characters base64-url safe, strong enough for public exposure
+        return secrets.token_urlsafe(48)
+
+    def _set_env_var(self, key: str, value: str) -> None:
+        env_path = self.repo_path / ".env"
+        lines: list[str]
+        if env_path.exists():
+            with open(env_path, 'r') as f:
+                lines = f.readlines()
+        else:
+            lines = []
+
+        prefix = f"{key}="
+        replaced = False
+        new_lines: list[str] = []
+        for line in lines:
+            if line.startswith(prefix):
+                new_lines.append(f"{prefix}{value}\n")
+                replaced = True
+            else:
+                new_lines.append(line)
+        if not replaced:
+            new_lines.append(f"{prefix}{value}\n")
+
+        with open(env_path, 'w') as f:
+            f.writelines(new_lines)
+
+    def _remove_env_var(self, key: str) -> None:
+        env_path = self.repo_path / ".env"
+        if not env_path.exists():
+            return
+
+        with open(env_path, 'r') as f:
+            lines = f.readlines()
+
+        prefix = f"{key}="
+        new_lines = [line for line in lines if not line.startswith(prefix)]
+
+        if new_lines != lines:
+            with open(env_path, 'w') as f:
+                f.writelines(new_lines)
     
     def load_or_create_state(self):
         """Clear and create fresh state.json on every startup"""
@@ -315,11 +412,14 @@ class Supervisor:
             "mcp_server": 8765,
             "supervisor": 9999
         }
-        
+        # Include all MCP server ports (name->port)
+        mcp_servers = {name: cfg.get("port", 8766) for name, cfg in self.master_config.get("mcp_servers", {}).items()}
+
         return {
             "core": core_ports,
             "extensions": self.master_config["port_assignments"]["extensions"],
-            "services": self.master_config["port_assignments"]["services"]
+            "services": self.master_config["port_assignments"]["services"],
+            "mcp_servers": mcp_servers,
         }
     
     def shutdown_all_services(self):
@@ -653,7 +753,93 @@ class Supervisor:
             self.log("ERROR", f"Failed to start MCP Server: {e}")
             self.log("ERROR", traceback.format_exc())
             self.update_service_status("mcp_server", status="failed")
-    
+
+    def _start_mcp_servers(self):
+        """Start all enabled MCP servers defined in master_config.mcp_servers."""
+        try:
+            servers = self.master_config.get("mcp_servers", {}) or {}
+            if not servers:
+                self.log("INFO", "No MCP servers configured. Skipping start.")
+                return
+            
+            # Helper to check/clear port
+            import signal
+            import time
+            def ensure_port_free(port: int):
+                max_retries = 10
+                for attempt in range(max_retries):
+                    result = subprocess.run(['lsof', '-ti', f':{port}'], capture_output=True, text=True)
+                    if result.stdout.strip():
+                        pids = result.stdout.strip().split('\n')
+                        for pid in pids:
+                            if pid:
+                                try:
+                                    os.kill(int(pid), signal.SIGKILL)
+                                except Exception:
+                                    pass
+                        time.sleep(0.3)
+                    else:
+                        return
+
+            mcp_server_script = self.core_path / "utils" / "mcp_server.py"
+            if not mcp_server_script.exists():
+                self.log("ERROR", f"MCP Server script not found at {mcp_server_script}")
+                return
+
+            for name, cfg in servers.items():
+                if not cfg.get("enabled", True):
+                    continue
+                port = int(cfg.get("port", 8766))
+
+                self.log("INFO", f"Starting MCP server '{name}' on port {port}...")
+                ensure_port_free(port)
+
+                log_file = self.logs_path / f"mcp_server_{name}.log"
+                log_fp = open(log_file, 'w')
+
+                args = [
+                    self.python_bin,
+                    str(mcp_server_script),
+                    "--host", "127.0.0.1",
+                    "--port", str(port),
+                    "--server-name", name,
+                ]
+
+                if name != "main":
+                    api_key = cfg.get("api_key")
+                    if not api_key:
+                        api_key = self._generate_api_key()
+                        cfg["api_key"] = api_key
+                        self._set_env_var(self._env_key_for_server(name), api_key)
+                        self.save_master_config()
+                    args.extend(["--api-key", api_key])
+
+                proc = subprocess.Popen(
+                    args,
+                    stdout=log_fp,
+                    stderr=subprocess.STDOUT,
+                    cwd=str(self.repo_path),
+                    start_new_session=True,
+                )
+                key = f"mcp_server_{name}"
+                self.processes[key] = proc
+                self.update_service_status(key, pid=proc.pid, port=port, status="starting")
+
+                # Mark running shortly after spawn
+                time.sleep(0.5)
+                if proc.poll() is None:
+                    if key in self.state.get('services', {}):
+                        self.state['services'][key]['status'] = 'running'
+                        self.save_state()
+                    self.log("INFO", f"MCP server '{name}' is running on {port}")
+                else:
+                    self.log("ERROR", f"MCP server '{name}' exited immediately")
+                    self.update_service_status(key, status="failed")
+
+        except Exception as e:
+            self.log("ERROR", f"Failed to start MCP servers: {e}")
+            self.log("ERROR", traceback.format_exc())
+
     def _start_hub_ui(self):
         """Start Hub UI on port 5173"""
         try:
@@ -945,7 +1131,8 @@ class Supervisor:
         self._start_auth_service()
         self._start_hub_ui()
         self._start_agent_api()
-        self._start_mcp_server()
+        # Start all configured MCP servers
+        self._start_mcp_servers()
         
         # Phase 6: Discover and start extensions
         self._discover_and_start_extensions()
@@ -969,7 +1156,13 @@ class Supervisor:
         self.log("INFO", "  Hub UI: http://127.0.0.1:5173")
         self.log("INFO", "  Auth Service: http://127.0.0.1:8765")
         self.log("INFO", "  Agent API: http://127.0.0.1:8080")
-        self.log("INFO", "  MCP Server: http://127.0.0.1:8766")
+        # List all MCP server ports
+        mcp_servers = self.master_config.get("mcp_servers", {})
+        if mcp_servers:
+            for name, cfg in mcp_servers.items():
+                self.log("INFO", f"  MCP Server ({name}): http://127.0.0.1:{cfg.get('port', 8766)}")
+        else:
+            self.log("INFO", "  MCP Server: http://127.0.0.1:8766")
         self.log("INFO", "  Supervisor API: http://127.0.0.1:9999")
         self.log("INFO", "=" * 60)
     
