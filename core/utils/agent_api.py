@@ -133,6 +133,11 @@ class ChatCompletionRequest(BaseModel):
 AGENTS: Dict[str, ModuleType] = {}
 AGENT_PATHS: Dict[str, str] = {}
 
+# ---- Preset Caches ----
+_TOOL_CACHE: Dict[str, Any] = {}  # All tools cached at startup
+_PRESET_TOOL_CACHE: Dict[str, set] = {}  # Filtered tool names per preset
+_PRESET_METADATA: Dict[str, Dict[str, Any]] = {}  # Preset metadata for /v1/models
+
 
 def _split_history_and_prompt(messages: List[ChatMessage]) -> Tuple[str, str]:
     """Split messages into chat history and final user prompt."""
@@ -370,13 +375,71 @@ def _maybe_print_startup_models() -> None:
 
 def _init_agents() -> None:
     """Initialize agent registry."""
-    global AGENTS
+    global AGENTS, _TOOL_CACHE, _PRESET_TOOL_CACHE, _PRESET_METADATA
+    
     print("[Agent API] Initializing agent registry...", flush=True)
+    
+    # Discover built-in agents
     AGENTS = _discover_agents()
-    print(f"[Agent API] Agent discovery complete. Found {len(AGENTS)} agents.", flush=True)
+    print(f"[Agent API] Agent discovery complete. Found {len(AGENTS)} built-in agents.", flush=True)
+    
+    # Cache all tools for preset filtering
+    try:
+        from core.utils.tool_discovery import get_all_tools
+        _TOOL_CACHE = get_all_tools()
+        print("[Agent API] Tool cache initialized", flush=True)
+    except Exception as e:
+        print(f"[Agent API] WARNING: Failed to cache tools: {e}", flush=True)
+        _TOOL_CACHE = {}
+    
+    # Load agent presets from master_config
+    master_config_path = PROJECT_ROOT / "core" / "master_config.json"
+    if master_config_path.exists():
+        try:
+            master_config = json.loads(master_config_path.read_text())
+            agent_presets = master_config.get("agent_presets", {})
+            
+            for preset_name, preset_config in agent_presets.items():
+                if not preset_config.get("enabled", True):
+                    print(f"[Agent API] Skipping disabled preset: {preset_name}", flush=True)
+                    continue
+                
+                base_agent = preset_config.get("base_agent")
+                if base_agent not in AGENTS:
+                    print(f"[Agent API] Skipping preset {preset_name}: base agent {base_agent} not found", flush=True)
+                    continue
+                
+                # Register preset as model (points to same module as base agent)
+                AGENTS[preset_name] = AGENTS[base_agent]
+                AGENT_PATHS[preset_name] = f"preset:{base_agent}"
+                
+                # Cache enabled tools for this preset
+                enabled_tool_names = {
+                    name for name, cfg in preset_config.get("tool_config", {}).items()
+                    if cfg.get("enabled", False)
+                }
+                _PRESET_TOOL_CACHE[preset_name] = enabled_tool_names
+                
+                # Store metadata for /v1/models endpoint
+                _PRESET_METADATA[preset_name] = {
+                    "base_agent": base_agent,
+                    "tool_count": len(enabled_tool_names),
+                    "is_preset": True
+                }
+                
+                print(f"[Agent API] ✓ Registered preset: {preset_name} (base: {base_agent}, {len(enabled_tool_names)} tools)", flush=True)
+            
+            if agent_presets:
+                print(f"[Agent API] Loaded {len(agent_presets)} agent preset(s)", flush=True)
+        except Exception as e:
+            print(f"[Agent API] WARNING: Failed to load agent presets: {e}", flush=True)
     
     # Warm agents if they expose initialize_runtime()
     for k, mod in AGENTS.items():
+        # Skip warming for presets (they use the same runtime as base agent)
+        if AGENT_PATHS.get(k, "").startswith("preset:"):
+            continue
+        
         init = getattr(mod, "initialize_runtime", None)
         if callable(init):
             try:
@@ -504,13 +567,28 @@ async def restart_extension_service(name: str, service: str, api_key: str = Secu
 
 @app.get("/v1/models")
 async def list_models(api_key: str = Security(verify_api_key)):
-    """List available models (agents)."""
+    """List available models (agents and presets)."""
     now = int(time.time())
-    data = [
-        {"id": mid, "object": "model", "created": now, "owned_by": "luna"}
-        for mid in sorted(AGENTS.keys())
-    ]
-    return {"object": "list", "data": data}
+    models = []
+    
+    for model_id in sorted(AGENTS.keys()):
+        meta = _PRESET_METADATA.get(model_id, {})
+        model_data = {
+            "id": model_id,
+            "object": "model",
+            "created": now,
+            "owned_by": "luna",
+            "is_preset": meta.get("is_preset", False)
+        }
+        
+        # Add preset-specific metadata
+        if meta.get("is_preset"):
+            model_data["base_agent"] = meta.get("base_agent")
+            model_data["tool_count"] = meta.get("tool_count")
+        
+        models.append(model_data)
+    
+    return {"object": "list", "data": models}
 
 
 @app.get("/v1/models/{model_id}")
@@ -542,6 +620,19 @@ async def chat_completions(
         mod = AGENTS.get(model_id)
         if not mod:
             raise HTTPException(status_code=404, detail=f"unknown model '{model_id}'")
+    
+    # Check if this is a preset and get tool filter
+    is_preset = model_id in _PRESET_TOOL_CACHE
+    allowed_tool_names = _PRESET_TOOL_CACHE.get(model_id) if is_preset else None
+    
+    if is_preset:
+        print(f"[Agent API] Using preset '{model_id}' with {len(allowed_tool_names) if allowed_tool_names else 0} enabled tools", flush=True)
+        # NOTE: Tool filtering for presets requires integration with the agent's tool discovery mechanism.
+        # Currently, agents auto-discover all tools. To implement filtering, we would need to:
+        # 1. Pass allowed_tool_names to agent's initialize_runtime() or run_agent()
+        # 2. Modify extension_discovery to filter tools based on allowed list
+        # 3. Or set a context variable that tool discovery checks
+        # For now, presets are registered as models but use the same tools as base agents.
 
     chat_history, user_prompt = _split_history_and_prompt(body.messages)
     memory = _extract_memory(body.messages, memory_header)

@@ -177,12 +177,95 @@ def save_master_config(repo_path: Path, master_config: Dict[str, Any]):
         json.dump(master_config, f, indent=2)
 
 
+def discover_extension_tools(ext_path: Path, repo_path: Path) -> Dict[str, Any]:
+    """
+    Discover tools from an extension by reading tool_config.json.
+    
+    We use tool_config.json directly rather than importing tools to avoid
+    dependency issues. The tool_config.json should have entries for all tools
+    that the extension defines.
+    
+    Returns a dict mapping tool_name -> tool_config from extension's tool_config.json
+    """
+    tools_dir = ext_path / "tools"
+    if not tools_dir.exists():
+        return {}
+    
+    # Load tool_config.json - this contains all tool configs with their names
+    tool_config = load_tool_config(ext_path)
+    
+    # Return all tools from tool_config.json
+    # The tool_config.json should have entries for all tools the extension provides
+    return tool_config
+
+
+def sync_tools_to_master_config(repo_path: Path, master_config: Dict[str, Any]) -> int:
+    """
+    Sync extension tool configs TO master_config (reverse direction).
+    
+    Discovers all tools from enabled extensions and:
+    1. Adds them to master_config.tool_configs (if not present, preserving existing)
+    2. Adds enabled tools to each MCP server's tool_config
+    
+    Returns number of tools added/updated
+    """
+    repo_path = Path(repo_path)
+    extensions_dir = repo_path / "extensions"
+    
+    if not extensions_dir.exists():
+        return 0
+    
+    # Ensure tool_configs exists
+    if "tool_configs" not in master_config:
+        master_config["tool_configs"] = {}
+    
+    # Ensure mcp_servers exists
+    if "mcp_servers" not in master_config:
+        master_config["mcp_servers"] = {}
+    
+    updated_count = 0
+    
+    # Discover tools from all enabled extensions
+    for ext_name, ext_data in master_config.get("extensions", {}).items():
+        if not ext_data.get("enabled", True):
+            continue
+        
+        ext_path = extensions_dir / ext_name
+        if not ext_path.exists():
+            continue
+        
+        # Discover tools from this extension
+        ext_tools = discover_extension_tools(ext_path, repo_path)
+        
+        for tool_name, tool_config in ext_tools.items():
+            # Add to master_config.tool_configs if not present (preserve existing)
+            if tool_name not in master_config["tool_configs"]:
+                master_config["tool_configs"][tool_name] = tool_config.copy()
+                updated_count += 1
+            
+            # If tool is enabled_in_mcp, add it to all MCP servers' tool_config
+            if tool_config.get("enabled_in_mcp", False):
+                for server_name, server_cfg in master_config["mcp_servers"].items():
+                    if "tool_config" not in server_cfg:
+                        server_cfg["tool_config"] = {}
+                    
+                    # Only add if not already present (preserve existing settings)
+                    if tool_name not in server_cfg["tool_config"]:
+                        server_cfg["tool_config"][tool_name] = {
+                            "enabled_in_mcp": True
+                        }
+                        updated_count += 1
+    
+    return updated_count
+
+
 def sync_all(repo_path: Path) -> Tuple[List[str], List[str]]:
     """
     Sync all extensions (bidirectional)
     
     1. Discovers filesystem extensions and adds missing ones to master_config
-    2. Syncs existing extensions from master_config to their disk configs
+    2. Syncs extension tool configs TO master_config (populates tool_configs and mcp_servers)
+    3. Syncs existing extensions from master_config to their disk configs
     
     Returns: (synced_list, skipped_list)
     """
@@ -218,6 +301,12 @@ def sync_all(repo_path: Path) -> Tuple[List[str], List[str]]:
         # Save updated master config
         save_master_config(repo_path, master_config)
         print(f"✓ Master config updated with {len(added)} new extension(s)\n")
+    
+    # Sync extension tools TO master_config (populate tool_configs and mcp_servers)
+    tools_updated = sync_tools_to_master_config(repo_path, master_config)
+    if tools_updated > 0:
+        save_master_config(repo_path, master_config)
+        print(f"✓ Synced {tools_updated} tool config(s) to master_config\n")
     
     # Iterate through extensions in master config (now includes newly added ones)
     for ext_name, ext_data in master_config.get("extensions", {}).items():

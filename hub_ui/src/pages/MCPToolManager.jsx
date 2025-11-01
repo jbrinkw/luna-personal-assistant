@@ -5,6 +5,10 @@ import Button from '../components/common/Button';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 
 function MCPToolManager() {
+  // Mode toggle ('mcp' or 'agent')
+  const [mode, setMode] = useState('mcp');
+  
+  // MCP mode state
   const [tools, setTools] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -21,7 +25,21 @@ function MCPToolManager() {
   const [creatingLocal, setCreatingLocal] = useState(false);
   const [newLocalName, setNewLocalName] = useState('');
   const [renameDraft, setRenameDraft] = useState('');
+  const [showMCPApiKey, setShowMCPApiKey] = useState(false);
   const activeServerInfo = localServers.find(s => s.name === activeServer) || null;
+  
+  // Agent Presets mode state
+  const [builtInAgents, setBuiltInAgents] = useState([]);
+  const [agentPresets, setAgentPresets] = useState([]);
+  const [activePreset, setActivePreset] = useState(null);
+  const [presetTools, setPresetTools] = useState([]);
+  const [newPresetName, setNewPresetName] = useState('');
+  const [newPresetBase, setNewPresetBase] = useState('');
+  const [creatingPreset, setCreatingPreset] = useState(false);
+  const [sharedApiKey, setSharedApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [presetRenameDraft, setPresetRenameDraft] = useState('');
+  const activePresetInfo = agentPresets.find(p => p.name === activePreset) || null;
 
   useEffect(() => {
     loadTools();
@@ -39,6 +57,28 @@ function MCPToolManager() {
     const s = localServers.find(x => x.name === activeServer);
     setRenameDraft(s ? s.name : '');
   }, [activeServer, localServers]);
+  
+  // Load agent data when switching to agent mode
+  useEffect(() => {
+    if (mode === 'agent') {
+      loadBuiltInAgents();
+      loadAgentPresets();
+      loadSharedApiKey();
+    }
+  }, [mode]);
+  
+  // Load preset tools when active preset changes
+  useEffect(() => {
+    if (mode === 'agent' && activePreset) {
+      loadPresetTools(activePreset);
+    }
+  }, [mode, activePreset]);
+  
+  // Keep presetRenameDraft synced with active preset
+  useEffect(() => {
+    const p = agentPresets.find(x => x.name === activePreset);
+    setPresetRenameDraft(p ? p.name : '');
+  }, [activePreset, agentPresets]);
 
   const loadTools = async () => {
     try {
@@ -401,6 +441,129 @@ function MCPToolManager() {
     }
   };
 
+  // ----------------------------
+  // Agent Preset API Functions
+  // ----------------------------
+  
+  const loadBuiltInAgents = async () => {
+    try {
+      const data = await fetch('/api/supervisor/agents/built-in').then(r => r.json());
+      setBuiltInAgents(data.agents || []);
+      if (!newPresetBase && data.agents.length > 0) {
+        setNewPresetBase(data.agents[0]);
+      }
+    } catch (err) {
+      console.error('Failed to load built-in agents', err);
+    }
+  };
+  
+  const loadAgentPresets = async () => {
+    try {
+      const data = await fetch('/api/supervisor/agents/list').then(r => r.json());
+      setAgentPresets(data.agents || []);
+      if (!activePreset && data.agents.length > 0) {
+        setActivePreset(data.agents[0].name);
+      }
+    } catch (err) {
+      console.error('Failed to load agent presets', err);
+    }
+  };
+  
+  const loadPresetTools = async (name) => {
+    try {
+      const data = await fetch(`/api/supervisor/agents/${encodeURIComponent(name)}/tools`).then(r => r.json());
+      setPresetTools(data.tools || []);
+    } catch (err) {
+      console.error('Failed to load preset tools', err);
+    }
+  };
+  
+  const loadSharedApiKey = async () => {
+    try {
+      const data = await fetch('/api/supervisor/agents/api-key').then(r => r.json());
+      setSharedApiKey(data.api_key || '');
+    } catch (err) {
+      console.error('Failed to load shared API key', err);
+    }
+  };
+  
+  const createAgentPreset = async () => {
+    const name = newPresetName.trim();
+    if (!name) {
+      showToast('Enter an agent preset name', 'error');
+      return;
+    }
+    if (!newPresetBase) {
+      showToast('Select a base agent', 'error');
+      return;
+    }
+    setCreatingPreset(true);
+    try {
+      await fetch('/api/supervisor/agents/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, base_agent: newPresetBase })
+      });
+      setNewPresetName('');
+      await loadAgentPresets();
+      setActivePreset(name);
+      showToast('Agent preset created');
+    } catch (err) {
+      showToast(`Failed to create preset: ${err.message}`, 'error');
+    } finally {
+      setCreatingPreset(false);
+    }
+  };
+  
+  const deleteAgentPreset = async (name) => {
+    if (!confirm(`Delete agent preset ${name}?`)) return;
+    try {
+      await fetch(`/api/supervisor/agents/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      await loadAgentPresets();
+      if (activePreset === name) setActivePreset(null);
+      setPresetTools([]);
+      showToast('Preset deleted');
+    } catch (err) {
+      showToast(`Failed to delete: ${err.message}`, 'error');
+    }
+  };
+  
+  const updateAgentPreset = async (name, updates) => {
+    try {
+      await fetch(`/api/supervisor/agents/${encodeURIComponent(name)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+    } catch (err) {
+      showToast(`Failed to update: ${err.message}`, 'error');
+      throw err;
+    }
+  };
+  
+  const togglePresetTool = async (toolName, currentlyEnabled) => {
+    if (!activePreset) return;
+    try {
+      await updateAgentPreset(activePreset, {
+        tool_updates: { [toolName]: { enabled: !currentlyEnabled } }
+      });
+      await loadPresetTools(activePreset);
+    } catch (err) {
+      showToast(`Failed to update tool: ${err.message}`, 'error');
+    }
+  };
+  
+  const regenerateSharedKey = async () => {
+    if (!confirm('Regenerate shared agent API key? This will affect all agents.')) return;
+    try {
+      const data = await fetch('/api/supervisor/agents/regenerate-key', { method: 'POST' }).then(r => r.json());
+      setSharedApiKey(data.api_key);
+      showToast('API key regenerated');
+    } catch (err) {
+      showToast(`Failed to regenerate key: ${err.message}`, 'error');
+    }
+  };
+
   // Old global toggle removed; we now toggle per active server
 
   const toggleServer = (serverId) => {
@@ -412,6 +575,9 @@ function MCPToolManager() {
   };
 
   const isToolEnabledForActive = (toolName) => {
+    if (mode === 'agent') {
+      return !!(presetTools.find(t => t.name === toolName)?.enabled);
+    }
     return !!(serverTools.find(t => t.name === toolName)?.enabled_in_mcp);
   };
 
@@ -489,7 +655,25 @@ function MCPToolManager() {
         <div className="page-header">
           <div>
             <h1>🔧 Tool/MCP Manager</h1>
-            <p className="page-subtitle">Manage local MCP servers, remote MCP servers, and extension tools</p>
+            <p className="page-subtitle">
+              {mode === 'mcp' 
+                ? 'Manage local MCP servers, remote MCP servers, and extension tools'
+                : 'Create and manage agent presets with custom tool access'}
+            </p>
+          </div>
+          <div className="mode-toggle-buttons">
+            <Button 
+              variant={mode === 'mcp' ? 'primary' : 'secondary'}
+              onClick={() => setMode('mcp')}
+            >
+              MCP
+            </Button>
+            <Button 
+              variant={mode === 'agent' ? 'primary' : 'secondary'}
+              onClick={() => setMode('agent')}
+            >
+              Agent Presets
+            </Button>
           </div>
         </div>
 
@@ -497,58 +681,80 @@ function MCPToolManager() {
         <strong>⚠️ Note:</strong> Changes require Luna restart to take effect
       </div>
 
-      {/* MCP Server selector (applies to all sections below) */}
+      {/* Selector pills - shared structure, conditional content */}
       <div className="mcp-servers-section">
         <div className="mcp-server-selector">
           <div className="server-pills">
-            {localServers.map(s => {
-              const path = `/api/mcp-${s.name}`;
-              const count = typeof s.tool_count === 'number' ? s.tool_count : null;
-              return (
+            {mode === 'mcp' ? (
+              // MCP Server pills
+              localServers.map(s => {
+                const path = `/api/mcp-${s.name}`;
+                const count = typeof s.tool_count === 'number' ? s.tool_count : null;
+                return (
+                  <Button
+                    key={s.name}
+                    variant={s.name === activeServer ? 'primary' : 'secondary'}
+                    onClick={() => setActiveServer(s.name)}
+                    className="server-pill"
+                    title={`${path}`}
+                  >
+                    <span className="server-pill-name">{s.name}</span>
+                    <span className="server-pill-path">{path}</span>
+                    {count !== null && <span className="server-pill-count">• {count} tools</span>}
+                    {!s.enabled && <span className="server-pill-disabled">(disabled)</span>}
+                  </Button>
+                );
+              })
+            ) : (
+              // Agent Preset pills
+              agentPresets.map(preset => (
                 <Button
-                  key={s.name}
-                  variant={s.name === activeServer ? 'primary' : 'secondary'}
-                  onClick={() => setActiveServer(s.name)}
+                  key={preset.name}
+                  variant={preset.name === activePreset ? 'primary' : 'secondary'}
+                  onClick={() => setActivePreset(preset.name)}
                   className="server-pill"
-                  title={`${path}`}
                 >
-                  <span className="server-pill-name">{s.name}</span>
-                  <span className="server-pill-path">{path}</span>
-                  {count !== null && <span className="server-pill-count">• {count} tools</span>}
-                  {!s.enabled && <span className="server-pill-disabled">(disabled)</span>}
+                  <span className="server-pill-name">{preset.name}</span>
+                  <span className="server-pill-base">based on {preset.base_agent}</span>
+                  {preset.tool_count !== null && <span className="server-pill-count">• {preset.tool_count} tools</span>}
                 </Button>
-              );
-            })}
+              ))
+            )}
           </div>
         </div>
+      </div>
 
-        {/* Global Bulk Actions */}
-        {activeServer && (
-          <div className="bulk-actions-bar">
-            <span className="bulk-actions-label">Quick Actions for {activeServer}:</span>
-            <div className="bulk-actions-buttons">
-              <Button 
-                variant="secondary" 
-                size="sm"
-                onClick={() => toggleAllToolsGlobal(true)}
-              >
-                Enable All Tools
-              </Button>
-              <Button 
-                variant="secondary" 
-                size="sm"
-                onClick={() => toggleAllToolsGlobal(false)}
-              >
-                Disable All Tools
-              </Button>
-            </div>
+      {/* Quick Actions - shared */}
+      {(mode === 'mcp' ? activeServer : activePreset) && (
+        <div className="bulk-actions-bar">
+          <span className="bulk-actions-label">
+            Quick Actions for {mode === 'mcp' ? activeServer : activePreset}:
+          </span>
+          <div className="bulk-actions-buttons">
+            <Button 
+              variant="secondary" 
+              size="sm"
+              onClick={() => toggleAllToolsGlobal(true)}
+            >
+              Enable All Tools
+            </Button>
+            <Button 
+              variant="secondary" 
+              size="sm"
+              onClick={() => toggleAllToolsGlobal(false)}
+            >
+              Disable All Tools
+            </Button>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Server Management Cards */}
-        <div className="server-management-grid">
-          {/* Active Server Management */}
-          {activeServerInfo && (
+      {/* Management Cards - shared structure, conditional content */}
+      <div className="server-management-grid">
+        {mode === 'mcp' ? (
+          <>
+            {/* MCP: Active Server Management */}
+            {activeServerInfo && (
             <div className="extension-card">
               <h3 className="server-management-title">
                 {activeServerInfo.name === 'main' ? 'Main MCP Server' : `Manage ${activeServerInfo.name}`}
@@ -599,9 +805,28 @@ function MCPToolManager() {
                   </div>
 
                   <div className="server-management-section">
-                    <label className="input-label">API Key</label>
+                    <label className="input-label">
+                      API Key
+                      <button 
+                        onClick={() => setShowMCPApiKey(!showMCPApiKey)}
+                        style={{ 
+                          marginLeft: '8px', 
+                          background: 'none', 
+                          border: 'none', 
+                          cursor: 'pointer', 
+                          fontSize: '1.2rem' 
+                        }}
+                        title={showMCPApiKey ? 'Hide API key' : 'Show API key'}
+                      >
+                        {showMCPApiKey ? '🙈' : '👁️'}
+                      </button>
+                    </label>
                     <div className="api-key-display">
-                      <code className="api-key-code">{activeServerInfo.api_key || '—'}</code>
+                      <code className="api-key-code">
+                        {activeServerInfo.api_key 
+                          ? (showMCPApiKey ? activeServerInfo.api_key : '••••••••••••••••••••••••••••••••')
+                          : '—'}
+                      </code>
                       <div className="api-key-actions">
                         <Button 
                           variant="secondary" 
@@ -651,12 +876,149 @@ function MCPToolManager() {
               </p>
             </div>
           </div>
-        </div>
+          </>
+        ) : (
+          <>
+            {/* Agent: Active Preset Management */}
+            {activePresetInfo && (
+              <div className="extension-card">
+                <h3 className="server-management-title">Manage {activePresetInfo.name}</h3>
+                
+                <div className="server-management-section">
+                  <label className="input-label">Preset Name</label>
+                  <div className="input-button-group">
+                    <input
+                      className="mcp-input"
+                      value={presetRenameDraft}
+                      onChange={(e) => setPresetRenameDraft(e.target.value)}
+                      placeholder="Preset name"
+                    />
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={async () => {
+                        const newName = (presetRenameDraft || '').trim();
+                        if (!activePresetInfo || !newName || newName === activePresetInfo.name) return;
+                        try {
+                          await updateAgentPreset(activePresetInfo.name, { name: newName });
+                          setActivePreset(newName);
+                          await loadAgentPresets();
+                          showToast('Preset renamed');
+                        } catch (err) {
+                          showToast(`Rename failed: ${err.message}`, 'error');
+                        }
+                      }}
+                    >
+                      Save
+                    </Button>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => deleteAgentPreset(activePresetInfo.name)}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="server-management-section">
+                  <label className="input-label">Base Agent</label>
+                  <select 
+                    className="mcp-input"
+                    value={activePresetInfo.base_agent}
+                    onChange={(e) => updateAgentPreset(activePresetInfo.name, { base_agent: e.target.value }).then(() => {
+                      loadAgentPresets();
+                      showToast('Base agent updated');
+                    })}
+                  >
+                    {builtInAgents.map(ba => (
+                      <option key={ba} value={ba}>{ba}</option>
+                    ))}
+                  </select>
+                  <p className="input-help-text">The underlying agent implementation this preset uses</p>
+                </div>
+
+                <div className="server-management-section">
+                  <label className="input-label">
+                    Shared API Key
+                    <button 
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      style={{ 
+                        marginLeft: '8px', 
+                        background: 'none', 
+                        border: 'none', 
+                        cursor: 'pointer', 
+                        fontSize: '1.2rem' 
+                      }}
+                      title={showApiKey ? 'Hide API key' : 'Show API key'}
+                    >
+                      {showApiKey ? '🙈' : '👁️'}
+                    </button>
+                  </label>
+                  <div className="api-key-display">
+                    <code className="api-key-code">
+                      {showApiKey ? sharedApiKey : '••••••••••••••••••••••••••••••••'}
+                    </code>
+                    <div className="api-key-actions">
+                      <Button 
+                        variant="secondary" 
+                        size="sm"
+                        onClick={() => copyApiKey(sharedApiKey)} 
+                        disabled={!sharedApiKey}
+                      >
+                        Copy
+                      </Button>
+                      <Button 
+                        variant="secondary" 
+                        size="sm"
+                        onClick={regenerateSharedKey}
+                      >
+                        Regenerate
+                      </Button>
+                    </div>
+                  </div>
+                  <p className="input-help-text">All agents share this API key for authentication</p>
+                </div>
+              </div>
+            )}
+
+            {/* Agent: Create New Preset */}
+            <div className="extension-card">
+              <h3 className="server-management-title">Create New Agent Preset</h3>
+              
+              <div className="server-management-section">
+                <label className="input-label">Preset Name</label>
+                <input
+                  className="mcp-input"
+                  placeholder="e.g., smart_home_assistant"
+                  value={newPresetName}
+                  onChange={e => setNewPresetName(e.target.value)}
+                />
+              </div>
+
+              <div className="server-management-section">
+                <label className="input-label">Base Agent</label>
+                <select 
+                  className="mcp-input"
+                  value={newPresetBase}
+                  onChange={e => setNewPresetBase(e.target.value)}
+                >
+                  {builtInAgents.map(ba => (
+                    <option key={ba} value={ba}>{ba}</option>
+                  ))}
+                </select>
+                <p className="input-help-text">Select the underlying agent implementation</p>
+              </div>
+
+              <Button onClick={createAgentPreset} disabled={creatingPreset}>
+                {creatingPreset ? 'Creating...' : 'Create Preset'}
+              </Button>
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Remote MCP Servers management (provider-level). Active server selection above applies to toggles below in Tools section. */}
-
-      {/* Add Remote MCP Server */}
+      {/* Add Remote MCP Server - shared */}
       <div className="extension-card mcp-section-card">
         <h3 className="server-management-title">Add Remote MCP Server</h3>
         <div className="server-management-section">
@@ -687,12 +1049,12 @@ function MCPToolManager() {
         </div>
       </div>
 
-      {/* Remote MCP Servers */}
+      {/* Remote MCP Servers - Shared between both modes */}
       <div className="mcp-section">
         <div className="section-header">
           <h2 className="section-title">
             Remote MCP Servers ({remoteServers.length})
-            {activeServer && remoteServers.length > 0 && (
+            {(mode === 'mcp' ? activeServer : activePreset) && remoteServers.length > 0 && (
               <span className="section-tool-count">
                 {' • '}
                 <span className="stat-active">{getRemoteTotalCounts().active}</span>
@@ -702,7 +1064,7 @@ function MCPToolManager() {
               </span>
             )}
           </h2>
-          {remoteServers.length > 0 && activeServer && (
+          {remoteServers.length > 0 && (mode === 'mcp' ? activeServer : activePreset) && (
             <div className="bulk-actions-buttons">
               <Button 
                 variant="secondary" 
@@ -725,7 +1087,7 @@ function MCPToolManager() {
           <div className="empty-state">
             <div className="empty-state-icon">🌐</div>
             <h3>No remote MCP servers configured</h3>
-            <p>Add a Smithery MCP server URL above to get started</p>
+            <p>{mode === 'mcp' ? 'Add a Smithery MCP server URL above to get started' : 'Switch to MCP mode to add remote MCP servers'}</p>
           </div>
         ) : (
           <div className="cards-list">
@@ -745,7 +1107,7 @@ function MCPToolManager() {
                         <div className="stat">
                           <span className="stat-icon">🛠️</span>
                           <span>
-                            {activeServer ? (
+                            {(mode === 'mcp' ? activeServer : activePreset) ? (
                               <>
                                 <span className="stat-active">{getRemoteServerActiveCount(server)}</span>
                                 <span className="stat-separator"> / </span>
@@ -771,7 +1133,7 @@ function MCPToolManager() {
                 </div>
 
                 <div className="extension-card-actions">
-                  {activeServer && (
+                  {(mode === 'mcp' ? activeServer : activePreset) && (
                     <>
                       <Button 
                         variant="secondary" 
@@ -820,8 +1182,8 @@ function MCPToolManager() {
                                   <input
                                     type="checkbox"
                                     checked={enabledForActive}
-                                    onChange={() => toggleServerTool(toolName, enabledForActive)}
-                                    disabled={!activeServer}
+                                    onChange={() => mode === 'mcp' ? toggleServerTool(toolName, enabledForActive) : togglePresetTool(toolName, enabledForActive)}
+                                    disabled={mode === 'mcp' ? !activeServer : !activePreset}
                                   />
                                   <span>Enabled</span>
                                 </label>
@@ -853,7 +1215,7 @@ function MCPToolManager() {
           <div>
             <h2 className="section-title">
               Local Extension Tools ({extensions.length})
-              {activeServer && extensions.length > 0 && (
+              {(mode === 'mcp' ? activeServer : activePreset) && extensions.length > 0 && (
                 <span className="section-tool-count">
                   {' • '}
                   <span className="stat-active">{getExtensionTotalCounts().active}</span>
@@ -864,10 +1226,13 @@ function MCPToolManager() {
               )}
             </h2>
             <span className="section-subtitle">
-              {activeServer ? `Active MCP: ${activeServer}` : 'Select an MCP server above'}
+              {mode === 'mcp' 
+                ? (activeServer ? `Active MCP: ${activeServer}` : 'Select an MCP server above')
+                : (activePreset ? `Active Preset: ${activePreset}` : 'Select a preset above')
+              }
             </span>
           </div>
-          {extensions.length > 0 && activeServer && (
+          {extensions.length > 0 && (mode === 'mcp' ? activeServer : activePreset) && (
             <div className="bulk-actions-buttons">
               <Button 
                 variant="secondary" 
@@ -910,7 +1275,7 @@ function MCPToolManager() {
                         <div className="stat">
                           <span className="stat-icon">🛠️</span>
                           <span>
-                            {activeServer ? (
+                            {(mode === 'mcp' ? activeServer : activePreset) ? (
                               <>
                                 <span className="stat-active">{getExtensionActiveCount(ext)}</span>
                                 <span className="stat-separator"> / </span>
@@ -936,7 +1301,7 @@ function MCPToolManager() {
                 </div>
 
                 <div className="extension-card-actions">
-                  {activeServer && (
+                  {(mode === 'mcp' ? activeServer : activePreset) && (
                     <>
                       <Button 
                         variant="secondary" 
@@ -982,13 +1347,13 @@ function MCPToolManager() {
                                   )}
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                  <span style={{ fontSize: '0.9rem', color: '#a0a0a0' }}>MCP Enabled</span>
+                                  <span style={{ fontSize: '0.9rem', color: '#a0a0a0' }}>Enabled</span>
                                   <label className="toggle-switch">
                                     <input
                                       type="checkbox"
                                       checked={enabled}
-                                      onChange={() => toggleServerTool(tool.name, enabled)}
-                                      disabled={!activeServer}
+                                      onChange={() => mode === 'mcp' ? toggleServerTool(tool.name, enabled) : togglePresetTool(tool.name, enabled)}
+                                      disabled={mode === 'mcp' ? !activeServer : !activePreset}
                                     />
                                     <span className="toggle-slider"></span>
                                   </label>

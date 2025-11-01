@@ -72,6 +72,19 @@ class MCPServerUpdateRequest(BaseModel):
     tool_updates: Optional[Dict[str, Dict[str, Any]]] = None  # partial updates
 
 
+# Models for Agent Preset management
+class AgentPresetCreate(BaseModel):
+    name: str
+    base_agent: str
+
+
+class AgentPresetUpdate(BaseModel):
+    name: Optional[str] = None  # rename
+    base_agent: Optional[str] = None
+    enabled: Optional[bool] = None
+    tool_updates: Optional[Dict[str, Dict[str, Any]]] = None  # partial updates
+
+
 def _trigger_caddy_reload(reason: str) -> None:
     """Best-effort Caddy reload via supervisor helper."""
     if not supervisor_instance:
@@ -515,6 +528,228 @@ def mcp_server_tools(server_name: str):
         return {'tools': items}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to load tools: {exc}")
+
+
+# ---------------------
+# Agent Preset Management
+# ---------------------
+
+@app.get('/agents/built-in')
+def list_builtin_agents():
+    """List built-in agents discovered from core/agents/ directory"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    agents_dir = Path(supervisor_instance.repo_path) / "core" / "agents"
+    builtin_agents = []
+    
+    if agents_dir.exists():
+        for agent_path in agents_dir.iterdir():
+            if agent_path.is_dir() and (agent_path / "agent.py").exists():
+                builtin_agents.append(agent_path.name)
+    
+    return {"agents": sorted(builtin_agents)}
+
+
+@app.get('/agents/list')
+def list_agent_presets():
+    """List user-created agent presets"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    master_config = supervisor_instance.master_config
+    presets = master_config.get("agent_presets", {})
+    presets_list = []
+    
+    for name, config in presets.items():
+        tool_count = len([t for t, cfg in config.get("tool_config", {}).items() 
+                         if cfg.get("enabled", False)])
+        presets_list.append({
+            "name": name,
+            "base_agent": config.get("base_agent"),
+            "enabled": config.get("enabled", True),
+            "tool_count": tool_count
+        })
+    
+    return {"agents": presets_list}
+
+
+@app.get('/agents/{preset_name}/tools')
+def get_preset_tools(preset_name: str):
+    """Get all available tools with enabled status for this agent preset"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    master_config = supervisor_instance.master_config
+    preset_config = master_config.get("agent_presets", {}).get(preset_name)
+    
+    if not preset_config:
+        raise HTTPException(status_code=404, detail="Agent preset not found")
+    
+    try:
+        from core.utils.tool_discovery import get_all_tools
+        all_tools = get_all_tools()
+        tool_config = preset_config.get("tool_config", {})
+        
+        tools_response = []
+        
+        # Add local extension tools
+        for ext in all_tools.get("extensions", []):
+            for tool in ext.get("tools", []):
+                tools_response.append({
+                    "name": tool["name"],
+                    "enabled": tool_config.get(tool["name"], {}).get("enabled", False),
+                    "source": "extension",
+                    "extension_name": ext["name"],
+                    "docstring": tool.get("docstring", ""),
+                    "passthrough": tool.get("passthrough", False)
+                })
+        
+        # Add remote MCP tools
+        for server in all_tools.get("remote_mcp_servers", []):
+            for tool_name, tool_info in server.get("tools", {}).items():
+                tools_response.append({
+                    "name": tool_name,
+                    "enabled": tool_config.get(tool_name, {}).get("enabled", False),
+                    "source": "remote_mcp",
+                    "server_id": server["server_id"],
+                    "docstring": tool_info.get("docstring", ""),
+                    "input_schema": tool_info.get("input_schema")
+                })
+        
+        return {"tools": tools_response}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to load tools: {exc}")
+
+
+@app.post('/agents/create')
+def create_agent_preset(body: AgentPresetCreate):
+    """Create a new agent preset"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    master_config = supervisor_instance.master_config
+    
+    # Validate base agent exists (dynamic discovery)
+    agents_dir = Path(supervisor_instance.repo_path) / "core" / "agents"
+    builtin_agents = [d.name for d in agents_dir.iterdir() 
+                     if d.is_dir() and (d / "agent.py").exists()]
+    
+    if body.base_agent not in builtin_agents:
+        raise HTTPException(status_code=400, 
+                          detail=f"Invalid base agent. Available: {', '.join(builtin_agents)}")
+    
+    # Check name doesn't conflict
+    if body.name in master_config.get("agent_presets", {}):
+        raise HTTPException(status_code=400, detail="Preset name already exists")
+    if body.name in builtin_agents:
+        raise HTTPException(status_code=400, detail="Name conflicts with built-in agent")
+    
+    # Create preset
+    if "agent_presets" not in master_config:
+        master_config["agent_presets"] = {}
+    
+    master_config["agent_presets"][body.name] = {
+        "name": body.name,
+        "base_agent": body.base_agent,
+        "enabled": True,
+        "tool_config": {}
+    }
+    
+    supervisor_instance.save_master_config()
+    return {"message": "Preset created", "preset": master_config["agent_presets"][body.name]}
+
+
+@app.patch('/agents/{preset_name}')
+def update_agent_preset(preset_name: str, body: AgentPresetUpdate):
+    """Update agent preset configuration"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    master_config = supervisor_instance.master_config
+    
+    if preset_name not in master_config.get("agent_presets", {}):
+        raise HTTPException(status_code=404, detail="Preset not found")
+    
+    preset_config = master_config["agent_presets"][preset_name]
+    
+    # Handle rename
+    if body.name and body.name != preset_name:
+        # Check for conflicts
+        if body.name in master_config.get("agent_presets", {}):
+            raise HTTPException(status_code=400, detail="Target name already exists")
+        
+        # Validate against built-in agents
+        agents_dir = Path(supervisor_instance.repo_path) / "core" / "agents"
+        builtin_agents = [d.name for d in agents_dir.iterdir() 
+                         if d.is_dir() and (d / "agent.py").exists()]
+        if body.name in builtin_agents:
+            raise HTTPException(status_code=400, detail="Name conflicts with built-in agent")
+        
+        master_config["agent_presets"][body.name] = master_config["agent_presets"].pop(preset_name)
+        preset_config = master_config["agent_presets"][body.name]
+        preset_config["name"] = body.name
+        preset_name = body.name
+    
+    # Update base agent
+    if body.base_agent:
+        preset_config["base_agent"] = body.base_agent
+    
+    # Update enabled status
+    if body.enabled is not None:
+        preset_config["enabled"] = body.enabled
+    
+    # Update tool config (partial)
+    if body.tool_updates:
+        if "tool_config" not in preset_config:
+            preset_config["tool_config"] = {}
+        for tool_name, tool_settings in body.tool_updates.items():
+            if tool_name not in preset_config["tool_config"]:
+                preset_config["tool_config"][tool_name] = {}
+            preset_config["tool_config"][tool_name].update(tool_settings)
+    
+    supervisor_instance.save_master_config()
+    return {"message": "Preset updated"}
+
+
+@app.delete('/agents/{preset_name}')
+def delete_agent_preset(preset_name: str):
+    """Delete an agent preset"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    master_config = supervisor_instance.master_config
+    
+    if preset_name not in master_config.get("agent_presets", {}):
+        raise HTTPException(status_code=404, detail="Preset not found")
+    
+    del master_config["agent_presets"][preset_name]
+    supervisor_instance.save_master_config()
+    
+    return {"message": "Preset deleted"}
+
+
+@app.get('/agents/api-key')
+def get_agent_api_key():
+    """Get the shared AGENT_API_KEY"""
+    api_key = os.getenv("AGENT_API_KEY", "")
+    return {"api_key": api_key}
+
+
+@app.post('/agents/regenerate-key')
+def regenerate_agent_api_key():
+    """Regenerate the shared AGENT_API_KEY"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+    
+    import secrets
+    new_key = f"sk-luna-{secrets.token_urlsafe(32)}"
+    
+    # Update .env file using supervisor's key management
+    env_path = Path(supervisor_instance.repo_path) / ".env"
+    supervisor_instance._set_env_var("AGENT_API_KEY", new_key)
+    
+    return {"message": "API key regenerated", "api_key": new_key}
 
 
 @app.patch('/config/master/extensions/{name}')
