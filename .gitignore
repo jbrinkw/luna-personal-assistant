@@ -146,3 +146,6 @@ caddy_auth.txt
 install_config.json
 nocaddy_auth.txt
 .luna_lock
+
+# MkDocs build output
+site/
