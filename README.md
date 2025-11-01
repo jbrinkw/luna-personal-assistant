@@ -68,7 +68,7 @@ Think of it as **mission control for your personal AI ecosystem**—install tool
    - Log in with GitHub
    - Start installing extensions and apps!
 
-📖 **Full installation guide**: [Installation Documentation](https://jbrinkw.github.io/luna-personal-assistant/installation/)
+📖 **Full installation guide**: [Installation Documentation](https://docs.lunahub.dev)
 
 ## What Can You Build?
 
