@@ -36,18 +36,24 @@ ALLOWED_GITHUB_USERNAME = os.getenv("ALLOWED_GITHUB_USERNAME")
 PUBLIC_DOMAIN = os.getenv("PUBLIC_DOMAIN", "localhost:5173")
 JWT_SECRET = os.getenv("JWT_SECRET", secrets.token_urlsafe(32))
 SESSION_DURATION_HOURS = int(os.getenv("SESSION_DURATION_HOURS", "24"))
+DEMO_MODE = os.getenv("DEMO_MODE", "").lower() in ("true", "1", "yes")
 
 # Validate configuration
-if not GITHUB_CLIENT_ID or not GITHUB_CLIENT_SECRET:
+if DEMO_MODE:
+    print("[Auth Service] ⚠️  DEMO MODE ENABLED - Authentication is BYPASSED")
+    print("[Auth Service] This should ONLY be used for demonstrations and testing")
+    print("[Auth Service] Set DEMO_MODE=false or remove it for production use")
+elif not GITHUB_CLIENT_ID or not GITHUB_CLIENT_SECRET:
     print("[Auth Service] WARNING: GitHub OAuth not configured")
     print("[Auth Service] Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET in .env")
     print("[Auth Service] Auth service will start but OAuth will not work")
 
-if not ALLOWED_GITHUB_USERNAME:
-    print("[Auth Service] WARNING: ALLOWED_GITHUB_USERNAME not set")
-    print("[Auth Service] Any GitHub user will be able to log in")
-else:
-    print(f"[Auth Service] Access restricted to GitHub user: {ALLOWED_GITHUB_USERNAME}")
+if not DEMO_MODE:
+    if not ALLOWED_GITHUB_USERNAME:
+        print("[Auth Service] WARNING: ALLOWED_GITHUB_USERNAME not set")
+        print("[Auth Service] Any GitHub user will be able to log in")
+    else:
+        print(f"[Auth Service] Access restricted to GitHub user: {ALLOWED_GITHUB_USERNAME}")
 
 # ---- FastAPI App ----
 app = FastAPI(title="Luna Auth Service")
@@ -99,12 +105,26 @@ def validate_jwt_token(token: str) -> Optional[Dict[str, Any]]:
 @app.get("/auth/login")
 async def login(request: Request):
     """Initiate GitHub OAuth flow"""
+    # Demo mode: skip OAuth and set demo user directly
+    if DEMO_MODE:
+        jwt_token = create_jwt_token(0, "demo_user")
+        response = RedirectResponse("/")
+        response.set_cookie(
+            key="session",
+            value=jwt_token,
+            httponly=True,
+            secure=False,  # Allow HTTP in demo mode
+            samesite="lax",
+            max_age=SESSION_DURATION_HOURS * 3600
+        )
+        return response
+
     if not GITHUB_CLIENT_ID:
         raise HTTPException(status_code=500, detail="GitHub OAuth not configured")
-    
+
     # Generate state token for CSRF protection
     state = secrets.token_urlsafe(32)
-    
+
     # Build GitHub OAuth URL
     params = {
         "client_id": GITHUB_CLIENT_ID,
@@ -113,7 +133,7 @@ async def login(request: Request):
         "state": state
     }
     github_url = f"https://github.com/login/oauth/authorize?{urllib.parse.urlencode(params)}"
-    
+
     # Store state in session for validation
     response = RedirectResponse(github_url)
     response.set_cookie(
@@ -124,7 +144,7 @@ async def login(request: Request):
         samesite="lax",
         max_age=600  # 10 minutes
     )
-    
+
     return response
 
 @app.get("/auth/callback")
@@ -216,13 +236,22 @@ async def logout(session: Optional[str] = Cookie(None)):
 @app.get("/auth/me")
 async def get_current_user(session: Optional[str] = Cookie(None)):
     """Get current user info from JWT"""
+    # Demo mode: always return authenticated demo user
+    if DEMO_MODE:
+        return {
+            "github_id": 0,
+            "username": "demo_user",
+            "authenticated": True,
+            "demo_mode": True
+        }
+
     if not session:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    
+
     user = validate_jwt_token(session)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-    
+
     return {
         "github_id": user["github_id"],
         "username": user["github_username"],
@@ -237,13 +266,16 @@ async def health():
 # ---- Startup ----
 if __name__ == "__main__":
     import uvicorn
-    
+
     port = int(os.getenv("AUTH_SERVICE_PORT", "8765"))
-    
+
     print(f"[Auth Service] Starting on port {port}")
-    print(f"[Auth Service] GitHub OAuth: {'configured' if GITHUB_CLIENT_ID else 'NOT configured'}")
-    print(f"[Auth Service] Authentication: Stateless JWT (no database)")
+    if DEMO_MODE:
+        print(f"[Auth Service] ⚠️  DEMO MODE: Authentication BYPASSED")
+    else:
+        print(f"[Auth Service] GitHub OAuth: {'configured' if GITHUB_CLIENT_ID else 'NOT configured'}")
+        print(f"[Auth Service] Authentication: Stateless JWT (no database)")
     print(f"[Auth Service] Session duration: {SESSION_DURATION_HOURS} hours")
-    
+
     uvicorn.run(app, host="127.0.0.1", port=port)
 

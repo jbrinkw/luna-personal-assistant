@@ -257,6 +257,16 @@ Managed exclusively through supervisor endpoints:
 - `GET /api/supervisor/keys/required` → collect `required_secrets` from extension configs.
 Calls rewrite `.env` and reload it in memory via `dotenv.load_dotenv(..., override=True)`.
 
+### 6.4 Demo Mode
+For demonstrations and testing, Luna supports bypassing GitHub OAuth authentication:
+- Set `DEMO_MODE=true` (or `1` or `yes`) in `.env` to enable demo mode.
+- When enabled, the auth service (`core/utils/auth_service.py`):
+  - Returns a mock authenticated user (`demo_user`) from `/auth/me` without checking JWT tokens.
+  - Skips the GitHub OAuth flow in `/auth/login`, setting a demo JWT directly and redirecting to `/`.
+  - Logs a prominent warning on startup: `⚠️  DEMO MODE ENABLED - Authentication is BYPASSED`.
+- The Hub UI's `AuthContext` receives `demo_mode: true` in the user object when demo mode is active.
+- **Security Warning**: Demo mode should NEVER be used in production environments as it disables all authentication. Only use for local development, testing, or controlled demonstrations.
+
 ---
 
 7. Extensions
@@ -668,6 +678,6 @@ Discovered Agents card displays:
 6. **Extension Services**: Implemented via `service_config.json` + `start.sh`; the previously documented in-extension `service.json` command structure is not used.
 7. **Logging Paths**: Core logs live in `logs/`; `.luna/` stores generated Caddy and external-service metadata.
 8. **Hub UI APIs**: Now call supervisor endpoints directly; `/api/extensions/...` (old spec) does not exist.
-9. **DEMO_MODE**: Mentioned in legacy docs but not implemented in current code paths.
+9. **DEMO_MODE**: Set `DEMO_MODE=true` in `.env` to bypass GitHub OAuth authentication. When enabled, all users are authenticated as `demo_user` without requiring GitHub credentials. This is useful for demonstrations, testing, and development but should NEVER be used in production. The auth service logs a warning when demo mode is active.
 
 Keep this document synchronized with future changes to supervisor startup order, proxy generation, queue semantics, or API contracts to prevent the Hub UI, deployment scripts, and external integrations from drifting.
