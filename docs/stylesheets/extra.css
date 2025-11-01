@@ -1,0 +1,232 @@
+/* Luna Hub Documentation - Custom Styling to match Luna Hub UI */
+
+:root {
+  /* Luna Hub color palette */
+  --luna-dark-bg: #1a1d29;
+  --luna-darker-bg: #13151f;
+  --luna-card-bg: #1f2332;
+  --luna-border: #2a2d3e;
+  --luna-purple: #6366f1;
+  --luna-purple-light: #818cf8;
+  --luna-purple-dark: #4f46e5;
+  --luna-text: #e5e7eb;
+  --luna-text-muted: #9ca3af;
+}
+
+/* Dark mode overrides */
+[data-md-color-scheme="slate"] {
+  /* Background colors */
+  --md-default-bg-color: var(--luna-dark-bg);
+  --md-default-bg-color--light: var(--luna-darker-bg);
+  --md-default-bg-color--lighter: var(--luna-card-bg);
+  --md-default-bg-color--lightest: var(--luna-border);
+
+  /* Code block backgrounds */
+  --md-code-bg-color: var(--luna-darker-bg);
+  --md-code-hl-color: rgba(99, 102, 241, 0.1);
+
+  /* Primary colors (purple/indigo) */
+  --md-primary-fg-color: var(--luna-purple);
+  --md-primary-fg-color--light: var(--luna-purple-light);
+  --md-primary-fg-color--dark: var(--luna-purple-dark);
+
+  /* Accent colors */
+  --md-accent-fg-color: var(--luna-purple-light);
+  --md-accent-fg-color--transparent: rgba(99, 102, 241, 0.1);
+
+  /* Text colors */
+  --md-default-fg-color: var(--luna-text);
+  --md-default-fg-color--light: var(--luna-text-muted);
+
+  /* Navigation colors */
+  --md-nav-bg-color: var(--luna-darker-bg);
+
+  /* Footer */
+  --md-footer-bg-color: var(--luna-darker-bg);
+  --md-footer-bg-color--dark: var(--luna-dark-bg);
+}
+
+/* Navigation sidebar styling */
+.md-sidebar--primary {
+  background-color: var(--luna-darker-bg);
+  border-right: 1px solid var(--luna-border);
+}
+
+/* Navigation items */
+.md-nav__link {
+  color: var(--luna-text-muted);
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.md-nav__link:hover {
+  color: var(--luna-purple-light);
+  background-color: rgba(99, 102, 241, 0.05);
+}
+
+.md-nav__link--active {
+  color: var(--luna-purple-light);
+  font-weight: 500;
+}
+
+/* Headers in navigation */
+.md-nav__title {
+  background-color: var(--luna-darker-bg);
+  color: var(--luna-text);
+  font-weight: 600;
+}
+
+/* Search bar */
+.md-search__input {
+  background-color: var(--luna-card-bg);
+  border: 1px solid var(--luna-border);
+  color: var(--luna-text);
+}
+
+.md-search__input::placeholder {
+  color: var(--luna-text-muted);
+}
+
+/* Buttons and links */
+.md-button {
+  background-color: var(--luna-purple);
+  color: white;
+  border-radius: 6px;
+  transition: background-color 0.2s ease;
+}
+
+.md-button:hover {
+  background-color: var(--luna-purple-dark);
+}
+
+.md-button--primary {
+  background-color: var(--luna-purple);
+  border-color: var(--luna-purple);
+}
+
+/* Admonitions (note boxes) */
+.md-typeset .admonition {
+  border-left: 4px solid var(--luna-purple);
+  background-color: rgba(99, 102, 241, 0.05);
+  border-radius: 6px;
+}
+
+.md-typeset .admonition-title {
+  background-color: rgba(99, 102, 241, 0.1);
+  border-left: 4px solid var(--luna-purple);
+  font-weight: 600;
+}
+
+/* Code blocks */
+.md-typeset code {
+  background-color: var(--luna-darker-bg);
+  border: 1px solid var(--luna-border);
+  color: var(--luna-purple-light);
+  border-radius: 4px;
+}
+
+.md-typeset pre > code {
+  background-color: var(--luna-darker-bg);
+  border: 1px solid var(--luna-border);
+}
+
+/* Tables */
+.md-typeset table:not([class]) {
+  border: 1px solid var(--luna-border);
+  background-color: var(--luna-card-bg);
+}
+
+.md-typeset table:not([class]) th {
+  background-color: var(--luna-darker-bg);
+  color: var(--luna-text);
+  border-bottom: 2px solid var(--luna-purple);
+}
+
+.md-typeset table:not([class]) tr:hover {
+  background-color: rgba(99, 102, 241, 0.05);
+}
+
+/* Header */
+.md-header {
+  background-color: var(--luna-darker-bg);
+  border-bottom: 1px solid var(--luna-border);
+}
+
+/* Footer */
+.md-footer {
+  background-color: var(--luna-darker-bg);
+  border-top: 1px solid var(--luna-border);
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--luna-darker-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--luna-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--luna-purple);
+}
+
+/* Content area */
+.md-content {
+  background-color: var(--luna-dark-bg);
+}
+
+/* Card-like sections */
+.md-typeset h2 {
+  color: var(--luna-text);
+  border-bottom: 2px solid var(--luna-purple);
+  padding-bottom: 0.5rem;
+}
+
+.md-typeset h3 {
+  color: var(--luna-text);
+}
+
+/* Links */
+.md-typeset a {
+  color: var(--luna-purple-light);
+}
+
+.md-typeset a:hover {
+  color: var(--luna-purple);
+  text-decoration: underline;
+}
+
+/* Blockquotes */
+.md-typeset blockquote {
+  border-left: 4px solid var(--luna-purple);
+  background-color: rgba(99, 102, 241, 0.05);
+  color: var(--luna-text);
+}
+
+/* Back to top button */
+.md-top {
+  background-color: var(--luna-purple);
+  color: white;
+}
+
+.md-top:hover {
+  background-color: var(--luna-purple-dark);
+}
+
+/* Navigation expand indicators */
+.md-nav__icon {
+  color: var(--luna-text-muted);
+}
+
+/* Tags */
+.md-tag {
+  background-color: var(--luna-purple);
+  color: white;
+  border-radius: 4px;
+}
