@@ -7,27 +7,29 @@ repo_name: jbrinkw/luna-personal-assistant
 theme:
   name: material
   palette:
-    # Light mode
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      primary: indigo
-      accent: indigo
-      toggle:
-        icon: material/brightness-7
-        name: Switch to dark mode
-    # Dark mode
+    # Dark mode (default)
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: indigo
+      primary: deep purple
       accent: indigo
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
+    # Light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
   features:
-    - navigation.tabs
     - navigation.sections
+    - navigation.expand
     - navigation.top
     - navigation.tracking
+    - navigation.indexes
+    - toc.integrate
     - search.suggest
     - search.highlight
     - content.tabs.link
@@ -36,6 +38,11 @@ theme:
   font:
     text: Roboto
     code: Roboto Mono
+  icon:
+    repo: fontawesome/brands/github
+
+extra_css:
+  - stylesheets/extra.css
 
 markdown_extensions:
   - pymdownx.highlight:
@@ -61,13 +68,13 @@ nav:
     - Featured Extensions: getting-started/featured-extensions.md
   - User Guide:
     - Extensions: user-guide/extensions.md
-    - External Services: user-guide/external-services.md
+    - Apps/Services: user-guide/external-services.md
     - Agent API: user-guide/agent-api.md
     - MCP Servers: user-guide/mcp-servers.md
   - Developer Guide:
     - Creating Extensions: developer-guide/creating-extensions.md
     - Tool Development: developer-guide/tool-development.md
-    - External Service Integration: developer-guide/external-services.md
+    - App/Service Integration: developer-guide/external-services.md
   - Reference:
     - Architecture: reference/architecture.md
     - API Reference: reference/api.md
