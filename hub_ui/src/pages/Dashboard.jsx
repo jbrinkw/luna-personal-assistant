@@ -21,6 +21,8 @@ export default function Dashboard() {
   const [agentApiStatus, setAgentApiStatus] = useState('checking');
   const [mcpStatus, setMcpStatus] = useState('checking');
   const [agents, setAgents] = useState([]);
+  const [builtInAgents, setBuiltInAgents] = useState([]);
+  const [agentPresets, setAgentPresets] = useState([]);
   const [externalServices, setExternalServices] = useState({});
   const [remoteMcpServers, setRemoteMcpServers] = useState([]);
   const [localMcpServers, setLocalMcpServers] = useState([]);
@@ -28,6 +30,8 @@ export default function Dashboard() {
   useEffect(() => {
     checkServices();
     loadAgents();
+    loadBuiltInAgents();
+    loadAgentPresets();
     loadExternalServices();
     loadRemoteMcpServers();
     loadLocalMcpServers();
@@ -65,6 +69,24 @@ export default function Dashboard() {
       setAgents((res.data || []).map(m => m.id));
     } catch (e) {
       console.error('Failed to load agents:', e);
+    }
+  };
+
+  const loadBuiltInAgents = async () => {
+    try {
+      const data = await fetch('/api/supervisor/agents/built-in').then(r => r.json());
+      setBuiltInAgents(data.agents || []);
+    } catch (e) {
+      console.error('Failed to load built-in agents:', e);
+    }
+  };
+
+  const loadAgentPresets = async () => {
+    try {
+      const data = await fetch('/api/supervisor/agents/list').then(r => r.json());
+      setAgentPresets(data.agents || []);
+    } catch (e) {
+      console.error('Failed to load agent presets:', e);
     }
   };
 
@@ -220,23 +242,50 @@ export default function Dashboard() {
           <Card>
             <CardTitle>DISCOVERED AGENTS</CardTitle>
             <CardContent>
-              {agents.length === 0 ? (
-                <p className="text-muted">No agents discovered</p>
-              ) : (
-                <>
-                  <p className="dashboard-section-note">Available Agents:</p>
+              {/* Built-in Agents Section */}
+              <div style={{ marginBottom: '1.5rem' }}>
+                <p className="dashboard-section-note" style={{ fontWeight: '600', marginBottom: '0.5rem' }}>
+                  Built-in Agents
+                </p>
+                {builtInAgents.length === 0 ? (
+                  <p className="text-muted text-sm">No built-in agents discovered</p>
+                ) : (
                   <ul className="list-unstyled">
-                    {agents.map(agent => (
-                      <li key={agent} className="list-item">
+                    {builtInAgents.map(agent => (
+                      <li key={agent} className="list-item" style={{ paddingLeft: '0.5rem' }}>
                         • {agent}
                       </li>
                     ))}
                   </ul>
-                  <p className="text-muted text-sm mt-sm">
-                    Total: {agents.length} Active
-                  </p>
-                </>
-              )}
+                )}
+              </div>
+
+              {/* Agent Presets Section */}
+              <div>
+                <p className="dashboard-section-note" style={{ fontWeight: '600', marginBottom: '0.5rem' }}>
+                  Agent Presets
+                </p>
+                {agentPresets.length === 0 ? (
+                  <p className="text-muted text-sm">No presets created yet</p>
+                ) : (
+                  <ul className="list-unstyled">
+                    {agentPresets.map(preset => (
+                      <li key={preset.name} className="list-item" style={{ paddingLeft: '0.5rem', marginBottom: '0.4rem' }}>
+                        <div>
+                          <strong>• {preset.name}</strong>
+                          <div style={{ fontSize: '0.85rem', color: '#888', paddingLeft: '0.8rem' }}>
+                            base: {preset.base_agent} • {preset.tool_count} tools
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <p className="text-muted text-sm mt-sm" style={{ borderTop: '1px solid #333', paddingTop: '0.75rem', marginTop: '1rem' }}>
+                Total: {builtInAgents.length + agentPresets.length} Available
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -287,7 +336,7 @@ export default function Dashboard() {
                     <div className="dashboard-row-tight mb-xs">
                       <span className={totalToolsIconClass}>✓</span>
                       <span className="text-strong fw-semibold">
-                        Extensions {totalToolCount > 0 && `(${totalToolCount} tools)`}
+                        Extensions {totalToolCount > 0 && ` • ${totalToolCount} tools`}
                       </span>
                     </div>
                     <div className="dashboard-indented-lg">
@@ -335,7 +384,13 @@ export default function Dashboard() {
                   <div>
                     <div className="dashboard-row-tight mb-xs">
                       <span className="icon-success">✓</span>
-                      <span className="text-strong fw-semibold">Remote MCP Servers</span>
+                      <span className="text-strong fw-semibold">
+                        Remote MCP Servers
+                        {(() => {
+                          const totalTools = remoteMcpServers.reduce((sum, server) => sum + (server.tool_count || 0), 0);
+                          return totalTools > 0 ? ` • ${totalTools} tools` : '';
+                        })()}
+                      </span>
                     </div>
                     <div className="dashboard-indented">
                       {remoteMcpServers.map(server => (

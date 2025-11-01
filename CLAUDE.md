@@ -1,6 +1,6 @@
 Luna Project Specification
 ==========================
-Updated: 2025-10-30
+Updated: 2025-10-31
 
 ---
 
@@ -89,7 +89,7 @@ All long-lived processes are started within the repository root (not `/opt/luna/
 
 ### 4.2 Supervisor Startup (Phases)
 1. **Update Queue Check**: if `core/update_queue.json` exists, copy `core/scripts/apply_updates.py` to `/tmp`, create `.luna_updating`, spawn the script, and exit. The bootstrap loop waits for the flag to disappear before relaunching.
-2. **Load/Create master_config**: ensures `core/master_config.json` exists, populating defaults (`deployment_mode`, `public_domain`, `extensions`, `tool_configs`, `port_assignments`, `external_services`). Environment overrides (`DEPLOYMENT_MODE`, `PUBLIC_DOMAIN`) are applied after loading.
+2. **Load/Create master_config**: ensures `core/master_config.json` exists, populating defaults (`deployment_mode`, `public_domain`, `extensions`, `tool_configs`, `port_assignments`, `mcp_servers`, `agent_presets`, `external_services`). Environment overrides (`DEPLOYMENT_MODE`, `PUBLIC_DOMAIN`) are applied after loading. Migration logic initializes `agent_presets: {}` if missing in existing configs.
 3. **Config Sync**: invokes `config_sync.sync_all(repo_path)` to discover new extensions on disk, add them to `master_config`, and sync config/tool settings back to each extension.
 4. **State Reset**: rewrites `supervisor/state.json` to `{"services": {}}`.
 5. **Start Core Services** (in order):
@@ -210,6 +210,17 @@ Holds the authoritative view of extensions, tool configs, port assignments, and 
       "api_key": "...",  // supervisor also writes this to .env as MCP_SERVER_SMARTHOME_API_KEY
       "tool_config": {
         "home_assistant": { "enabled_in_mcp": true }
+      }
+    }
+  },
+  "agent_presets": {
+    "smart_home_assistant": {
+      "base_agent": "passthrough_agent",
+      "enabled": true,
+      "tool_config": {
+        "home_assistant_get_state": { "enabled": true },
+        "home_assistant_call_service": { "enabled": true },
+        "web_search_exa": { "enabled": false }
       }
     }
   },
@@ -440,6 +451,145 @@ Remote MCP servers stored in `master_config.json` under `remote_mcp_servers`:
 - Seamless integration with local extension tools
 - Tool calls delegated to remote MCP servers via session manager
 
+### 9.5 Agent Presets
+
+**Overview:**
+Agent presets allow users to create custom agent configurations based on built-in agents with filtered tool access. This enables specialized agents (e.g., `smart_home_assistant`, `research_agent`) that have access only to relevant tools while maintaining the same runtime behavior as their base agent.
+
+**Built-in vs Preset Agents:**
+- **Built-in agents**: Core agent implementations in `core/agents/` (e.g., `passthrough_agent`, `simple_agent`) that have access to all tools
+- **Preset agents**: User-created configurations stored in `master_config.json` that reference a built-in agent and define a custom tool subset
+
+**Architecture:**
+
+1. **Master Config Schema (`master_config.json`)**
+```json
+{
+  "agent_presets": {
+    "smart_home_assistant": {
+      "base_agent": "passthrough_agent",
+      "enabled": true,
+      "tool_config": {
+        "home_assistant_get_state": {
+          "enabled": true
+        },
+        "home_assistant_call_service": {
+          "enabled": true
+        },
+        "web_search_exa": {
+          "enabled": false
+        }
+      }
+    }
+  }
+}
+```
+
+Each preset includes:
+- `base_agent`: Name of the built-in agent to use (e.g., `passthrough_agent`)
+- `enabled`: Whether the preset is active
+- `tool_config`: Map of tool names to `{enabled: boolean}` settings
+
+2. **Supervisor API Endpoints (`supervisor/api.py`)**
+
+Agent preset management:
+- `GET /api/supervisor/agents/built-in` - List discovered built-in agents from `core/agents/`
+- `GET /api/supervisor/agents/presets` - List user-created presets from `master_config`
+- `GET /api/supervisor/agents/presets/{preset_name}/tools` - Get all available tools with enabled status for preset
+- `POST /api/supervisor/agents/presets` - Create new preset (validates name, base agent, initializes tool config)
+- `PATCH /api/supervisor/agents/presets/{preset_name}` - Update preset (name, base agent, or tool config)
+- `DELETE /api/supervisor/agents/presets/{preset_name}` - Delete preset
+
+Shared API key management:
+- `GET /api/supervisor/agents/api-key` - Retrieve current `AGENT_API_KEY`
+- `POST /api/supervisor/agents/api-key/regenerate` - Generate new API key and update `.env`
+
+All preset operations update `master_config.json` and require a Luna restart to take effect.
+
+3. **Agent API Integration (`core/utils/agent_api.py`)**
+
+Preset loading and caching:
+- At startup, `_init_agents()` loads `agent_presets` from `master_config.json`
+- For each enabled preset:
+  - Registers preset name in `AGENTS` dict pointing to base agent module
+  - Caches enabled tool names in `_PRESET_TOOL_CACHE[preset_name]`
+  - Stores metadata in `_PRESET_METADATA[preset_name]` (base agent, tool count)
+- All available tools cached once in `_TOOL_CACHE` for efficient preset filtering
+
+Model listing (`/v1/models`):
+- Returns both built-in agents and presets
+- Preset models include additional fields:
+  - `is_preset`: true
+  - `base_agent`: Name of underlying agent
+  - `tool_count`: Number of enabled tools
+
+Tool filtering:
+- When `model` in chat completion matches a preset, `_PRESET_TOOL_CACHE[preset_name]` provides the allowed tool list
+- Built-in agents continue to have access to all tools
+- Tool filtering implementation pending agent-side integration (currently logged but not enforced at runtime)
+
+4. **Hub UI - Tool/MCP Manager (`hub_ui/src/pages/MCPToolManager.jsx`)**
+
+Unified layout with mode toggle:
+- **Mode Toggle**: Top-right buttons switch between `MCP` and `Agent Presets` modes
+- **Shared Structure**: Single layout with conditional content based on mode:
+  1. **Selector Pills** - MCP servers (mode=mcp) or Agent presets (mode=agent)
+  2. **Quick Actions** - Enable/disable all tools for active server/preset
+  3. **Management Grid** - 2-column layout:
+     - **Left**: Manage active item (rename, delete, API key display with eye button for presets)
+     - **Right**: Create new item (server name or preset name + base agent selector)
+  4. **Add Remote MCP Server** - Shared across both modes
+  5. **Remote MCP Tools** - Toggle tools from Smithery MCP servers
+  6. **Local Extension Tools** - Toggle tools from local extensions
+
+Mode-aware behavior:
+- Selector checks `activeServer` (MCP) or `activePreset` (agent)
+- Tool toggles call `toggleServerTool()` (MCP) or `togglePresetTool()` (agent)
+- Quick Actions label shows "Quick Actions for {server/preset}:"
+- Subtitle shows "Active MCP: X" or "Active Preset: X"
+
+State management:
+- `builtInAgents`: List of agents discovered from `core/agents/`
+- `agentPresets`: List of user presets with name, base_agent, tool_count
+- `activePreset`: Currently selected preset
+- `presetTools`: Tool configurations for active preset
+- `sharedApiKey`: Agent API key (hidden by default, toggle with eye button)
+
+API integration:
+- `loadBuiltInAgents()` - Fetch from `/api/supervisor/agents/built-in`
+- `loadAgentPresets()` - Fetch from `/api/supervisor/agents/presets`
+- `loadPresetTools(presetName)` - Fetch from `/api/supervisor/agents/presets/{name}/tools`
+- `createAgentPreset()` - POST to `/api/supervisor/agents/presets`
+- `updateAgentPreset(name, updates)` - PATCH to `/api/supervisor/agents/presets/{name}`
+- `deleteAgentPreset(name)` - DELETE to `/api/supervisor/agents/presets/{name}`
+- `togglePresetTool(toolName, currentState)` - Updates tool config and saves via PATCH
+
+5. **Hub UI - Dashboard (`hub_ui/src/pages/Dashboard.jsx`)**
+
+Discovered Agents card displays:
+- **Built-in Agents** section: Lists agent names
+- **Agent Presets** section: Lists each preset with:
+  - Preset name (bold)
+  - Base agent: `{base_agent}`
+  - Tool count: `{tool_count} tools`
+- Total count: Built-in + Presets
+
+**Workflow:**
+1. User navigates to Tool Manager (`/tools`)
+2. Toggle to "Agent Presets" mode
+3. Create new preset by selecting name and base agent
+4. Select preset from pills to activate it
+5. Toggle individual tools on/off for that preset
+6. Use Quick Actions to enable/disable all tools at once
+7. Copy/regenerate shared API key as needed
+8. Changes persist to `master_config.json` (require restart to take effect)
+9. Preset appears in `/v1/models` API response after restart
+10. OpenAI clients can request preset by name like any other model
+
+**Tool Access Filtering:**
+- Current implementation caches allowed tools but requires agent-side integration for runtime enforcement
+- Future enhancement will pass `allowed_tool_names` to agent's `initialize_runtime()` or modify `extension_discovery` to filter based on preset config
+
 ---
 
 10. Hub UI Experience
@@ -451,10 +601,11 @@ Remote MCP servers stored in `master_config.json` under `remote_mcp_servers`:
   - ZIP upload: `ExtensionsAPI.upload` posts to `/api/supervisor/extensions/upload`, returning a temporary filename stored in queue operations (`source: "upload:filename.zip"`).
   - Git install: user-entered strings converted to `github:` sources (`github:user/repo` or `github:user/repo:path/subdir`).
   - Enable/disable toggles update the queue by editing `master_config.extensions[<name>].enabled`.
-- Tool Manager (`/tools`) provides unified interface for:
-  - Adding remote Smithery MCP servers by URL
-  - Toggling remote MCP servers and individual tools on/off
-  - Toggling local extension tools' MCP exposure
+- Tool Manager (`/tools`) provides unified interface with MCP/Agent Presets mode toggle:
+  - **MCP Mode**: Manage local MCP servers, add remote Smithery MCP servers, toggle tools per server
+  - **Agent Presets Mode**: Create/manage agent presets based on built-in agents, filter tool access per preset
+  - Both modes share the same tool selection UI (remote MCP tools + local extension tools)
+  - Quick Actions for bulk enable/disable all tools for active server/preset
   - Viewing tool descriptions and schemas
 - Header keeps a persistent Update Manager control beside Restart; it always links to `/queue` and expands with a pending-change count when updates are queued. The Dashboard quick-actions row features Tool Manager (`/tools`) in place of the former Update Manager tile.
 - External Services pages call `/api/external-services/*` endpoints for install/start/stop and display UI links generated by Caddy.

@@ -190,6 +190,7 @@ class Supervisor:
                 "tool_configs": {},
                 "remote_mcp_servers": {},
                 "mcp_servers": {},
+                "agent_presets": {},
                 "port_assignments": {
                     "extensions": {},
                     "services": {}
@@ -254,6 +255,12 @@ class Supervisor:
                 self.save_master_config()
         except Exception as exc:
             self.log("WARNING", f"MCP server migration skipped: {exc}")
+        
+        # Migration: initialize agent_presets if not present
+        if "agent_presets" not in self.master_config:
+            self.log("INFO", "Initializing agent_presets section in master_config")
+            self.master_config["agent_presets"] = {}
+            self.save_master_config()
     
     def save_master_config(self):
         """Save master_config to disk"""
