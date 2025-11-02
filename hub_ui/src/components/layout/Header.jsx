@@ -27,6 +27,17 @@ export default function Header() {
         <Button
           size="sm"
           variant="secondary"
+          className="docs-button"
+          onClick={() => window.open('https://docs.lunahub.dev', '_blank')}
+          title="User guide and technical documentation at docs.lunahub.dev"
+        >
+          <span className="docs-icon" aria-hidden="true">📚</span>
+          <span className="docs-label">User Guide & Docs</span>
+        </Button>
+
+        <Button
+          size="sm"
+          variant="secondary"
           className={`update-manager-button${hasPendingChanges ? ' has-pending' : ''}`}
           onClick={() => navigate('/queue')}
           title="Open Update Manager"
@@ -39,27 +50,17 @@ export default function Header() {
             </span>
           )}
         </Button>
-        
+
         <div className="system-health">
           <StatusIndicator status={health} />
           <span className="health-text">
             {health === 'online' ? 'Healthy' : health === 'offline' ? 'Offline' : 'Checking...'}
           </span>
         </div>
-        
+
         {version && version !== 'unknown' && (
           <span className="version-badge">v{version}</span>
         )}
-
-        <a
-          href="https://docs.lunahub.dev"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="button button-sm button-secondary"
-          title="User guide and technical documentation"
-        >
-          📚 Docs
-        </a>
 
         <Button
           size="sm"

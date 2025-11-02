@@ -210,20 +210,51 @@
   background: linear-gradient(90deg, var(--luna-purple) 0%, var(--luna-purple-light) 100%);
   color: white;
   font-weight: 500;
-  padding: 0.6rem 0;
+  padding: 0.8rem 0;
   text-align: center;
 }
 
 .md-banner a {
   color: white;
   text-decoration: none;
-  display: inline-block;
-  transition: transform 0.2s ease, opacity 0.2s ease;
+  display: block;
+  transition: all 0.2s ease;
+  cursor: pointer;
 }
 
 .md-banner a:hover {
-  transform: scale(1.02);
-  opacity: 0.9;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.demo-link-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.demo-link-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.demo-link-url {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-weight: 600;
+}
+
+.demo-link-arrow {
+  font-size: 1.2em;
+  font-weight: bold;
+  margin-left: 0.25rem;
+  transition: transform 0.2s ease;
+}
+
+.md-banner a:hover .demo-link-arrow {
+  transform: translateX(4px);
 }
 
 .md-banner strong {
@@ -233,4 +264,16 @@
 /* Light mode announcement banner */
 [data-md-color-scheme="default"] .md-banner {
   background: linear-gradient(90deg, #673ab7 0%, #3f51b5 100%);
+}
+
+/* Mobile responsive */
+@media screen and (max-width: 768px) {
+  .demo-link-content {
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .demo-link-arrow {
+    margin-left: 0;
+  }
 }
