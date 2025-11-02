@@ -343,11 +343,15 @@ def _build_planner_messages(
     msgs: List[Any] = [SystemMessage(content=sys_text)]
     
     if chat_history or memory:
-        msgs.append(SystemMessage(content=(
+        context_msg = (
             "Conversation context to consider when planning.\n"
             f"Chat history:\n{chat_history or ''}\n\n"
             f"Memory:\n{memory or ''}"
-        )))
+        )
+        _dbg_print(f"[passthrough] Adding conversation context: chat_history={bool(chat_history)} memory={bool(memory)}")
+        msgs.append(SystemMessage(content=context_msg))
+    else:
+        _dbg_print("[passthrough] WARNING: No chat_history or memory provided!")
     
     if isinstance(review_items, list) and review_items:
         review_payload = []
@@ -422,17 +426,27 @@ async def run_agent(
     llm: Optional[str] = None
 ) -> AgentResult:
     """Run the passthrough agent.
-    
+
     Args:
         user_prompt: The user's prompt/query
         chat_history: Optional chat history context
         memory: Optional memory context (list of strings)
         tool_root: Optional custom tool discovery root
         llm: Optional LLM model override
-        
+
     Returns:
         AgentResult with final response and execution details
     """
+    # Debug logging at entry point
+    _dbg_print(f"[passthrough] run_agent called:")
+    _dbg_print(f"[passthrough]   user_prompt: {_truncate(user_prompt, 100)}")
+    _dbg_print(f"[passthrough]   chat_history: {bool(chat_history)} (len={len(chat_history) if chat_history else 0})")
+    _dbg_print(f"[passthrough]   memory: {bool(memory)} (len={len(memory) if memory else 0})")
+    if chat_history:
+        _dbg_print(f"[passthrough]   chat_history content: {_truncate(chat_history, 200)}")
+    if memory:
+        _dbg_print(f"[passthrough]   memory content: {_truncate(memory, 200)}")
+
     # Initialize tools if needed
     if not TOOL_RUNNERS or isinstance(tool_root, str):
         initialize_runtime(tool_root=tool_root)

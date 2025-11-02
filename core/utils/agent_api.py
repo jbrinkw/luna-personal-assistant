@@ -637,6 +637,29 @@ async def chat_completions(
     chat_history, user_prompt = _split_history_and_prompt(body.messages)
     memory = _extract_memory(body.messages, memory_header)
 
+    # Auto-fetch memories from database if not provided by client
+    if not memory:
+        try:
+            from core.utils.db import get_db
+            db = get_db()
+            rows = db.execute("SELECT id, content FROM memories ORDER BY id ASC")
+            if rows:
+                memory_lines = [f"{i+1}. {row['content']}" for i, row in enumerate(rows)]
+                memory = "\n".join(memory_lines)
+                print(f"[Agent API] Auto-fetched {len(rows)} memories from database", flush=True)
+        except Exception as e:
+            print(f"[Agent API] Failed to auto-fetch memories: {e}", flush=True)
+
+    # Debug logging
+    print(f"[Agent API] Model: {model_id} | Is Preset: {is_preset}", flush=True)
+    print(f"[Agent API] Extracted chat_history: {bool(chat_history)} (len={len(chat_history) if chat_history else 0})", flush=True)
+    print(f"[Agent API] Extracted memory: {bool(memory)} (len={len(memory) if memory else 0})", flush=True)
+    print(f"[Agent API] Memory header: {bool(memory_header)}", flush=True)
+    if chat_history:
+        print(f"[Agent API] Chat history preview: {chat_history[:200]}", flush=True)
+    if memory:
+        print(f"[Agent API] Memory preview: {memory[:200]}", flush=True)
+
     # Streaming path
     if body.stream:
         headers = {
