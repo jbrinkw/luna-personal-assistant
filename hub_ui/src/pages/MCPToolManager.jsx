@@ -362,23 +362,125 @@ function MCPToolManager() {
     try {
       const server = remoteServers.find(s => s.server_id === serverId);
       if (!server) return;
-      
+
       const toolUpdates = {};
       Object.keys(server.tools || {}).forEach(toolName => {
         toolUpdates[toolName] = { enabled_in_mcp: enabled };
       });
-      
+
       const payload = { tool_updates: toolUpdates };
       if (MCPApi.updateLocalServer) {
         await MCPApi.updateLocalServer(activeServer, payload);
       } else {
-        await fetch(`/api/supervisor/mcp-servers/${encodeURIComponent(activeServer)}`, { 
-          method: 'PATCH', 
-          headers: { 'Content-Type': 'application/json' }, 
-          body: JSON.stringify(payload) 
+        await fetch(`/api/supervisor/mcp-servers/${encodeURIComponent(activeServer)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
         });
       }
       await loadServerTools(activeServer);
+      showToast(`${enabled ? 'Enabled' : 'Disabled'} all tools in ${serverId}`);
+    } catch (err) {
+      showToast(`Failed to update tools: ${err.message}`, 'error');
+    }
+  };
+
+  // Agent preset versions of bulk toggle functions
+  const toggleAllToolsGlobalForPreset = async (enabled) => {
+    if (!activePreset) return;
+    try {
+      const toolUpdates = {};
+
+      // Add all extension tools
+      extensions.forEach(ext => {
+        ext.tools.forEach(tool => {
+          toolUpdates[tool.name] = { enabled };
+        });
+      });
+
+      // Add all remote MCP tools
+      remoteServers.forEach(server => {
+        Object.keys(server.tools || {}).forEach(toolName => {
+          toolUpdates[toolName] = { enabled };
+        });
+      });
+
+      await updateAgentPreset(activePreset, { tool_updates: toolUpdates });
+      await loadPresetTools(activePreset);
+      showToast(`${enabled ? 'Enabled' : 'Disabled'} all tools globally`);
+    } catch (err) {
+      showToast(`Failed to update tools: ${err.message}`, 'error');
+    }
+  };
+
+  const toggleAllExtensionToolsForPreset = async (enabled) => {
+    if (!activePreset) return;
+    try {
+      const toolUpdates = {};
+      extensions.forEach(ext => {
+        ext.tools.forEach(tool => {
+          toolUpdates[tool.name] = { enabled };
+        });
+      });
+
+      await updateAgentPreset(activePreset, { tool_updates: toolUpdates });
+      await loadPresetTools(activePreset);
+      showToast(`${enabled ? 'Enabled' : 'Disabled'} all extension tools`);
+    } catch (err) {
+      showToast(`Failed to update tools: ${err.message}`, 'error');
+    }
+  };
+
+  const toggleAllRemoteMCPToolsForPreset = async (enabled) => {
+    if (!activePreset) return;
+    try {
+      const toolUpdates = {};
+      remoteServers.forEach(server => {
+        Object.keys(server.tools || {}).forEach(toolName => {
+          toolUpdates[toolName] = { enabled };
+        });
+      });
+
+      await updateAgentPreset(activePreset, { tool_updates: toolUpdates });
+      await loadPresetTools(activePreset);
+      showToast(`${enabled ? 'Enabled' : 'Disabled'} all remote MCP tools`);
+    } catch (err) {
+      showToast(`Failed to update tools: ${err.message}`, 'error');
+    }
+  };
+
+  const toggleAllToolsInExtensionForPreset = async (extName, enabled) => {
+    if (!activePreset) return;
+    try {
+      const ext = extensions.find(e => e.name === extName);
+      if (!ext) return;
+
+      const toolUpdates = {};
+      ext.tools.forEach(tool => {
+        toolUpdates[tool.name] = { enabled };
+      });
+
+      await updateAgentPreset(activePreset, { tool_updates: toolUpdates });
+      await loadPresetTools(activePreset);
+      showToast(`${enabled ? 'Enabled' : 'Disabled'} all tools in ${extName}`);
+    } catch (err) {
+      showToast(`Failed to update tools: ${err.message}`, 'error');
+    }
+  };
+
+  const toggleAllToolsInRemoteServerForPreset = async (serverId, enabled) => {
+    if (!activePreset) return;
+    try {
+      const server = remoteServers.find(s => s.server_id === serverId);
+      if (!server) return;
+
+      const toolUpdates = {};
+      Object.keys(server.tools || {}).forEach(toolName => {
+        toolUpdates[toolName] = { enabled };
+      });
+
+      await updateAgentPreset(activePreset, { tool_updates: toolUpdates });
+      await loadPresetTools(activePreset);
       showToast(`${enabled ? 'Enabled' : 'Disabled'} all tools in ${serverId}`);
     } catch (err) {
       showToast(`Failed to update tools: ${err.message}`, 'error');
@@ -731,17 +833,17 @@ function MCPToolManager() {
             Quick Actions for {mode === 'mcp' ? activeServer : activePreset}:
           </span>
           <div className="bulk-actions-buttons">
-            <Button 
-              variant="secondary" 
+            <Button
+              variant="secondary"
               size="sm"
-              onClick={() => toggleAllToolsGlobal(true)}
+              onClick={() => mode === 'mcp' ? toggleAllToolsGlobal(true) : toggleAllToolsGlobalForPreset(true)}
             >
               Enable All Tools
             </Button>
-            <Button 
-              variant="secondary" 
+            <Button
+              variant="secondary"
               size="sm"
-              onClick={() => toggleAllToolsGlobal(false)}
+              onClick={() => mode === 'mcp' ? toggleAllToolsGlobal(false) : toggleAllToolsGlobalForPreset(false)}
             >
               Disable All Tools
             </Button>
@@ -1066,17 +1168,17 @@ function MCPToolManager() {
           </h2>
           {remoteServers.length > 0 && (mode === 'mcp' ? activeServer : activePreset) && (
             <div className="bulk-actions-buttons">
-              <Button 
-                variant="secondary" 
+              <Button
+                variant="secondary"
                 size="sm"
-                onClick={() => toggleAllRemoteMCPTools(true)}
+                onClick={() => mode === 'mcp' ? toggleAllRemoteMCPTools(true) : toggleAllRemoteMCPToolsForPreset(true)}
               >
                 Enable All
               </Button>
-              <Button 
-                variant="secondary" 
+              <Button
+                variant="secondary"
                 size="sm"
-                onClick={() => toggleAllRemoteMCPTools(false)}
+                onClick={() => mode === 'mcp' ? toggleAllRemoteMCPTools(false) : toggleAllRemoteMCPToolsForPreset(false)}
               >
                 Disable All
               </Button>
@@ -1135,24 +1237,28 @@ function MCPToolManager() {
                 <div className="extension-card-actions">
                   {(mode === 'mcp' ? activeServer : activePreset) && (
                     <>
-                      <Button 
-                        variant="secondary" 
-                        onClick={() => toggleAllToolsInRemoteServer(server.server_id, true)}
+                      <Button
+                        variant="secondary"
+                        onClick={() => mode === 'mcp'
+                          ? toggleAllToolsInRemoteServer(server.server_id, true)
+                          : toggleAllToolsInRemoteServerForPreset(server.server_id, true)}
                         size="sm"
                       >
                         Enable All Tools
                       </Button>
-                      <Button 
-                        variant="secondary" 
-                        onClick={() => toggleAllToolsInRemoteServer(server.server_id, false)}
+                      <Button
+                        variant="secondary"
+                        onClick={() => mode === 'mcp'
+                          ? toggleAllToolsInRemoteServer(server.server_id, false)
+                          : toggleAllToolsInRemoteServerForPreset(server.server_id, false)}
                         size="sm"
                       >
                         Disable All Tools
                       </Button>
                     </>
                   )}
-                  <Button 
-                    variant="danger" 
+                  <Button
+                    variant="danger"
                     onClick={() => handleDeleteServer(server.server_id)}
                     size="sm"
                   >
@@ -1234,17 +1340,17 @@ function MCPToolManager() {
           </div>
           {extensions.length > 0 && (mode === 'mcp' ? activeServer : activePreset) && (
             <div className="bulk-actions-buttons">
-              <Button 
-                variant="secondary" 
+              <Button
+                variant="secondary"
                 size="sm"
-                onClick={() => toggleAllExtensionTools(true)}
+                onClick={() => mode === 'mcp' ? toggleAllExtensionTools(true) : toggleAllExtensionToolsForPreset(true)}
               >
                 Enable All
               </Button>
-              <Button 
-                variant="secondary" 
+              <Button
+                variant="secondary"
                 size="sm"
-                onClick={() => toggleAllExtensionTools(false)}
+                onClick={() => mode === 'mcp' ? toggleAllExtensionTools(false) : toggleAllExtensionToolsForPreset(false)}
               >
                 Disable All
               </Button>
@@ -1303,16 +1409,20 @@ function MCPToolManager() {
                 <div className="extension-card-actions">
                   {(mode === 'mcp' ? activeServer : activePreset) && (
                     <>
-                      <Button 
-                        variant="secondary" 
-                        onClick={() => toggleAllToolsInExtension(ext.name, true)}
+                      <Button
+                        variant="secondary"
+                        onClick={() => mode === 'mcp'
+                          ? toggleAllToolsInExtension(ext.name, true)
+                          : toggleAllToolsInExtensionForPreset(ext.name, true)}
                         size="sm"
                       >
                         Enable All Tools
                       </Button>
-                      <Button 
-                        variant="secondary" 
-                        onClick={() => toggleAllToolsInExtension(ext.name, false)}
+                      <Button
+                        variant="secondary"
+                        onClick={() => mode === 'mcp'
+                          ? toggleAllToolsInExtension(ext.name, false)
+                          : toggleAllToolsInExtensionForPreset(ext.name, false)}
                         size="sm"
                       >
                         Disable All Tools
