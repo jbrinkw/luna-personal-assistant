@@ -51,8 +51,18 @@ export default function Header() {
           <span className="version-badge">v{version}</span>
         )}
 
-        <Button 
-          size="sm" 
+        <a
+          href="https://docs.lunahub.dev"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="button button-sm button-secondary"
+          title="User guide and technical documentation"
+        >
+          📚 Docs
+        </a>
+
+        <Button
+          size="sm"
           variant="primary"
           onClick={() => setShowRestartModal(true)}
           title="Restart Luna system"
