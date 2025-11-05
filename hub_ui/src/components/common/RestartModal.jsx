@@ -32,20 +32,22 @@ export default function RestartModal({ isOpen, onClose, onSuccess }) {
   }, [isOpen]);
 
   const startRestart = async () => {
-    try {
-      await SystemAPI.restart();
-      
-      // Wait 5 seconds before starting to poll
-      setTimeout(() => {
-        setPhase('offline');
-        cyclePhases();
-        setTimeout(startPolling, 5000);
-      }, 5000);
-    } catch (error) {
-      console.error('Failed to initiate restart:', error);
-      setError('Failed to initiate restart. Please try again.');
-      setPhase('error');
-    }
+    // Immediately show offline phase so user sees progress
+    setPhase('offline');
+    cyclePhases();
+
+    // Wait 500ms to let React fully render the modal before making API call
+    // This prevents the browser from navigating to 502 error page
+    setTimeout(() => {
+      // Fire-and-forget restart call - don't await or care about errors
+      // The backend will be shutting down so we expect this to fail
+      SystemAPI.restart().catch(() => {
+        // Ignore errors - system is restarting
+      });
+    }, 500);
+
+    // Start polling after 10 seconds (gives system time to shutdown and start back up)
+    setTimeout(startPolling, 10000);
   };
 
   const cyclePhases = () => {

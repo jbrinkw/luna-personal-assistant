@@ -180,6 +180,7 @@ def generate_caddyfile(repo_path, output_path=None):
             "        header Access-Control-Allow-Methods \"GET, POST, PUT, DELETE, OPTIONS\"",
             "        header Access-Control-Allow-Headers \"Authorization, Content-Type\"",
             "        header Access-Control-Allow-Credentials true",
+            "        uri replace /.well-known /api/.well-known",
             f"        reverse_proxy 127.0.0.1:{main_port}",
             "    }",
             "    ",

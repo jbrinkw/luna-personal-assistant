@@ -7,7 +7,7 @@ import Button from '../components/common/Button';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 
 export default function ExtensionManager() {
-  const { currentState, updateExtension, loading: configLoading } = useConfig();
+  const { queuedState, originalState, updateExtension, loading: configLoading } = useConfig();
   const { extensions, loading: servicesLoading } = useServices();
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
@@ -42,13 +42,14 @@ export default function ExtensionManager() {
       const extName = file.name.replace(/\.(zip|tar\.gz)$/i, '');
 
       // Check if this is an update (extension already exists) or install
-      const isUpdate = currentState?.extensions?.[extName];
+      const currentConfig = queuedState?.master_config || originalState;
+      const isUpdate = currentConfig?.extensions?.[extName];
 
-      // Add to currentState
-      updateExtension(extName, {
+      // Add to queue
+      await updateExtension(extName, {
         enabled: true,
         source: `upload:${tempFilename}`,
-        config: currentState?.extensions?.[extName]?.config || {},
+        config: currentConfig?.extensions?.[extName]?.config || {},
       });
     } catch (error) {
       console.error('Upload failed:', error);
@@ -62,7 +63,7 @@ export default function ExtensionManager() {
     }
   };
 
-  const handleGitInstall = () => {
+  const handleGitInstall = async () => {
     setGitError(null);
     
     // Validate inputs
@@ -98,11 +99,12 @@ export default function ExtensionManager() {
 
     const extName = extensionName.trim();
 
-    // Add to currentState
-    updateExtension(extName, {
+    // Add to queue
+    const currentConfig = queuedState?.master_config || originalState;
+    await updateExtension(extName, {
       enabled: true,
       source,
-      config: currentState?.extensions?.[extName]?.config || {},
+      config: currentConfig?.extensions?.[extName]?.config || {},
     });
 
     // Close modal and reset

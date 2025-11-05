@@ -5,14 +5,18 @@ import Button from '../components/common/Button';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import Card from '../components/common/Card';
 import { getInstalledServices, installService } from '../lib/externalServicesApi';
+import { KeysAPI } from '../lib/api';
 
 const REGISTRY_URL = 'https://raw.githubusercontent.com/jbrinkw/luna-ext-store/main/registry.json';
 
 export default function ExtensionStore() {
-  const { currentState, originalState, updateExtension, deleteExtension } = useConfig();
+  const { queuedState, originalState, updateExtension, deleteExtension } = useConfig();
   const { extensions } = useServices();
   const [registry, setRegistry] = useState(null);
   const [loading, setLoading] = useState(true);
+  
+  // Helper to get current config (queue or original)
+  const currentConfig = queuedState?.master_config || originalState;
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -23,6 +27,10 @@ export default function ExtensionStore() {
   const [installModal, setInstallModal] = useState(null);
   const [installConfig, setInstallConfig] = useState({});
   const [installing, setInstalling] = useState(false);
+  const [secretsModal, setSecretsModal] = useState(null);
+  const [secretsFormData, setSecretsFormData] = useState({});
+  const [savingSecrets, setSavingSecrets] = useState(false);
+  const [secretsVisibility, setSecretsVisibility] = useState({});
 
   useEffect(() => {
     loadRegistry();
@@ -86,47 +94,36 @@ export default function ExtensionStore() {
   };
 
   const isPendingInstall = (extId) => {
-    // Check if extension is in currentState but not in originalState (new install)
-    const inCurrent = currentState?.extensions?.[extId];
+    // Check if extension is in queue but not in original (new install)
+    const inQueue = currentConfig?.extensions?.[extId];
     const inOriginal = originalState?.extensions?.[extId];
     const onDisk = isInstalled(extId);
     
-    // Pending install only if it's NEW in current (not in original) and not yet on disk
-    return inCurrent && !inOriginal && !onDisk;
+    // Pending install only if it's NEW in queue (not in original) and not yet on disk
+    return inQueue && !inOriginal && !onDisk;
   };
 
   const isPendingUpdate = (extId) => {
     // Check if extension source has changed from original
-    const inCurrent = currentState?.extensions?.[extId];
+    const inQueue = currentConfig?.extensions?.[extId];
     const inOriginal = originalState?.extensions?.[extId];
     
     // Pending update if in both states AND source changed
-    return inCurrent && inOriginal && inCurrent.source !== inOriginal.source;
+    return inQueue && inOriginal && inQueue.source !== inOriginal.source;
   };
 
   const isPendingReinstall = (extId) => {
     // Check if extension is marked for reinstall
-    const inCurrent = currentState?.extensions?.[extId];
+    const inQueue = currentConfig?.extensions?.[extId];
     const inOriginal = originalState?.extensions?.[extId];
     const onDisk = isInstalled(extId);
     
     // Pending reinstall if on disk, in both states, and source has #reinstall marker
-    return onDisk && inCurrent && inOriginal && 
-           inCurrent.source && inCurrent.source.includes('#reinstall');
+    return onDisk && inQueue && inOriginal && 
+           inQueue.source && inQueue.source.includes('#reinstall');
   };
 
-  const handleInstallToggle = (storeExt) => {
-    // If already pending, remove it (undo)
-    if (isPendingInstall(storeExt.id)) {
-      deleteExtension(storeExt.id);
-      return;
-    }
-
-    // Otherwise, add it to pending
-    if (isInstalled(storeExt.id)) {
-      return;
-    }
-
+  const doInstallExtension = async (storeExt) => {
     // Generate source string
     let source;
     if (storeExt.type === 'embedded') {
@@ -135,8 +132,8 @@ export default function ExtensionStore() {
       source = storeExt.source;
     }
 
-    // Check if extension exists in currentState (from master_config) but not on disk
-    const existsInConfig = currentState?.extensions?.[storeExt.id];
+    // Check if extension exists in queue (from master_config) but not on disk
+    const existsInConfig = currentConfig?.extensions?.[storeExt.id];
     
     if (existsInConfig && existsInConfig.source === source) {
       // Extension is in config with same source but not on disk (reinstall scenario)
@@ -144,20 +141,68 @@ export default function ExtensionStore() {
       source = source + '#reinstall';
     }
 
-    // Add to currentState
-    updateExtension(storeExt.id, {
+    // Add to queue
+    await updateExtension(storeExt.id, {
       enabled: true,
       source,
       config: existsInConfig?.config || {},
     });
   };
 
-  const handleUpdateToggle = (storeExt) => {
+  const handleInstallToggle = async (storeExt) => {
+    // If already pending, remove it (undo)
+    if (isPendingInstall(storeExt.id)) {
+      await deleteExtension(storeExt.id);
+      return;
+    }
+
+    // Otherwise, add it to pending
+    if (isInstalled(storeExt.id)) {
+      return;
+    }
+
+    // Check if extension has required secrets
+    if (storeExt.required_secrets && storeExt.required_secrets.length > 0) {
+      // Load existing secrets from .env
+      try {
+        const existingSecrets = await KeysAPI.list();
+        const initialFormData = {};
+        const initialVisibility = {};
+        
+        storeExt.required_secrets.forEach(secret => {
+          // Prefill with existing value if available
+          initialFormData[secret] = existingSecrets[secret] || '';
+          initialVisibility[secret] = false;
+        });
+        
+        setSecretsFormData(initialFormData);
+        setSecretsVisibility(initialVisibility);
+        setSecretsModal(storeExt);
+      } catch (error) {
+        console.error('Failed to load existing secrets:', error);
+        // Still open modal even if loading fails
+        const initialFormData = {};
+        const initialVisibility = {};
+        storeExt.required_secrets.forEach(secret => {
+          initialFormData[secret] = '';
+          initialVisibility[secret] = false;
+        });
+        setSecretsFormData(initialFormData);
+        setSecretsVisibility(initialVisibility);
+        setSecretsModal(storeExt);
+      }
+    } else {
+      // No secrets required, proceed with install
+      await doInstallExtension(storeExt);
+    }
+  };
+
+  const handleUpdateToggle = async (storeExt) => {
     // If already pending update, revert to original source (undo)
     if (isPendingUpdate(storeExt.id)) {
       const original = originalState?.extensions?.[storeExt.id];
       if (original) {
-        updateExtension(storeExt.id, {
+        await updateExtension(storeExt.id, {
           ...original,
         });
       }
@@ -172,19 +217,30 @@ export default function ExtensionStore() {
       source = storeExt.source;
     }
 
-    const existing = currentState.extensions[storeExt.id];
-    updateExtension(storeExt.id, {
-      ...existing,
+    // Get existing extension data from queue, or use defaults
+    const existing = currentConfig?.extensions?.[storeExt.id] || {};
+    const existingSource = existing.source || '';
+    
+    // If the base source is the same, append a version marker to force change detection
+    // This is needed because GitHub sources don't include version numbers
+    const baseSource = existingSource.replace(/#update-.*$/g, '');
+    if (baseSource === source) {
+      source = `${source}#update-${storeExt.version}`;
+    }
+    
+    await updateExtension(storeExt.id, {
+      enabled: existing.enabled !== undefined ? existing.enabled : true,
+      config: existing.config || {},
       source,
     });
   };
 
-  const handleReinstallToggle = (storeExt) => {
+  const handleReinstallToggle = async (storeExt) => {
     // If already pending reinstall, revert to original (undo)
     if (isPendingReinstall(storeExt.id)) {
       const original = originalState?.extensions?.[storeExt.id];
       if (original) {
-        updateExtension(storeExt.id, {
+        await updateExtension(storeExt.id, {
           ...original,
         });
       }
@@ -192,14 +248,14 @@ export default function ExtensionStore() {
     }
 
     // Otherwise, add reinstall marker to trigger reinstall
-    const existing = currentState.extensions[storeExt.id];
+    const existing = currentConfig.extensions[storeExt.id];
     const currentSource = existing?.source || '';
     
     // Add unique reinstall marker with timestamp to force change detection
     const timestamp = Date.now();
     const newSource = currentSource.replace(/#reinstall-\d+/g, '') + `#reinstall-${timestamp}`;
     
-    updateExtension(storeExt.id, {
+    await updateExtension(storeExt.id, {
       ...existing,
       source: newSource,
     });
@@ -293,6 +349,63 @@ export default function ExtensionStore() {
     setInstallModal(service);
   };
 
+  const handleSecretsContinue = async () => {
+    if (!secretsModal) return;
+
+    setSavingSecrets(true);
+    try {
+      // Save all non-empty secrets to .env
+      const savePromises = [];
+      for (const [key, value] of Object.entries(secretsFormData)) {
+        if (value && value.trim()) {
+          savePromises.push(KeysAPI.set(key, value.trim()));
+        }
+      }
+      
+      // Wait for all secrets to be saved
+      await Promise.all(savePromises);
+      
+      // Add extension to queue
+      doInstallExtension(secretsModal);
+      
+      // Close modal and reset
+      setSecretsModal(null);
+      setSecretsFormData({});
+      setSecretsVisibility({});
+    } catch (error) {
+      console.error('Failed to save secrets:', error);
+      alert(`Failed to save secrets: ${error.message}`);
+    } finally {
+      setSavingSecrets(false);
+    }
+  };
+
+  const handleSecretsSkip = () => {
+    if (!secretsModal) return;
+    
+    // Add extension to queue without saving secrets
+    doInstallExtension(secretsModal);
+    
+    // Close modal and reset
+    setSecretsModal(null);
+    setSecretsFormData({});
+    setSecretsVisibility({});
+  };
+
+  const handleSecretsCancel = () => {
+    // Just close modal and reset
+    setSecretsModal(null);
+    setSecretsFormData({});
+    setSecretsVisibility({});
+  };
+
+  const toggleSecretVisibility = (secret) => {
+    setSecretsVisibility(prev => ({
+      ...prev,
+      [secret]: !prev[secret]
+    }));
+  };
+
   if (loading) {
     return (
       <div className="page-container">
@@ -348,6 +461,7 @@ export default function ExtensionStore() {
           placeholder="Search addons..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
+          autoComplete="off"
         />
 
         <select
@@ -577,6 +691,92 @@ export default function ExtensionStore() {
                 disabled={installing}
               >
                 {installing ? 'Installing...' : 'Install'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Extension Secrets Configuration Modal */}
+      {secretsModal && (
+        <div className="modal-overlay" onClick={() => !savingSecrets && handleSecretsCancel()}>
+          <div className="modal-content store-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Configure {secretsModal.name}</h2>
+              <button className="modal-close" onClick={() => !savingSecrets && handleSecretsCancel()}>×</button>
+            </div>
+            
+            <div className="modal-body">
+              <p className="store-modal-description">
+                {secretsModal.description}
+              </p>
+              <p className="store-modal-description">
+                This extension requires the following environment variables. You can configure them now or skip and add them later.
+              </p>
+              
+              {secretsModal.required_secrets?.map(secret => (
+                <div key={secret} className="store-modal-field">
+                  <label className="store-modal-label">
+                    {secret}
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={secretsVisibility[secret] ? "text" : "password"}
+                      value={secretsFormData[secret] || ''}
+                      onChange={(e) => setSecretsFormData({ ...secretsFormData, [secret]: e.target.value })}
+                      placeholder={`Enter ${secret}`}
+                      disabled={savingSecrets}
+                      className="store-modal-input"
+                      autoComplete="new-password"
+                      style={{ paddingRight: '40px' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => toggleSecretVisibility(secret)}
+                      disabled={savingSecrets}
+                      style={{
+                        position: 'absolute',
+                        right: '8px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: '4px 8px',
+                        fontSize: '16px',
+                        opacity: savingSecrets ? 0.5 : 0.7,
+                        transition: 'opacity 0.2s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                      onMouseLeave={(e) => e.currentTarget.style.opacity = savingSecrets ? '0.5' : '0.7'}
+                    >
+                      {secretsVisibility[secret] ? '👁️' : '👁️‍🗨️'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            <div className="modal-footer">
+              <Button 
+                onClick={handleSecretsCancel} 
+                disabled={savingSecrets}
+                variant="muted"
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleSecretsSkip}
+                disabled={savingSecrets}
+                variant="secondary"
+              >
+                Skip
+              </Button>
+              <Button 
+                onClick={handleSecretsContinue}
+                disabled={savingSecrets}
+              >
+                {savingSecrets ? 'Saving...' : 'Continue'}
               </Button>
             </div>
           </div>

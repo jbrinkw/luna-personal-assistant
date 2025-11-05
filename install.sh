@@ -412,6 +412,78 @@ EOF
         log_info "MCP OAuth: ${MCP_GITHUB_CLIENT_ID:0:20}..."
         log_info "Allowed user: $ALLOWED_GITHUB_USERNAME"
     fi
+
+    # Timezone Configuration
+    TIMEZONE=$(jq -r '.timezone // ""' "$CONFIG_FILE")
+
+    if [ -z "$TIMEZONE" ] || [ "$TIMEZONE" = "null" ] || [ "$TIMEZONE" = "" ]; then
+        log_warn "Timezone is not configured in install_config.json"
+        echo ""
+        echo "============================================================"
+        echo "Timezone Configuration"
+        echo "============================================================"
+        echo ""
+        echo "Luna supports timezone-aware date calculations for features"
+        echo "like meal planning and daily summaries."
+        echo ""
+        echo "Supported timezone codes (3-letter format):"
+        echo "  EST/EDT - Eastern Time (New York)"
+        echo "  CST/CDT - Central Time (Chicago)"
+        echo "  MST/MDT - Mountain Time (Denver)"
+        echo "  PST/PDT - Pacific Time (Los Angeles)"
+        echo "  AST/ADT - Atlantic Time (Halifax)"
+        echo "  HST     - Hawaii-Aleutian Time (Honolulu)"
+        echo "  AKST/AKDT - Alaska Time (Anchorage)"
+        echo ""
+        echo "You can also enter a full IANA timezone name (e.g., America/New_York)"
+        echo "or leave empty to use server's local timezone."
+        echo ""
+
+        while true; do
+            read -p "Enter your timezone (e.g., EST, PST) [leave empty for local]: " TIMEZONE
+            echo ""
+
+            # Allow empty input
+            if [ -z "$TIMEZONE" ]; then
+                log_info "Using server's local timezone"
+                TIMEZONE=""
+                break
+            fi
+
+            # Convert to uppercase for validation
+            TIMEZONE_UPPER=$(echo "$TIMEZONE" | tr '[:lower:]' '[:upper:]')
+
+            # List of valid 3-letter timezone codes
+            VALID_TIMEZONES="EST EDT CST CDT MST MDT PST PDT AST ADT HST AKST AKDT"
+
+            # Check if it's a valid 3-letter code
+            if echo "$VALID_TIMEZONES" | grep -qw "$TIMEZONE_UPPER"; then
+                TIMEZONE="$TIMEZONE_UPPER"
+                log_success "Timezone set to $TIMEZONE"
+                break
+            # Check if it looks like an IANA timezone (contains /)
+            elif [[ "$TIMEZONE" == */* ]]; then
+                log_info "Using IANA timezone: $TIMEZONE"
+                break
+            else
+                log_error "Invalid timezone code: $TIMEZONE"
+                log_error "Please enter one of: $VALID_TIMEZONES"
+                log_error "Or enter a full IANA timezone name (e.g., America/New_York)"
+                echo ""
+            fi
+        done
+
+        # Update config file
+        TMP_CONFIG=$(mktemp)
+        jq --arg tz "$TIMEZONE" \
+           '.timezone = $tz' \
+           "$CONFIG_FILE" > "$TMP_CONFIG"
+        mv "$TMP_CONFIG" "$CONFIG_FILE"
+
+        log_success "Timezone configured"
+    else
+        log_info "Timezone already configured: $TIMEZONE"
+    fi
 }
 
 check_system_requirements() {
@@ -711,6 +783,9 @@ DEPLOYMENT_MODE=$DEPLOYMENT_MODE
 PUBLIC_DOMAIN=$PUBLIC_DOMAIN
 PUBLIC_URL=https://$PUBLIC_DOMAIN/api
 ISSUER_URL=https://$PUBLIC_DOMAIN
+
+# Timezone Configuration
+TIME_ZONE=$TIMEZONE
 
 # Ngrok Tunnel (only used if DEPLOYMENT_MODE=ngrok)
 NGROK_AUTHTOKEN=$NGROK_API_KEY

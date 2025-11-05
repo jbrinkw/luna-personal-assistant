@@ -76,17 +76,18 @@ class RestrictedGitHubTokenVerifier(GitHubTokenVerifier):
 
 class RestrictedGitHubProvider(GitHubProvider):
     """GitHub OAuth provider with optional username restriction.
-    
+
     This overrides GitHubProvider to inject a custom token verifier
     that checks GitHub usernames against ALLOWED_GITHUB_USERNAME.
     """
-    
+
     def __init__(
         self,
         allowed_username: str = None,
         client_id: str = None,
         client_secret: str = None,
         base_url: str = None,
+        issuer_url: str = None,
         **kwargs
     ):
         """Initialize with username restriction.
@@ -138,6 +139,10 @@ class RestrictedGitHubProvider(GitHubProvider):
         
         # Initialize OAuthProxy parent (skip GitHubProvider.__init__)
         from fastmcp.server.auth.oauth_proxy import OAuthProxy
+
+        # Use provided issuer_url if available, otherwise fall back to base_url
+        final_issuer_url = issuer_url if issuer_url is not None else settings.base_url
+
         OAuthProxy.__init__(
             self,
             upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
@@ -147,7 +152,7 @@ class RestrictedGitHubProvider(GitHubProvider):
             token_verifier=token_verifier,
             base_url=settings.base_url,
             redirect_path=settings.redirect_path,
-            issuer_url=settings.base_url,
+            issuer_url=final_issuer_url,
             allowed_client_redirect_uris=allowed_client_redirect_uris_final,
             client_storage=kwargs.get('client_storage'),
         )
@@ -214,7 +219,7 @@ def _register_tools(mcp: "FastMCP", tools: List[Callable[..., Any]]) -> int:
                             # Remove None values
                             call_kwargs = {k: v for k, v in call_kwargs.items() if v is not None}
                             return remote_tool_instance(**call_kwargs)
-                        
+
                         tool_func.__name__ = remote_tool_instance.__name__
                         tool_func.__doc__ = remote_tool_instance.__doc__
                         tool_func.__signature__ = inspect.Signature(params)
@@ -297,12 +302,16 @@ def main(argv: List[str]) -> int:
         return 1
 
     public_url_root = os.getenv("PUBLIC_URL", "https://lunahub.dev/api").rstrip('/')
-    issuer_url = os.getenv("ISSUER_URL", "https://lunahub.dev")
     server_suffix = "" if is_main_server else f"/mcp-{server_name}"
     base_url = f"{public_url_root}{server_suffix}"
 
+    # issuer_url must match base_url so FastMCP constructs OAuth endpoints correctly
+    # Caddy rewrites /.well-known -> /api/.well-known to make discovery work
+    issuer_url = base_url
+
     print(f"[MCP] Base URL: {base_url}")
-    print(f"[MCP] Issuer URL (discovery): {issuer_url}")
+    print(f"[MCP] Issuer URL: {issuer_url}")
+    print(f"[MCP] OAuth endpoints will be at: {base_url}/authorize, {base_url}/token")
 
     display_name = args.name if args.name else "Luna MCP"
     if server_name and display_name == "Luna MCP":
@@ -339,6 +348,7 @@ def main(argv: List[str]) -> int:
                 client_id=client_id,
                 client_secret=client_secret,
                 base_url=base_url,
+                issuer_url=issuer_url,
                 allowed_username=allowed_username
             )
 

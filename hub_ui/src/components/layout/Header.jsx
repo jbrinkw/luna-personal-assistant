@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useSystem } from '../../context/SystemContext';
 import { useConfig } from '../../context/ConfigContext';
@@ -8,11 +8,45 @@ import Button from '../common/Button';
 
 export default function Header() {
   const { health, version } = useSystem();
-  const { hasChanges, pendingChanges } = useConfig();
+  const { queuedState, originalState } = useConfig();
   const [showRestartModal, setShowRestartModal] = useState(false);
   const navigate = useNavigate();
-  const pendingCount = pendingChanges?.length || 0;
-  const hasPendingChanges = hasChanges && pendingCount > 0;
+  
+  // Calculate pending count from queue
+  const pendingCount = useMemo(() => {
+    if (!queuedState) return 0;
+    
+    let count = queuedState.operations?.length || 0;
+    
+    // Add config changes count
+    if (queuedState.master_config && originalState) {
+      const queuedExts = queuedState.master_config.extensions || {};
+      const originalExts = originalState.extensions || {};
+      
+      Object.keys(queuedExts).forEach(extName => {
+        if (originalExts[extName] && queuedExts[extName].enabled !== originalExts[extName].enabled) {
+          count++;
+        }
+      });
+
+      const queuedTools = queuedState.master_config.tool_configs || {};
+      const originalTools = originalState.tool_configs || {};
+      const toolNames = new Set([...Object.keys(queuedTools), ...Object.keys(originalTools)]);
+      toolNames.forEach(toolName => {
+        const queuedTool = queuedTools[toolName];
+        const originalTool = originalTools[toolName];
+        const serializedQueued = JSON.stringify(queuedTool || {});
+        const serializedOriginal = JSON.stringify(originalTool || {});
+        if (serializedQueued !== serializedOriginal) {
+          count++;
+        }
+      });
+    }
+    
+    return count;
+  }, [queuedState, originalState]);
+  
+  const hasPendingChanges = pendingCount > 0;
 
   return (
     <div className="header">
