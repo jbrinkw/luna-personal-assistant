@@ -15,7 +15,7 @@ from tests.utils.http_client import get, post, delete
 from tests.utils.process_utils import start_bootstrap
 from tests.utils.file_utils import file_exists
 
-REPO_PATH = "/root/luna/luna-personal-assistant-test"
+REPO_PATH = "/root/luna/luna-hub-test"
 SUPERVISOR_HOST = os.getenv('SUPERVISOR_HOST', '127.0.0.1')
 BASE_URL = f"http://{SUPERVISOR_HOST}:9999"
 

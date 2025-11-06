@@ -43,34 +43,35 @@ from core.utils.tool_discovery import get_mcp_enabled_tools, get_mcp_enabled_too
 
 class RestrictedGitHubTokenVerifier(GitHubTokenVerifier):
     """GitHub token verifier with optional username restriction."""
-    
-    def __init__(self, allowed_username: str = None, **kwargs):
+
+    def __init__(self, allowed_usernames: set = None, **kwargs):
         super().__init__(**kwargs)
-        self.allowed_username = allowed_username
-    
+        self.allowed_usernames = allowed_usernames
+
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify token and check if user is allowed."""
         # First do standard GitHub token verification
         access_token = await super().verify_token(token)
-        
+
         if access_token is None:
             return None
-        
+
         # If username restriction is enabled, check it
-        if self.allowed_username:
+        if self.allowed_usernames:
             # Get the GitHub username from claims (set by GitHubTokenVerifier)
             username = access_token.claims.get("login")
-            
+
             if not username:
                 print("[MCP Auth] Access denied: No GitHub username found in token")
                 return None
-            
-            if username != self.allowed_username:
-                print(f"[MCP Auth] Access denied for user '{username}'. Only '{self.allowed_username}' is allowed.")
+
+            if username not in self.allowed_usernames:
+                users_list = ", ".join(sorted(self.allowed_usernames))
+                print(f"[MCP Auth] Access denied for user '{username}'. Only the following users are allowed: {users_list}")
                 return None
-            
+
             print(f"[MCP Auth] Access granted for user '{username}'")
-        
+
         return access_token
 
 
@@ -83,7 +84,7 @@ class RestrictedGitHubProvider(GitHubProvider):
 
     def __init__(
         self,
-        allowed_username: str = None,
+        allowed_usernames: set = None,
         client_id: str = None,
         client_secret: str = None,
         base_url: str = None,
@@ -91,14 +92,14 @@ class RestrictedGitHubProvider(GitHubProvider):
         **kwargs
     ):
         """Initialize with username restriction.
-        
+
         We have to override the entire __init__ because GitHubProvider
         creates the token_verifier before calling super().__init__().
         """
         from fastmcp.server.auth.providers.github import GitHubProviderSettings
         from fastmcp.utilities.types import NotSet
         from pydantic import SecretStr
-        
+
         # Process settings like GitHubProvider does
         settings = GitHubProviderSettings.model_validate(
             {
@@ -112,16 +113,16 @@ class RestrictedGitHubProvider(GitHubProvider):
                 if v is not None
             }
         )
-        
+
         # Apply defaults
         timeout_seconds_final = settings.timeout_seconds or 10
         required_scopes_final = settings.required_scopes or ["user"]
         allowed_client_redirect_uris_final = settings.allowed_client_redirect_uris
-        
+
         # Create OUR restricted token verifier instead of the standard one
-        if allowed_username:
+        if allowed_usernames:
             token_verifier = RestrictedGitHubTokenVerifier(
-                allowed_username=allowed_username,
+                allowed_usernames=allowed_usernames,
                 required_scopes=required_scopes_final,
                 timeout_seconds=timeout_seconds_final,
             )
@@ -320,7 +321,14 @@ def main(argv: List[str]) -> int:
     if use_oauth:
         client_id = os.getenv("MCP_GITHUB_CLIENT_ID")
         client_secret = os.getenv("MCP_GITHUB_CLIENT_SECRET")
-        allowed_username = os.getenv("ALLOWED_GITHUB_USERNAME")
+        allowed_username_str = os.getenv("ALLOWED_GITHUB_USERNAME")
+
+        # Parse comma-separated usernames into a set
+        allowed_usernames = set(
+            username.strip()
+            for username in (allowed_username_str or "").split(",")
+            if username.strip()
+        ) if allowed_username_str else None
 
         if not client_id or not client_secret:
             print("[ERROR] MCP_GITHUB_CLIENT_ID and MCP_GITHUB_CLIENT_SECRET not set in environment")
@@ -333,8 +341,9 @@ def main(argv: List[str]) -> int:
             print("\nNote: This is separate from GITHUB_CLIENT_ID used by Hub UI")
             return 1
 
-        if allowed_username:
-            print(f"[MCP] Access restricted to GitHub user: {allowed_username}")
+        if allowed_usernames:
+            users_list = ", ".join(sorted(allowed_usernames))
+            print(f"[MCP] Access restricted to GitHub user(s): {users_list}")
         else:
             print("[MCP] WARNING: ALLOWED_GITHUB_USERNAME not set - any GitHub user can connect")
             print("[MCP] Set ALLOWED_GITHUB_USERNAME in .env to restrict access")
@@ -349,7 +358,7 @@ def main(argv: List[str]) -> int:
                 client_secret=client_secret,
                 base_url=base_url,
                 issuer_url=issuer_url,
-                allowed_username=allowed_username
+                allowed_usernames=allowed_usernames
             )
 
             mcp = FastMCP(name=display_name, auth=auth_provider)

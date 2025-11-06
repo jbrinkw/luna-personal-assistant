@@ -156,8 +156,8 @@ When selecting custom_domain mode, you can choose to use Cloudflare Tunnel inste
 cd /root  # Or wherever you want Luna installed
 
 # Clone the repository
-git clone https://github.com/jbrinkw/luna-personal-assistant.git
-cd luna-personal-assistant
+git clone https://github.com/jbrinkw/luna-hub.git
+cd luna-hub
 ```
 
 ### Step 2: Run the Installer
@@ -726,7 +726,7 @@ Luna Hub includes a built-in update system accessible through the Hub UI:
 
 **Manual update (Git):**
 ```bash
-cd /root/luna-personal-assistant
+cd /root/luna-hub
 git pull origin main
 sudo systemctl restart luna
 ```

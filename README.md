@@ -6,7 +6,7 @@
 
 [![Documentation](https://img.shields.io/badge/docs-live-blue)](https://docs.lunahub.dev)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![GitHub](https://img.shields.io/github/stars/jbrinkw/luna-personal-assistant?style=social)](https://github.com/jbrinkw/luna-personal-assistant)
+[![GitHub](https://img.shields.io/github/stars/jbrinkw/luna-hub?style=social)](https://github.com/jbrinkw/luna-hub)
 
 ---
 
@@ -47,8 +47,8 @@ Think of it as **mission control for your personal AI ecosystem**—install tool
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/jbrinkw/luna-personal-assistant.git
-   cd luna-personal-assistant
+   git clone https://github.com/jbrinkw/luna-hub.git
+   cd luna-hub
    ```
 
 2. **Run the installer:**
@@ -198,7 +198,7 @@ Unlike commercial AI assistants, Luna Hub offers:
 
 Contributions are welcome! Please feel free to:
 
-- Report bugs or request features via [GitHub Issues](https://github.com/jbrinkw/luna-personal-assistant/issues)
+- Report bugs or request features via [GitHub Issues](https://github.com/jbrinkw/luna-hub/issues)
 - Submit pull requests for improvements
 - Share your custom extensions with the community
 - Improve documentation
@@ -206,7 +206,7 @@ Contributions are welcome! Please feel free to:
 ## Support
 
 - 📧 Email: [jeremy@onthebrink.ai](mailto:jeremy@onthebrink.ai)
-- 🐛 Issues: [GitHub Issues](https://github.com/jbrinkw/luna-personal-assistant/issues)
+- 🐛 Issues: [GitHub Issues](https://github.com/jbrinkw/luna-hub/issues)
 - 📖 Docs: [Full Documentation](https://docs.lunahub.dev)
 
 ## License

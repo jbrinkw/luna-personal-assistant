@@ -51,23 +51,23 @@ load_config() {
     # Create minimal config file if it doesn't exist
     if [ ! -f "$CONFIG_FILE" ]; then
         log_warn "Configuration file not found, creating minimal config..."
-        cat > "$CONFIG_FILE" <<'EOF'
+                cat > "$CONFIG_FILE" <<'EOF'
 {
-  "deployment_mode": "",
-  "ngrok": {
-    "api_key": "",
-    "domain": ""
-  },
-  "nip_io": {},
-  "custom_domain": {
-    "domain": "",
-    "use_cloudflare_tunnel": false
-  },
-  "github_oauth": {
-    "client_id": "",
-    "client_secret": "",
-    "allowed_username": ""
-  }
+    "deployment_mode": "",
+    "ngrok": {
+        "api_key": "",
+        "domain": ""
+    },
+    "nip_io": {},
+    "custom_domain": {
+        "domain": "",
+        "use_cloudflare_tunnel": null
+    },
+    "github_oauth": {
+        "client_id": "",
+        "client_secret": "",
+        "allowed_username": ""
+    }
 }
 EOF
         log_success "Created install_config.json - you will be prompted for required values"
@@ -127,7 +127,8 @@ EOF
     NGROK_API_KEY=$(jq -r '.ngrok.api_key // ""' "$CONFIG_FILE")
     NGROK_DOMAIN=$(jq -r '.ngrok.domain // ""' "$CONFIG_FILE")
     CUSTOM_DOMAIN=$(jq -r '.custom_domain.domain // ""' "$CONFIG_FILE")
-    USE_CLOUDFLARE_TUNNEL=$(jq -r 'if .custom_domain.use_cloudflare_tunnel == true then "true" else "false" end' "$CONFIG_FILE")
+    # Read the Cloudflare tunnel setting. Use empty string if unset/null so we can prompt the user.
+    USE_CLOUDFLARE_TUNNEL=$(jq -r '.custom_domain.use_cloudflare_tunnel // empty' "$CONFIG_FILE")
     
     log_success "Configuration loaded"
     log_info "Deployment mode: $DEPLOYMENT_MODE"
@@ -221,8 +222,8 @@ EOF
             log_info "Custom domain: $CUSTOM_DOMAIN"
             echo ""
             
-            # Ask if using Cloudflare Tunnel
-            if [ "$USE_CLOUDFLARE_TUNNEL" != "true" ] && [ "$USE_CLOUDFLARE_TUNNEL" != "false" ]; then
+            # Ask if using Cloudflare Tunnel (only if not already set)
+            if [ -z "$USE_CLOUDFLARE_TUNNEL" ]; then
                 echo "Do you want to use Cloudflare Tunnel to expose this domain?"
                 echo "  - Yes: Cloudflare handles TLS, no need to open ports 80/443"
                 echo "  - No:  Direct access, requires ports 80/443 open and DNS A record"

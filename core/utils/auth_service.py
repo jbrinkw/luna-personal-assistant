@@ -34,6 +34,12 @@ DEMO_MODE = os.getenv("DEMO_MODE", "").strip().upper() == "TRUE"
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID")
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET")
 ALLOWED_GITHUB_USERNAME = os.getenv("ALLOWED_GITHUB_USERNAME")
+# Parse comma-separated usernames into a set for efficient lookup
+ALLOWED_GITHUB_USERNAMES = set(
+    username.strip()
+    for username in (ALLOWED_GITHUB_USERNAME or "").split(",")
+    if username.strip()
+) if ALLOWED_GITHUB_USERNAME else None
 PUBLIC_DOMAIN = os.getenv("PUBLIC_DOMAIN", "localhost:5173")
 JWT_SECRET = os.getenv("JWT_SECRET", secrets.token_urlsafe(32))
 SESSION_DURATION_HOURS = int(os.getenv("SESSION_DURATION_HOURS", "24"))
@@ -48,11 +54,12 @@ elif not GITHUB_CLIENT_ID or not GITHUB_CLIENT_SECRET:
     print("[Auth Service] Auth service will start but OAuth will not work")
 
 if not DEMO_MODE:
-    if not ALLOWED_GITHUB_USERNAME:
+    if not ALLOWED_GITHUB_USERNAMES:
         print("[Auth Service] WARNING: ALLOWED_GITHUB_USERNAME not set")
         print("[Auth Service] Any GitHub user will be able to log in")
     else:
-        print(f"[Auth Service] Access restricted to GitHub user: {ALLOWED_GITHUB_USERNAME}")
+        users_list = ", ".join(sorted(ALLOWED_GITHUB_USERNAMES))
+        print(f"[Auth Service] Access restricted to GitHub user(s): {users_list}")
 
 # ---- FastAPI App ----
 app = FastAPI(title="Luna Auth Service")
@@ -192,10 +199,11 @@ async def callback(
             raise HTTPException(status_code=400, detail="Invalid user data from GitHub")
         
         # Check if user is allowed
-        if ALLOWED_GITHUB_USERNAME and github_username != ALLOWED_GITHUB_USERNAME:
+        if ALLOWED_GITHUB_USERNAMES and github_username not in ALLOWED_GITHUB_USERNAMES:
+            users_list = ", ".join(sorted(ALLOWED_GITHUB_USERNAMES))
             raise HTTPException(
-                status_code=403, 
-                detail=f"Access denied. Only '{ALLOWED_GITHUB_USERNAME}' is allowed to access this Luna instance."
+                status_code=403,
+                detail=f"Access denied. Only the following users are allowed to access this Luna instance: {users_list}"
             )
     
     # Create JWT token

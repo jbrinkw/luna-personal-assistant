@@ -2,8 +2,8 @@ site_name: Luna Hub Documentation
 site_description: Your Private AI Personal Assistant Platform
 site_author: Luna Hub Team
 site_url: https://docs.lunahub.dev
-repo_url: https://github.com/jbrinkw/luna-personal-assistant
-repo_name: jbrinkw/luna-personal-assistant
+repo_url: https://github.com/jbrinkw/luna-hub
+repo_name: jbrinkw/luna-hub
 
 theme:
   name: material
@@ -86,4 +86,4 @@ plugins:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/jbrinkw/luna-personal-assistant
+      link: https://github.com/jbrinkw/luna-hub

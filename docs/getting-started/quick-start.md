@@ -48,8 +48,8 @@ That's it! The installer handles everything else.
 ```bash
 # Clone the repository
 cd /root  # Or your preferred location
-git clone https://github.com/jbrinkw/luna-personal-assistant.git
-cd luna-personal-assistant
+git clone https://github.com/jbrinkw/luna-hub.git
+cd luna-hub
 
 # Run the installer (requires sudo)
 sudo ./install.sh
@@ -308,7 +308,7 @@ Use the built-in update system:
 
 Or manually:
 ```bash
-cd /root/luna-personal-assistant
+cd /root/luna-hub
 git pull origin main
 sudo systemctl restart luna
 ```
@@ -347,7 +347,7 @@ Check the [Troubleshooting](../installation.md#troubleshooting) section in the I
 
 1. Check service status: `sudo systemctl status luna`
 2. View logs: `journalctl -u luna -n 200`
-3. Ask in GitHub Issues: [https://github.com/jbrinkw/luna-personal-assistant/issues](https://github.com/jbrinkw/luna-personal-assistant/issues)
+3. Ask in GitHub Issues: [https://github.com/jbrinkw/luna-hub/issues](https://github.com/jbrinkw/luna-hub/issues)
 
 ---
 
@@ -362,7 +362,7 @@ Check the [Troubleshooting](../installation.md#troubleshooting) section in the I
 
 ## Get Help
 
-- **GitHub Issues**: [Report bugs or request features](https://github.com/jbrinkw/luna-personal-assistant/issues)
+- **GitHub Issues**: [Report bugs or request features](https://github.com/jbrinkw/luna-hub/issues)
 - **Documentation**: Browse the full docs at your Luna Hub under `/docs`
 - **Developer Chat**: Join discussions in GitHub Issues
 

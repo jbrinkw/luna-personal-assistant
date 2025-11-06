@@ -4,7 +4,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ACTIVE_DIR="$(dirname "$SCRIPT_DIR")"
-TEST_DIR="/root/luna/luna-personal-assistant-test"
+TEST_DIR="/root/luna/luna-hub-test"
 
 echo "=========================================="
 echo "Phase 1 Test Environment Reset"
