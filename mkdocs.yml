@@ -67,24 +67,17 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Installation: installation.md
-  - Getting Started:
-    - Quick Start: getting-started/quick-start.md
-    - Featured Extensions: getting-started/featured-extensions.md
   - User Guide:
     - Navigating the Interface: user-guide/navigating-interface.md
     - Extensions: user-guide/extensions.md
     - Apps/Services: user-guide/external-services.md
     - Agent API: user-guide/agent-api.md
     - MCP Servers: user-guide/mcp-servers.md
+  - Featured Extensions: getting-started/featured-extensions.md
   - Developer Guide:
     - Creating Extensions: developer-guide/creating-extensions.md
     - Tool Development: developer-guide/tool-development.md
     - App/Service Integration: developer-guide/external-services.md
-  - Reference:
-    - Architecture: reference/architecture.md
-    - API Reference: reference/api.md
-    - Configuration: reference/configuration.md
-    - Security Model: reference/security.md
 
 plugins:
   - search

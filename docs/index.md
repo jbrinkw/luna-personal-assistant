@@ -209,7 +209,7 @@ Connect Luna to Claude Desktop via MCP, then ask Claude to search the web, check
 
 ## Getting Started
 
-Ready to build your private AI platform? Check out the [Installation Guide](installation.md) to get Luna Hub running on your infrastructure.
+Ready to build your private AI platform? Check out the [Installation Guide](installation.md) to get Luna Hub running on your infrastructure in under 15 minutes.
 
 Want to explore what's possible? See [Featured Extensions](getting-started/featured-extensions.md) for detailed examples of ChefByte and Home Assistant integrations.
 

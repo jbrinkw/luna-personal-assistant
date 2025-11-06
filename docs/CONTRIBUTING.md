@@ -50,21 +50,17 @@ docs/
 ├── index.md                          # What Luna Hub Can Do For You
 ├── installation.md                   # Complete installation guide
 ├── getting-started/
-│   ├── quick-start.md               # Getting started tutorial
 │   └── featured-extensions.md       # ChefByte, Home Assistant examples
 ├── user-guide/
+│   ├── navigating-interface.md      # Hub UI overview
 │   ├── extensions.md                # Managing extensions
 │   ├── external-services.md         # Docker service management
 │   ├── agent-api.md                 # Using the Agent API
 │   └── mcp-servers.md               # MCP configuration
-├── developer-guide/
-│   ├── creating-extensions.md       # Extension development
-│   ├── tool-development.md          # Writing tools
-│   └── external-services.md         # Creating service definitions
-└── reference/
-    ├── architecture.md              # System architecture
-    ├── api.md                       # API reference
-    └── configuration.md             # Configuration reference
+└── developer-guide/
+    ├── creating-extensions.md       # Extension development
+    ├── tool-development.md          # Writing tools
+    └── external-services.md         # Creating service definitions
 ```
 
 ## Contributing to Docs
@@ -107,10 +103,8 @@ docs/
 **Completed:**
 - ✅ Main index page (What Luna Hub Can Do For You)
 - ✅ Complete installation guide with all deployment modes
+- ✅ Featured extensions showcase (ChefByte, Home Assistant)
 
 **TODO:**
-- ⬜ Getting started tutorial
-- ⬜ Featured extensions showcase (ChefByte, Home Assistant)
 - ⬜ User guides for extensions, services, agents, MCP
 - ⬜ Developer guides for creating extensions and tools
-- ⬜ Reference documentation (architecture, API, configuration)

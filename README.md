@@ -2,7 +2,9 @@
 
 **Your private AI platform for managing AI tools and self-hosted applications**
 
-[![Documentation](https://img.shields.io/badge/docs-live-blue)](https://jbrinkw.github.io/luna-personal-assistant/)
+🌐 **[Live Demo](https://lunahub.dev)** | 📚 **[Documentation](https://docs.lunahub.dev)**
+
+[![Documentation](https://img.shields.io/badge/docs-live-blue)](https://docs.lunahub.dev)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![GitHub](https://img.shields.io/github/stars/jbrinkw/luna-personal-assistant?style=social)](https://github.com/jbrinkw/luna-personal-assistant)
 
@@ -68,7 +70,7 @@ Think of it as **mission control for your personal AI ecosystem**—install tool
    - Log in with GitHub
    - Start installing extensions and apps!
 
-📖 **Full installation guide**: [Installation Documentation](https://docs.lunahub.dev)
+📖 **Full installation guide**: [Installation Documentation](https://docs.lunahub.dev/installation)
 
 ## What Can You Build?
 
@@ -121,12 +123,12 @@ Luna Hub is built on a modular architecture:
 
 ## Documentation
 
-📚 **Full documentation available at**: https://jbrinkw.github.io/luna-personal-assistant/
+📚 **Full documentation available at**: https://docs.lunahub.dev
 
-- [Installation Guide](https://jbrinkw.github.io/luna-personal-assistant/installation/) - Complete setup instructions
-- [Featured Extensions](https://jbrinkw.github.io/luna-personal-assistant/getting-started/featured-extensions/) - ChefByte and Home Assistant walkthroughs
-- [Creating Extensions](https://jbrinkw.github.io/luna-personal-assistant/developer-guide/creating-extensions/) - Build your own tools
-- [Architecture](https://jbrinkw.github.io/luna-personal-assistant/reference/architecture/) - Technical deep dive
+- [Installation Guide](https://docs.lunahub.dev/installation/) - Complete setup instructions
+- [Featured Extensions](https://docs.lunahub.dev/getting-started/featured-extensions/) - ChefByte and Home Assistant walkthroughs
+- [Creating Extensions](https://docs.lunahub.dev/developer-guide/creating-extensions/) - Build your own tools
+- [Architecture](https://docs.lunahub.dev/reference/architecture/) - Technical deep dive
 
 ## Featured Extensions
 
@@ -205,7 +207,7 @@ Contributions are welcome! Please feel free to:
 
 - 📧 Email: [jeremy@onthebrink.ai](mailto:jeremy@onthebrink.ai)
 - 🐛 Issues: [GitHub Issues](https://github.com/jbrinkw/luna-personal-assistant/issues)
-- 📖 Docs: [Full Documentation](https://jbrinkw.github.io/luna-personal-assistant/)
+- 📖 Docs: [Full Documentation](https://docs.lunahub.dev)
 
 ## License
 
