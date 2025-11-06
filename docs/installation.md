@@ -109,25 +109,41 @@ The lunahub.dev domain cost me less than $10 for the first year.
 - Luna configures Caddy with automatic SSL
 - You manually configure DNS A record
 - Full control over domain and certificates
+- **Optional:** Use Cloudflare Tunnel instead of direct access (Cloudflare handles TLS, no ports needed)
 
-**Requirements:**
+**Requirements (Direct Access):**
 - Registered domain name (from Namecheap, Cloudflare, etc.)
 - Ability to set DNS A records
 - Ports 80 and 443 open to the internet
 - Public IP address
+
+**Requirements (Cloudflare Tunnel):**
+- Registered domain name
+- Cloudflare account (free tier works)
+- Cloudflare Tunnel configured in Zero Trust dashboard
+- Cloudflare Tunnel service running on your server
 
 **Pros:**
 - Professional custom domain
 - Full control over DNS and certificates
 - Best for production use
 - Can use subdomains (e.g., `luna.yourdomain.com`)
+- **With Cloudflare Tunnel:** No need to open firewall ports, Cloudflare handles TLS termination
 
 **Cons:**
 - Requires domain purchase (~$10-15/year)
 - Manual DNS configuration
 - Must wait for DNS propagation (up to 48 hours)
+- **With Cloudflare Tunnel:** Requires Cloudflare account and separate tunnel setup
 
 **Example URL:** `https://luna.yourdomain.com`
+
+**Cloudflare Tunnel Option:**
+When selecting custom_domain mode, you can choose to use Cloudflare Tunnel instead of direct access. This option:
+- Uses Cloudflare Tunnel to expose your domain (no need to open ports 80/443)
+- Cloudflare terminates TLS and forwards HTTP to your server
+- Luna automatically configures Caddy to work with Cloudflare Tunnel
+- Perfect for servers behind firewalls or NAT
 
 ---
 
@@ -204,14 +220,177 @@ The installer will automatically detect your public IP and generate the URL.
 ```
 Enter your custom domain (e.g., luna.yourdomain.com):
 > luna.yourdomain.com
-
-Please configure your DNS:
-  1. Add an A record for 'luna.yourdomain.com'
-  2. Point it to your server's IP: 203.0.113.42
-  3. Wait for DNS propagation (up to 48 hours)
-
-Continue after DNS is configured? [y/N]:
 ```
+
+- Configure an A record in your DNS provider pointing to your server's IP
+- Wait for DNS propagation (usually 5-10 minutes, up to 48 hours)
+
+#### For Cloudflare Tunnel Mode:
+
+```
+Enter your Cloudflare Tunnel domain (e.g., meow.sex):
+> meow.sex
+```
+
+- Set up Cloudflare Tunnel in Cloudflare Zero Trust dashboard
+- Configure tunnel to forward to `http://localhost:80`
+- Set the hostname to match the domain you entered
+- Luna will automatically configure Caddy to work with Cloudflare Tunnel
+
+---
+
+### Step 5: Configure GitHub OAuth
+
+Luna requires **two** GitHub OAuth applications:
+
+1. **Hub UI OAuth App** - For web interface login
+2. **MCP OAuth App** - For Claude/AI assistant connections
+
+#### Creating GitHub OAuth Apps
+
+For each app, go to [GitHub Settings > Developer settings > OAuth Apps](https://github.com/settings/developers) and click "New OAuth App":
+
+**Hub UI OAuth App:**
+- Application name: `Luna Hub UI`
+- Homepage URL: `https://your-domain.com` (use your deployment mode URL)
+- Authorization callback URL: `https://your-domain.com/auth/callback`
+
+**MCP OAuth App:**
+- Application name: `Luna MCP Server`
+- Homepage URL: `https://your-domain.com` (use your deployment mode URL)
+- Authorization callback URL: `https://your-domain.com/api/authorize`
+
+After creating each app, copy the **Client ID** and **Client Secret** - you'll need them during installation.
+
+---
+
+### Step 6: Complete Installation
+
+The installer will prompt you for:
+
+1. **GitHub OAuth credentials** (both apps)
+2. **Allowed GitHub username** (optional - restricts access to specific user)
+3. **LLM API key** (OpenAI or Anthropic)
+4. **Timezone** (defaults to UTC)
+
+Once complete, the installer will:
+
+- Create `.env` file with all configuration
+- Install Python dependencies
+- Set up systemd service for auto-start
+- Generate initial configuration files
+
+---
+
+### Step 7: Start Luna
+
+```bash
+sudo systemctl start luna
+sudo systemctl enable luna  # Enable auto-start on boot
+```
+
+Check status:
+
+```bash
+sudo systemctl status luna
+```
+
+View logs:
+
+```bash
+journalctl -u luna -f
+```
+
+---
+
+## Post-Installation
+
+### Accessing Luna Hub
+
+Once running, access Luna Hub at:
+
+- **Ngrok mode:** `https://your-subdomain.ngrok-free.app`
+- **Nip.io mode:** `https://your-ip.nip.io`
+- **Custom domain:** `https://your-domain.com` (direct access or via Cloudflare Tunnel)
+
+### First Login
+
+1. Navigate to your Luna Hub URL
+2. Click "Login with GitHub"
+3. Authorize the GitHub OAuth app
+4. If you set an allowed username, only that user can log in
+
+### Service Management
+
+**Start/Stop/Restart:**
+```bash
+sudo systemctl start luna
+sudo systemctl stop luna
+sudo systemctl restart luna
+```
+
+**View logs:**
+```bash
+# All logs
+journalctl -u luna -f
+
+# Recent logs only
+journalctl -u luna --since "1 hour ago"
+```
+
+**Check service status:**
+```bash
+sudo systemctl status luna
+```
+
+---
+
+## Troubleshooting
+
+### Port Already in Use
+
+If you see errors about ports being in use:
+
+```bash
+# Check what's using the port
+sudo lsof -i :5173  # Hub UI
+sudo lsof -i :8080  # Agent API
+sudo lsof -i :8765  # Auth service
+
+# Kill the process if needed
+sudo kill -9 <PID>
+```
+
+### Caddy SSL Certificate Issues
+
+For `nip_io` or `custom_domain` modes, if SSL certificates fail:
+
+1. Ensure ports 80 and 443 are open
+2. Check firewall rules: `sudo ufw status`
+3. Verify DNS A record points to correct IP
+4. Wait for DNS propagation (can take up to 48 hours)
+5. Check Caddy logs: `tail -f logs/caddy.log`
+
+### GitHub OAuth Not Working
+
+1. Verify callback URLs match exactly in GitHub OAuth app settings
+2. Check that your domain is accessible from the internet
+3. Ensure HTTPS is working (required for OAuth)
+4. Check auth service logs: `tail -f logs/auth_service.log`
+
+### Cloudflare Tunnel Issues
+
+If using Cloudflare Tunnel mode:
+
+1. Verify Cloudflare Tunnel is running: `systemctl status cloudflared`
+2. Check tunnel configuration points to `http://localhost:80`
+3. Verify domain hostname matches in Cloudflare dashboard
+4. Check Caddy is listening on port 80: `ss -tlnp | grep :80`
+5. Review Cloudflare Tunnel logs: `journalctl -u cloudflared -f`
+
+---
+
+## Configuration Files
 
 !!! important "DNS Configuration Required"
     For custom domains, you **must** configure your DNS A record before continuing. Use your domain registrar's control panel or Cloudflare to add the record.
@@ -460,17 +639,18 @@ Luna Hub stores configuration in several locations:
 
 ## Deployment Mode Comparison
 
-| Feature | Ngrok | Nip.io | Custom Domain |
-|---------|-------|--------|---------------|
-| **Setup Difficulty** | Easy | Easy | Moderate |
-| **Network Config** | None | Open ports | Open ports + DNS |
-| **SSL Certificates** | Automatic | Automatic | Automatic |
-| **Custom Domain** | ❌ No | ❌ No | ✅ Yes |
-| **Third-Party Account** | ✅ Required | ❌ Not needed | ❌ Not needed |
-| **Best For** | Home networks | Cloud VMs | Production |
-| **Connection Limits** | Free tier limits | ✅ None | ✅ None |
-| **DNS Dependency** | ❌ No | ✅ nip.io service | ✅ Your registrar |
-| **Cost** | Free tier OK | ✅ Free | Domain fee (~$10/yr) |
+| Feature | Ngrok | Nip.io | Custom Domain | Custom Domain + Cloudflare Tunnel |
+|---------|-------|--------|---------------|-----------------------------------|
+| **Setup Difficulty** | Easy | Easy | Moderate | Moderate |
+| **Network Config** | None | Open ports | Open ports + DNS | None (tunnel) |
+| **SSL Certificates** | Automatic | Automatic | Automatic | Cloudflare |
+| **Custom Domain** | ❌ No | ❌ No | ✅ Yes | ✅ Yes |
+| **Third-Party Account** | ✅ Required | ❌ Not needed | ❌ Not needed | ✅ Required (Cloudflare) |
+| **Best For** | Home networks | Cloud VMs | Production | Production (behind firewall) |
+| **Connection Limits** | Free tier limits | ✅ None | ✅ None | ✅ None |
+| **DNS Dependency** | ❌ No | ✅ nip.io service | ✅ Your registrar | ✅ Cloudflare |
+| **Cost** | Free tier OK | ✅ Free | Domain fee (~$10/yr) | Domain fee (~$10/yr) |
+| **Firewall Ports** | ❌ None | ✅ 80, 443 | ✅ 80, 443 | ❌ None |
 
 ---
 

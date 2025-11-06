@@ -60,7 +60,8 @@ load_config() {
   },
   "nip_io": {},
   "custom_domain": {
-    "domain": ""
+    "domain": "",
+    "use_cloudflare_tunnel": false
   },
   "github_oauth": {
     "client_id": "",
@@ -91,6 +92,7 @@ EOF
         echo ""
         echo "3) custom_domain - Production mode with your own domain"
         echo "                   (requires open ports 80/443 and manual DNS setup)"
+        echo "                   (optionally use Cloudflare Tunnel instead of direct access)"
         echo ""
         read -p "Enter your choice (1-3): " -r DEPLOY_CHOICE
         echo ""
@@ -125,6 +127,7 @@ EOF
     NGROK_API_KEY=$(jq -r '.ngrok.api_key // ""' "$CONFIG_FILE")
     NGROK_DOMAIN=$(jq -r '.ngrok.domain // ""' "$CONFIG_FILE")
     CUSTOM_DOMAIN=$(jq -r '.custom_domain.domain // ""' "$CONFIG_FILE")
+    USE_CLOUDFLARE_TUNNEL=$(jq -r 'if .custom_domain.use_cloudflare_tunnel == true then "true" else "false" end' "$CONFIG_FILE")
     
     log_success "Configuration loaded"
     log_info "Deployment mode: $DEPLOYMENT_MODE"
@@ -217,10 +220,47 @@ EOF
             
             log_info "Custom domain: $CUSTOM_DOMAIN"
             echo ""
-            log_warn "IMPORTANT: Make sure ports 80 and 443 are open on your firewall"
-            log_warn "Make sure your domain's A record points to this server's public IP"
-            echo ""
-            read -p "Press Enter to continue once DNS and firewall are configured..."
+            
+            # Ask if using Cloudflare Tunnel
+            if [ "$USE_CLOUDFLARE_TUNNEL" != "true" ] && [ "$USE_CLOUDFLARE_TUNNEL" != "false" ]; then
+                echo "Do you want to use Cloudflare Tunnel to expose this domain?"
+                echo "  - Yes: Cloudflare handles TLS, no need to open ports 80/443"
+                echo "  - No:  Direct access, requires ports 80/443 open and DNS A record"
+                echo ""
+                read -p "Use Cloudflare Tunnel? (y/N): " -r USE_TUNNEL_RESPONSE
+                echo ""
+                
+                if [[ $USE_TUNNEL_RESPONSE =~ ^[Yy]$ ]]; then
+                    USE_CLOUDFLARE_TUNNEL="true"
+                else
+                    USE_CLOUDFLARE_TUNNEL="false"
+                fi
+                
+                # Update config file
+                TMP_CONFIG=$(mktemp)
+                if [ "$USE_CLOUDFLARE_TUNNEL" = "true" ]; then
+                    jq '.custom_domain.use_cloudflare_tunnel = true' "$CONFIG_FILE" > "$TMP_CONFIG"
+                else
+                    jq '.custom_domain.use_cloudflare_tunnel = false' "$CONFIG_FILE" > "$TMP_CONFIG"
+                fi
+                mv "$TMP_CONFIG" "$CONFIG_FILE"
+            fi
+            
+            if [ "$USE_CLOUDFLARE_TUNNEL" = "true" ]; then
+                log_info "Using Cloudflare Tunnel for domain exposure"
+                echo ""
+                log_warn "IMPORTANT: You must configure Cloudflare Tunnel separately:"
+                log_warn "  1. Set up Cloudflare Tunnel in Cloudflare Zero Trust dashboard"
+                log_warn "  2. Configure tunnel to forward to http://localhost:80"
+                log_warn "  3. Set the hostname to: $CUSTOM_DOMAIN"
+                echo ""
+                read -p "Press Enter to continue once Cloudflare Tunnel is configured..."
+            else
+                log_warn "IMPORTANT: Make sure ports 80 and 443 are open on your firewall"
+                log_warn "Make sure your domain's A record points to this server's public IP"
+                echo ""
+                read -p "Press Enter to continue once DNS and firewall are configured..."
+            fi
             ;;
             
         *)
@@ -791,6 +831,13 @@ TIME_ZONE=$TIMEZONE
 NGROK_AUTHTOKEN=$NGROK_API_KEY
 TUNNEL_HOST=$NGROK_DOMAIN
 
+# Cloudflare Tunnel (only used if custom_domain mode with Cloudflare Tunnel enabled)
+EOF
+    if [ "$DEPLOYMENT_MODE" = "custom_domain" ] && [ "$USE_CLOUDFLARE_TUNNEL" = "true" ]; then
+        echo "CLOUDFLARE_TUNNEL=true" >> "$ENV_FILE"
+    fi
+    cat >> "$ENV_FILE" <<EOF
+
 # GitHub OAuth Authentication
 # Hub UI OAuth (web interface login)
 GITHUB_CLIENT_ID=$GITHUB_CLIENT_ID
@@ -1024,8 +1071,13 @@ print_summary() {
             if [ -n "$PUBLIC_DOMAIN" ]; then
                 echo "  - Public URL: https://$PUBLIC_DOMAIN"
                 echo ""
-                echo "IMPORTANT: Ensure ports 80 and 443 are open for Let's Encrypt SSL provisioning"
-                echo "IMPORTANT: Make sure your domain's A record points to this server's public IP"
+                if [ "$USE_CLOUDFLARE_TUNNEL" = "true" ]; then
+                    echo "IMPORTANT: Ensure Cloudflare Tunnel is configured to forward to http://localhost:80"
+                    echo "IMPORTANT: Caddy will automatically disable HTTPS redirects for Cloudflare Tunnel"
+                else
+                    echo "IMPORTANT: Ensure ports 80 and 443 are open for Let's Encrypt SSL provisioning"
+                    echo "IMPORTANT: Make sure your domain's A record points to this server's public IP"
+                fi
             fi
             ;;
     esac
@@ -1089,7 +1141,11 @@ EOF
             ;;
         custom_domain)
             # PUBLIC_DOMAIN was already set earlier in load_config
-            log_info "Using custom domain: $PUBLIC_DOMAIN"
+            if [ "$USE_CLOUDFLARE_TUNNEL" = "true" ]; then
+                log_info "Using custom domain with Cloudflare Tunnel: $PUBLIC_DOMAIN"
+            else
+                log_info "Using custom domain: $PUBLIC_DOMAIN"
+            fi
             ;;
     esac
     
