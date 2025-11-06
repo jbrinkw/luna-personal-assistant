@@ -795,25 +795,77 @@ class ExternalServicesManager:
             
         Returns:
             Interpolated command string
+        
+        Raises:
+            ValueError: If required variables are missing from config
         """
         config_path = self.services_dir / service_name / "config.json"
         working_dir = service_def.working_dir or str(self.repo_path)
+        service_dir = self.services_dir / service_name
+        data_dir = service_dir / "data"
         
         # Get user configuration
         config = self.get_service_config(service_name) or {}
+        
+        # Build extended config with auto-assigned system variables
+        extended_config = dict(config)
+        
+        # Auto-assign common system variables (case variations for convenience)
+        auto_vars = {
+            'service_name': service_name,
+            'SERVICE_NAME': service_name,
+            'container_name': f"luna-{service_name}",
+            'CONTAINER_NAME': f"luna-{service_name}",
+            'service_dir': str(service_dir),
+            'SERVICE_DIR': str(service_dir),
+            'data_dir': str(data_dir),
+            'DATA_DIR': str(data_dir),
+            'repo_root': str(self.repo_path),
+            'REPO_ROOT': str(self.repo_path),
+        }
+        
+        # Add auto-vars only if not already in user config (user config takes precedence)
+        for key, value in auto_vars.items():
+            if key not in extended_config:
+                extended_config[key] = value
         
         # Start with command
         result = command
         
         # First, replace {{variable}} template syntax with config values
-        # Find all {{variable}} patterns
-        template_pattern = r'\{\{(\w+)\}\}'
+        # Find all {{variable}} patterns (with optional whitespace)
+        template_pattern = r'\{\{\s*(\w+)\s*\}\}'
         matches = re.findall(template_pattern, result)
         
+        # Build case-insensitive lookup for extended config
+        config_lower = {k.lower(): (k, v) for k, v in extended_config.items()}
+        
+        missing_vars = []
         for var_name in matches:
-            if var_name in config:
-                value = str(config[var_name])
-                result = result.replace(f'{{{{{var_name}}}}}', value)
+            # Try exact match first
+            if var_name in extended_config:
+                value = str(extended_config[var_name])
+                # Replace all variations: {{var}}, {{ var }}, {{  var  }}, etc.
+                result = re.sub(r'\{\{\s*' + re.escape(var_name) + r'\s*\}\}', value, result)
+            # Try case-insensitive match
+            elif var_name.lower() in config_lower:
+                original_key, value = config_lower[var_name.lower()]
+                # Replace all variations with case-insensitive pattern
+                result = re.sub(r'\{\{\s*' + re.escape(var_name) + r'\s*\}\}', str(value), result, flags=re.IGNORECASE)
+            else:
+                missing_vars.append(var_name)
+        
+        # If there are missing variables, raise an error
+        if missing_vars:
+            error_msg = f"Missing required configuration for {service_name}: {', '.join(missing_vars)}"
+            print(f"[ExternalServicesManager] ERROR: {error_msg}")
+            print(f"[ExternalServicesManager] Available config: {', '.join(config.keys()) if config else 'none'}")
+            print(f"[ExternalServicesManager] Auto-assigned: {', '.join(auto_vars.keys())}")
+            print(f"[ExternalServicesManager] Command: {command}")
+            # Remove any remaining template variables to prevent syntax errors
+            for var_name in missing_vars:
+                result = re.sub(r'\{\{\s*' + re.escape(var_name) + r'\s*\}\}', '', result)
+            raise ValueError(error_msg)
         
         # Then replace legacy {placeholder} syntax
         port = config.get("port", "")
@@ -964,11 +1016,14 @@ class ExternalServicesManager:
             return "unknown", "No health check command found"
         
         # Interpolate command
-        health_cmd = self.interpolate_command(
-            health_cmd,
-            service_name,
-            service_def
-        )
+        try:
+            health_cmd = self.interpolate_command(
+                health_cmd,
+                service_name,
+                service_def
+            )
+        except ValueError as e:
+            return "unknown", f"Configuration error: {e}"
         
         # Execute health check
         success, output, exit_code = self.execute_command(
@@ -1021,14 +1076,18 @@ class ExternalServicesManager:
         # Get install command
         install_cmd = self.get_command(service_def, "install")
         if not install_cmd:
-            return False, f"No install command found for {service_name}"
+            return False, f"No install command found for {service_name}", {}
         
         # Interpolate install command
-        install_cmd = self.interpolate_command(
-            install_cmd,
-            service_name,
-            service_def
-        )
+        try:
+            install_cmd = self.interpolate_command(
+                install_cmd,
+                service_name,
+                service_def
+            )
+        except ValueError as e:
+            # Missing required config variables - return error without marking as installed
+            return False, str(e), {}
         
         # Execute installation
         timeout = service_def.install_timeout
@@ -1178,11 +1237,14 @@ class ExternalServicesManager:
             return False, f"No start command found for {service_name}"
         
         # Interpolate start command
-        start_cmd = self.interpolate_command(
-            start_cmd,
-            service_name,
-            service_def
-        )
+        try:
+            start_cmd = self.interpolate_command(
+                start_cmd,
+                service_name,
+                service_def
+            )
+        except ValueError as e:
+            return False, f"Configuration error: {e}"
         
         # Execute start
         success, output, exit_code = self.execute_command(
@@ -1237,11 +1299,14 @@ class ExternalServicesManager:
             return False, f"No stop command found for {service_name}"
         
         # Interpolate stop command
-        stop_cmd = self.interpolate_command(
-            stop_cmd,
-            service_name,
-            service_def
-        )
+        try:
+            stop_cmd = self.interpolate_command(
+                stop_cmd,
+                service_name,
+                service_def
+            )
+        except ValueError as e:
+            return False, f"Configuration error: {e}"
         
         # Execute stop
         success, output, exit_code = self.execute_command(

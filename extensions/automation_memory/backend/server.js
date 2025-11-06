@@ -384,6 +384,16 @@ async function initializeSchema() {
 const PORT = process.env.AM_API_PORT || 5302;
 
 initializeSchema().then(() => {
+  // Debug: Check environment variables before starting
+  console.log('[automation-memory] Environment check:', {
+    DB_HOST: process.env.DB_HOST || 'NOT SET',
+    DB_PORT: process.env.DB_PORT || 'NOT SET',
+    DB_NAME: process.env.DB_NAME || 'NOT SET',
+    DB_USER: process.env.DB_USER || 'NOT SET',
+    DB_PASSWORD: process.env.DB_PASSWORD ? 'SET (' + process.env.DB_PASSWORD.length + ' chars)' : 'NOT SET',
+    PGPASSWORD: process.env.PGPASSWORD ? 'SET (' + process.env.PGPASSWORD.length + ' chars)' : 'NOT SET'
+  });
+  
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[automation-memory] API listening on 0.0.0.0:${PORT}`);
     console.log(`[automation-memory] Database: ${process.env.DB_NAME || 'luna'}`);

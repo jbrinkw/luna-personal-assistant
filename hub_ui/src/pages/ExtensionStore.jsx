@@ -4,7 +4,7 @@ import { useServices } from '../context/ServicesContext';
 import Button from '../components/common/Button';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import Card from '../components/common/Card';
-import { getInstalledServices, installService } from '../lib/externalServicesApi';
+import { getInstalledServices, installService, uploadService, getServiceDetails } from '../lib/externalServicesApi';
 import { KeysAPI } from '../lib/api';
 
 const REGISTRY_URL = 'https://raw.githubusercontent.com/jbrinkw/luna-ext-store/main/registry.json';
@@ -327,6 +327,22 @@ export default function ExtensionStore() {
     setInstalling(true);
     
     try {
+      // First, check if service definition exists locally
+      // If not, upload it from the registry
+      try {
+        await getServiceDetails(service.name);
+        // Service exists locally, proceed with installation
+      } catch (error) {
+        // Service doesn't exist locally (404), need to upload it first
+        if (service.service_definition) {
+          console.log(`Uploading service definition for ${service.name}...`);
+          await uploadService(service.service_definition);
+        } else {
+          throw new Error(`Service definition not found for ${service.name}. Cannot install.`);
+        }
+      }
+      
+      // Now install the service
       await installService(service.name, config);
       await loadInstalledServices();
       setInstallModal(null);
@@ -354,16 +370,12 @@ export default function ExtensionStore() {
 
     setSavingSecrets(true);
     try {
-      // Save all non-empty secrets to .env
-      const savePromises = [];
+      // Save all non-empty secrets to .env sequentially to avoid race conditions
       for (const [key, value] of Object.entries(secretsFormData)) {
         if (value && value.trim()) {
-          savePromises.push(KeysAPI.set(key, value.trim()));
+          await KeysAPI.set(key, value.trim());
         }
       }
-      
-      // Wait for all secrets to be saved
-      await Promise.all(savePromises);
       
       // Add extension to queue
       doInstallExtension(secretsModal);

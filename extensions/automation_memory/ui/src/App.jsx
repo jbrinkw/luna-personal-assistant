@@ -46,9 +46,15 @@ export default function App() {
 
   // Initialize API base URL
   useEffect(() => {
-    getApiBase().then(url => {
-      setApiBase(url);
-    });
+    getApiBase()
+      .then(url => {
+        setApiBase(url);
+      })
+      .catch(err => {
+        console.error('[App] Failed to initialize API base:', err);
+        // Fallback to default API path
+        setApiBase('/api/automation_memory');
+      });
   }, []);
 
   // Load data on mount and when API base is ready
@@ -159,9 +165,15 @@ export default function App() {
       </div>
 
       <div className="tab-content">
-        {tab === 'memories' && <MemoriesTab memories={memories} onUpdate={loadData} apiBase={apiBase} />}
-        {tab === 'flows' && <FlowsTab flows={flows} agents={agents} onUpdate={loadData} apiBase={apiBase} />}
-        {tab === 'schedules' && <SchedulesTab schedules={schedules} agents={agents} onUpdate={loadData} apiBase={apiBase} />}
+        {!apiBase ? (
+          <div>Loading...</div>
+        ) : (
+          <>
+            {tab === 'memories' && <MemoriesTab memories={memories} onUpdate={loadData} apiBase={apiBase} />}
+            {tab === 'flows' && <FlowsTab flows={flows} agents={agents} onUpdate={loadData} apiBase={apiBase} />}
+            {tab === 'schedules' && <SchedulesTab schedules={schedules} agents={agents} onUpdate={loadData} apiBase={apiBase} />}
+          </>
+        )}
       </div>
     </div>
   );

@@ -5,14 +5,45 @@ const { Pool } = require('pg');
 const path = require('path');
 
 // Load environment from project root
-require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
+const envPath = path.resolve(__dirname, '../../../.env');
+require('dotenv').config({ path: envPath });
+
+// Ensure password is always a string (pg library requirement)
+// Check both DB_PASSWORD and PGPASSWORD, ensuring we get a string value
+let dbPassword = process.env.DB_PASSWORD;
+if (!dbPassword || typeof dbPassword !== 'string') {
+  dbPassword = process.env.PGPASSWORD;
+}
+if (!dbPassword || typeof dbPassword !== 'string') {
+  dbPassword = '';
+}
+// Explicitly convert to string to satisfy pg library
+dbPassword = String(dbPassword);
+
+const dbHost = process.env.DB_HOST || process.env.PGHOST || process.env.POSTGRES_HOST || '127.0.0.1';
+const dbPort = Number(process.env.DB_PORT || process.env.PGPORT || 5432);
+const dbName = process.env.DB_NAME || process.env.PGDATABASE || 'luna';
+const dbUser = process.env.DB_USER || process.env.PGUSER || 'postgres';
+
+// Debug logging
+console.log('[automation-memory] DB config:', {
+  host: dbHost,
+  port: dbPort,
+  database: dbName,
+  user: dbUser,
+  password_set: !!dbPassword && dbPassword !== '',
+  password_type: typeof dbPassword,
+  password_length: dbPassword.length,
+  DB_PASSWORD_env: process.env.DB_PASSWORD ? 'SET' : 'NOT SET',
+  PGPASSWORD_env: process.env.PGPASSWORD ? 'SET' : 'NOT SET'
+});
 
 const pool = new Pool({
-  host: process.env.DB_HOST || process.env.PGHOST || process.env.POSTGRES_HOST || '127.0.0.1',
-  port: Number(process.env.DB_PORT || process.env.PGPORT || 5432),
-  database: process.env.DB_NAME || process.env.PGDATABASE || 'luna',
-  user: process.env.DB_USER || process.env.PGUSER || 'postgres',
-  password: process.env.DB_PASSWORD || process.env.PGPASSWORD || '',
+  host: dbHost,
+  port: dbPort,
+  database: dbName,
+  user: dbUser,
+  password: dbPassword,
 });
 
 // Task Flows
