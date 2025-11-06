@@ -83,11 +83,15 @@ def discover_extensions(tool_root: Optional[str] = None) -> List[Dict[str, Any]]
         for tool_file in tool_files:
             try:
                 # Import the module
+                # Add the tools directory to sys.path so relative imports work
+                if tools_dir not in sys.path:
+                    sys.path.insert(0, tools_dir)
+
                 module_name = os.path.splitext(os.path.basename(tool_file))[0]
                 spec = importlib.util.spec_from_file_location(module_name, tool_file)
                 if not spec or not spec.loader:
                     continue
-                
+
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
                 
