@@ -60,6 +60,9 @@ def generate_caddyfile(repo_path, output_path=None):
     supervisor_api_token = os.getenv("SUPERVISOR_API_TOKEN", "").strip()
     mcp_auth_token = os.getenv("MCP_AUTH_TOKEN", "").strip()
     
+    # Check if Cloudflare Tunnel is being used (via environment variable)
+    use_cloudflare_tunnel = os.getenv("CLOUDFLARE_TUNNEL", "").strip() == "true"
+    
     # Determine server address based on deployment mode
     if deployment_mode == "ngrok":
         # ngrok mode: HTTP on port 8443 (ngrok handles HTTPS)
@@ -69,17 +72,34 @@ def generate_caddyfile(repo_path, output_path=None):
         server_address = public_domain if public_domain else ":8443"
     elif deployment_mode == "custom_domain":
         # custom_domain mode: HTTPS with auto-SSL on custom domain
-        server_address = public_domain if public_domain else ":8443"
+        # But if Cloudflare Tunnel is active, use :80 instead to avoid redirect loops
+        if use_cloudflare_tunnel:
+            server_address = ":80"
+        else:
+            server_address = public_domain if public_domain else ":8443"
     else:
         # Fallback to ngrok mode
         server_address = ":8443"
     
     # Build Caddyfile content
-    lines = [
+    # Add global auto_https off when behind Cloudflare Tunnel
+    # This prevents redirect loops since Cloudflare terminates TLS
+    lines = []
+    if use_cloudflare_tunnel:
+        # Add global block to disable auto HTTPS redirects
+        lines.extend([
+            "{",
+            "    # Disable auto HTTPS redirect (Cloudflare Tunnel handles TLS termination)",
+            "    auto_https off",
+            "}",
+            "",
+        ])
+    
+    lines.extend([
         f"{server_address} {{",
         "    # Core services",
         "    ",
-    ]
+    ])
     
     lines.extend([
         "    # PUBLIC ROUTES (no authentication)",
