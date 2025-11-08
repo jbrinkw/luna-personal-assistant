@@ -159,11 +159,45 @@ class RestrictedGitHubProvider(GitHubProvider):
         )
 
 
+def _create_logging_wrapper(fn: Callable[..., Any], tool_name: str) -> Callable[..., Any]:
+    """Wrap a tool function to log calls and errors."""
+    import functools
+    import json
+    import datetime
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        timestamp = datetime.datetime.now().isoformat()
+
+        # Sanitize arguments for logging (avoid logging sensitive data)
+        log_args = {k: str(v)[:200] for k, v in kwargs.items()}  # Truncate long values
+
+        print(f"[MCP CALL] {timestamp} - {tool_name}", flush=True)
+        print(f"[MCP CALL]   Args: {json.dumps(log_args, ensure_ascii=False)}", flush=True)
+
+        try:
+            result = fn(*args, **kwargs)
+            # Log result length/type but not full content (could be huge)
+            result_info = f"type={type(result).__name__}"
+            if isinstance(result, str):
+                result_info += f", len={len(result)}"
+            print(f"[MCP CALL]   Result: {result_info}", flush=True)
+            return result
+        except Exception as e:
+            error_msg = str(e)
+            print(f"[MCP CALL]   ERROR: {error_msg}", flush=True)
+            import traceback
+            print(f"[MCP CALL]   Traceback: {traceback.format_exc()}", flush=True)
+            raise
+
+    return wrapper
+
+
 def _register_tools(mcp: "FastMCP", tools: List[Callable[..., Any]]) -> int:
     """Register tools with the MCP server."""
     from core.utils.tool_discovery import MCPRemoteTool
     import inspect
-    
+
     count = 0
     print(f"[MCP] Registering {len(tools)} tools...", flush=True)
     for fn in tools:
@@ -178,21 +212,21 @@ def _register_tools(mcp: "FastMCP", tools: List[Callable[..., Any]]) -> int:
                 tool_name = fn.__name__
                 tool_doc = fn.__doc__
                 input_schema = fn.input_schema
-                
+
                 # Build function with explicit parameters
                 if input_schema and isinstance(input_schema, dict):
                     properties = input_schema.get('properties', {})
                     required = input_schema.get('required', [])
-                    
+
                     # Create parameter list
                     params = []
                     param_names = []
                     annotations = {}
-                    
+
                     for param_name, param_info in properties.items():
                         param_names.append(param_name)
                         param_type = param_info.get('type', 'string')
-                        
+
                         # Map JSON schema types to Python types
                         if param_type == 'string':
                             py_type = str
@@ -202,15 +236,15 @@ def _register_tools(mcp: "FastMCP", tools: List[Callable[..., Any]]) -> int:
                             py_type = bool
                         else:
                             py_type = str
-                        
+
                         annotations[param_name] = py_type
-                        
+
                         # Add parameter with default if not required
                         if param_name in required:
                             params.append(inspect.Parameter(param_name, inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=py_type))
                         else:
                             params.append(inspect.Parameter(param_name, inspect.Parameter.POSITIONAL_OR_KEYWORD, default=None, annotation=py_type))
-                    
+
                     # Create function with proper signature
                     def create_remote_tool_func(remote_tool_instance, param_list):
                         def tool_func(*args, **kwargs):
@@ -226,7 +260,7 @@ def _register_tools(mcp: "FastMCP", tools: List[Callable[..., Any]]) -> int:
                         tool_func.__signature__ = inspect.Signature(params)
                         tool_func.__annotations__ = annotations
                         return tool_func
-                    
+
                     wrapper_fn = create_remote_tool_func(fn, param_names)
                 else:
                     # No schema, create simple wrapper
@@ -235,13 +269,16 @@ def _register_tools(mcp: "FastMCP", tools: List[Callable[..., Any]]) -> int:
                     tool_func.__name__ = tool_name
                     tool_func.__doc__ = tool_doc
                     wrapper_fn = tool_func
-                
-                mcp.tool(wrapper_fn)
+
+                # Wrap with logging
+                logged_wrapper = _create_logging_wrapper(wrapper_fn, tool_name)
+                mcp.tool(logged_wrapper)
                 print(f"[MCP]     ✓ Registered remote tool: {tool_name}", flush=True)
                 count += 1
             else:
-                # Regular local tool
-                mcp.tool(fn)
+                # Regular local tool - wrap with logging
+                logged_fn = _create_logging_wrapper(fn, tool_name)
+                mcp.tool(logged_fn)
                 print(f"[MCP]     ✓ Registered local tool: {tool_name}", flush=True)
                 count += 1
         except Exception as e:

@@ -216,14 +216,14 @@ def find_extension_requirements() -> List[Tuple[str, Path]]:
 def find_extension_uis() -> List[Tuple[str, Path]]:
     """
     Find all extension UIs with package.json files.
-    
+
     Returns:
         List of (extension_name, ui_directory_path) tuples
     """
     extensions_dir = PROJECT_ROOT / "extensions"
     if not extensions_dir.exists():
         return []
-    
+
     extension_uis = []
     for ext_dir in extensions_dir.iterdir():
         if ext_dir.is_dir():
@@ -231,8 +231,34 @@ def find_extension_uis() -> List[Tuple[str, Path]]:
             package_json = ui_dir / "package.json"
             if ui_dir.exists() and package_json.exists():
                 extension_uis.append((ext_dir.name, ui_dir))
-    
+
     return extension_uis
+
+
+def find_extension_services() -> List[Tuple[str, str, Path]]:
+    """
+    Find all extension backend services with package.json files.
+
+    Returns:
+        List of (extension_name, service_name, service_directory_path) tuples
+    """
+    extensions_dir = PROJECT_ROOT / "extensions"
+    if not extensions_dir.exists():
+        return []
+
+    extension_services = []
+    for ext_dir in extensions_dir.iterdir():
+        if ext_dir.is_dir():
+            services_dir = ext_dir / "services"
+            if services_dir.exists():
+                # Each service is a subdirectory under services/
+                for service_dir in services_dir.iterdir():
+                    if service_dir.is_dir():
+                        package_json = service_dir / "package.json"
+                        if package_json.exists():
+                            extension_services.append((ext_dir.name, service_dir.name, service_dir))
+
+    return extension_services
 
 
 def install_pnpm_dependencies(ui_dir: Path, label: str) -> Tuple[bool, str]:
@@ -366,7 +392,7 @@ def install_all_dependencies() -> int:
     if extension_uis:
         print_status(f"Found {len(extension_uis)} extension(s) with UI", "info")
         print()
-        
+
         for ext_name, ui_dir in extension_uis:
             success, msg = install_pnpm_dependencies(
                 ui_dir,
@@ -376,6 +402,23 @@ def install_all_dependencies() -> int:
             print()
     else:
         print_status("No extension UIs found with package.json", "info")
+        print()
+
+    # Install extension backend service dependencies
+    extension_services = find_extension_services()
+    if extension_services:
+        print_status(f"Found {len(extension_services)} extension backend service(s)", "info")
+        print()
+
+        for ext_name, service_name, service_dir in extension_services:
+            success, msg = install_pnpm_dependencies(
+                service_dir,
+                f"Extension Service: {ext_name}/{service_name}"
+            )
+            results.append((f"{ext_name} Service: {service_name}", success, msg))
+            print()
+    else:
+        print_status("No extension backend services found with package.json", "info")
         print()
     
     # Summary
