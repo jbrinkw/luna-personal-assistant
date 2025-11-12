@@ -251,15 +251,18 @@ def build_all_light_schema() -> str:
     return '\n'.join(lines)
 
 
-def get_mcp_tools() -> List[Callable]:
-    """Get all tools that are enabled for MCP exposure.
-    
+def get_all_extension_tools() -> List[Callable]:
+    """Get all tools from all enabled extensions (no filtering by enabled_in_mcp).
+
+    Tool enablement is now controlled per-MCP-server in master_config.mcp_servers[name].tool_config.
+    This function returns ALL available tools for filtering by the caller.
+
     Returns:
-        List of tool functions that have enabled_in_mcp=true from enabled extensions only
+        List of all tool functions from enabled extensions
     """
     extensions = discover_extensions()
-    mcp_tools = []
-    
+    all_tools = []
+
     # Load master_config to check enabled state
     master_config_path = PROJECT_ROOT / 'core' / 'master_config.json'
     enabled_extensions = set()
@@ -271,26 +274,30 @@ def get_mcp_tools() -> List[Callable]:
                     if ext_config.get('enabled', True):  # Default to True if not specified
                         enabled_extensions.add(ext_name)
     except Exception as e:
-        print(f"[MCP] Warning: Failed to load master_config, exposing all extensions: {e}", flush=True)
+        print(f"[ExtDiscovery] Warning: Failed to load master_config, exposing all extensions: {e}", flush=True)
         # If we can't load config, expose all extensions (safer default)
         enabled_extensions = {ext.get('name') for ext in extensions}
-    
+
     for ext in extensions:
         ext_name = ext.get('name', '')
-        
+
         # Skip disabled extensions
         if ext_name not in enabled_extensions:
             continue
-            
+
         tools = ext.get('tools', [])
-        tool_configs = ext.get('tool_configs', {})
-        
+
+        # Return ALL tools from enabled extensions (no enabled_in_mcp filtering)
         for tool in tools:
-            tool_name = getattr(tool, '__name__', '')
-            tool_config = tool_configs.get(tool_name, {})
-            
-            # Check if enabled in MCP (default to false for safety)
-            if tool_config.get('enabled_in_mcp', False):
-                mcp_tools.append(tool)
-    
-    return mcp_tools
+            all_tools.append(tool)
+
+    return all_tools
+
+
+# Legacy alias for backward compatibility (will be removed in Phase 2)
+def get_mcp_tools() -> List[Callable]:
+    """DEPRECATED: Use get_all_extension_tools() instead.
+
+    This function is maintained for backward compatibility during migration.
+    """
+    return get_all_extension_tools()

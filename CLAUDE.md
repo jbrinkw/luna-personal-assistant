@@ -278,8 +278,8 @@ Holds the authoritative view of extensions, tool configs, port assignments, serv
 
 ### 6.2 Config Sync (`core/scripts/config_sync.py`)
 - Discovers extension directories and ensures each has an entry in `master_config.extensions` with `enabled`/`source` metadata.
-- Writes back to `extensions/<name>/config.json`, preserving existing fields and `version` values (generating today’s date when missing).
-- Syncs `tools/tool_config.json` entries for any tools defined in `master_config.tool_configs`.
+- Writes back to `extensions/<name>/config.json`, preserving existing fields and `version` values (generating today's date when missing).
+- Tool config syncing has been removed (legacy `master_config.tool_configs` section no longer exists).
 
 ### 6.3 Environment Keys
 Managed exclusively through supervisor endpoints:
@@ -305,7 +305,7 @@ extensions/<name>/
 ├── config.json                 # Minimal manifest (name, required_secrets, auto_update, version, enabled, source, optional ui settings)
 ├── requirements.txt            # Optional Python deps
 ├── tools/
-│   ├── tool_config.json        # Tool exposure settings (enabled_in_mcp, passthrough)
+│   ├── tool_config.json        # Tool metadata (passthrough, description, etc.)
 │   └── *_tools.py              # Tool implementations exporting TOOLS list
 ├── ui/
 │   └── start.sh                # Receives port as $1; supervisor sets PATH to include .venv/bin and exports LUNA_PORTS
@@ -348,8 +348,8 @@ Fields:
 - Export a module-level `TOOLS` list containing callables.
 - Functions typically return `(bool success, str json_payload)`; JSON helpers should use `json.dumps(..., ensure_ascii=False)` when emitting structured data.
 - Docstrings must include `Example Prompt`, `Example Response`, and `Example Args` to aid LLM prompting.
-- File-level `SYSTEM_PROMPT` strings are consumed by LangChain’s tool discovery.
-- `tool_config.json` controls MCP exposure (`enabled_in_mcp`) and passthrough eligibility (`passthrough`).
+- File-level `SYSTEM_PROMPT` strings are consumed by LangChain's tool discovery.
+- `tool_config.json` stores tool metadata like `passthrough` (agent behavior). Tool enablement for MCP servers is controlled per-server in `master_config.mcp_servers[<server_name>].tool_config`.
 
 ### 7.3 Lifecycle & Queue Integration
 - The Hub UI keeps a draft queue (`operations`, `master_config`) in memory; mutations (installs, updates, deletes) edit that draft.
@@ -531,7 +531,7 @@ Service health is monitored alongside extension services. Failures trigger resta
 
 ### 9.2 Passthrough Agent (`core/agents/passthrough_agent/agent.py`)
 - Planner/executor design with structured outputs describing tool calls.
-- Honors `passthrough: true` in `tool_config.json` to allow autonomous tool execution.
+- Honors `passthrough: true` in extension `tool_config.json` to allow autonomous tool execution (metadata field).
 - Provides a `DIRECT_RESPONSE` option for final answers when no tool is needed.
 
 ### 9.3 MCP Server (`core/utils/mcp_server.py`)
@@ -862,5 +862,6 @@ Discovered Agents card displays:
 8. **Hub UI APIs**: Now call supervisor endpoints directly; `/api/extensions/...` (old spec) does not exist.
 9. **DEMO_MODE**: Mentioned in legacy docs but not implemented in current code paths.
 10. **Extension Service Authentication** (Added 2025-11-09): Extension services can now opt into authenticated public APIs via `public_exposure.require_api_key: true` in `service_config.json`. The supervisor auto-generates per-service API keys, stores them in `master_config.service_api_keys` and `.env`, and Caddy routes requests without injecting headers (Pattern 2: client-provided auth). A reusable `APIKeyMiddleware` class in `core/utils/service_auth.py` provides bearer token and X-API-Key validation. Services can also opt out of Caddy exposure entirely with `public_exposure.enabled: false` for internal-only operation.
+11. **Tool Configuration Migration** (Completed 2025-11-10): Tool enablement is now controlled exclusively by per-MCP-server configs in `master_config.mcp_servers[<server_name>].tool_config`. The legacy dual-source system (extension-level `tool_config.json` + `master_config.tool_configs`) has been removed. Extension `tool_config.json` files now only store metadata (`passthrough`, etc.). Migration script available at `core/scripts/migrate_tool_configs.py`.
 
 Keep this document synchronized with future changes to supervisor startup order, proxy generation, queue semantics, or API contracts to prevent the Hub UI, deployment scripts, and external integrations from drifting.

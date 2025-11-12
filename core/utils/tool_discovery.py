@@ -164,22 +164,26 @@ def get_all_tools() -> Dict[str, Any]:
 
 
 def get_mcp_enabled_tools(session_manager=None) -> List[Union[Callable, MCPRemoteTool]]:
-    """Get all tools enabled for MCP exposure.
-    
+    """Get all tools from enabled extensions and remote MCP servers.
+
+    DEPRECATED: This returns ALL tools without filtering. Per-server filtering should be done
+    via get_mcp_enabled_tools_for_server() which uses master_config.mcp_servers[name].tool_config.
+
     Combines:
-    - Local extension tools (where enabled_in_mcp=true)
-    - Remote MCP tools (wrapped in MCPRemoteTool)
-    
+    - Local extension tools (all from enabled extensions)
+    - Remote MCP tools (wrapped in MCPRemoteTool, if enabled globally)
+
     Args:
         session_manager: Optional RemoteMCPSessionManager instance for remote tools
-        
+
     Returns:
         List of tools (mix of callables and MCPRemoteTool instances)
     """
     tools = []
     
-    # Get local extension tools
-    local_tools = get_mcp_tools()
+    # Get local extension tools (all available, no filtering)
+    from core.utils.extension_discovery import get_all_extension_tools
+    local_tools = get_all_extension_tools()
     tools.extend(local_tools)
     
     # Get remote MCP tools if session manager provided
@@ -230,13 +234,15 @@ def get_mcp_enabled_tools_for_server(
 ) -> List[Union[Callable, MCPRemoteTool]]:
     """Get tools enabled for a specific MCP server instance.
 
-    This loads all available tools (local extension tools with enabled_in_mcp
-    in their tool_config.json, and remote MCP tools that are enabled in
-    master_config.remote_mcp_servers) and filters them using the per-server
-    configuration found in master_config.mcp_servers[server_name].tool_config.
+    This is the PRIMARY tool loading function. It loads ALL available tools from enabled
+    extensions and remote MCP servers, then filters them using the per-server configuration
+    found in master_config.mcp_servers[server_name].tool_config.
+
+    Tool enablement is ONLY controlled by master_config.mcp_servers[<server_name>].tool_config.
+    Extension-level tool_config.json files are ignored for enablement decisions.
 
     Args:
-        server_name: Identifier of the MCP server (e.g., "main", "research")
+        server_name: Identifier of the MCP server (e.g., "main", "gym_button")
         master_config: Optional preloaded master_config.json content
         session_manager: Optional RemoteMCPSessionManager instance for remote tools
 

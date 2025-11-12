@@ -332,51 +332,76 @@ def update_master_config(config: Dict[str, Any]):
 # MCP Servers (local)  
 # ---------------------
 
+def _build_tool_to_extension_map(master_config: dict) -> dict:
+    """Build a mapping of tool_name -> extension_name using tool_discovery.
+
+    This is the correct approach since tool naming conventions vary
+    (e.g., HA_ vs HOME_ASSISTANT_). We use the actual tool discovery
+    system which already knows the extension for each tool.
+
+    Returns dict mapping tool names to extension names (only for enabled extensions).
+    """
+    from core.utils.tool_discovery import get_all_tools
+
+    tool_to_ext = {}
+    enabled_extensions = set()
+
+    # Get enabled extensions
+    extensions = master_config.get('extensions', {}) or {}
+    for ext_name, ext_cfg in extensions.items():
+        if ext_cfg.get('enabled', True):
+            enabled_extensions.add(ext_name)
+
+    # Map tools to their extensions using actual tool discovery
+    all_tools = get_all_tools()
+    for ext in all_tools.get('extensions', []):
+        ext_name = ext.get('name')
+        if ext_name in enabled_extensions:
+            for tool in ext.get('tools', []):
+                tool_name = tool.get('name')
+                if tool_name:
+                    tool_to_ext[tool_name] = ext_name
+
+    return tool_to_ext
+
+
 @app.get('/mcp-servers/list')
 def mcp_servers_list():
     """List all configured local MCP servers with status and port."""
     if not supervisor_instance:
         raise HTTPException(status_code=500, detail="Supervisor not initialized")
 
-    available_local_tools = None
-    available_remote_tools = None
-    try:
-        from core.utils.tool_discovery import get_all_tools
-
-        all_tools = get_all_tools()
-        available_local_tools = {
-            tool['name']
-            for ext in all_tools.get('extensions', [])
-            for tool in ext.get('tools', [])
-        }
-        available_remote_tools = set()
-        for server in all_tools.get('remote_mcp_servers', []):
-            if not server.get('enabled', True):
-                continue
-            for tool_name, tool_cfg in (server.get('tools') or {}).items():
-                if tool_cfg.get('enabled', True):
-                    available_remote_tools.add(tool_name)
-    except Exception as exc:  # noqa: BLE001
-        print(f"[MCP] Warning: failed to gather tool availability: {exc}", flush=True)
-        available_local_tools = available_remote_tools = None
-
     servers = supervisor_instance.master_config.get('mcp_servers', {}) or {}
     state = supervisor_instance.get_state().get('services', {})
+
+    # Build tool→extension mapping using actual tool discovery
+    tool_to_ext = _build_tool_to_extension_map(supervisor_instance.master_config)
+
+    # Get remote MCP tool names (tools from enabled remote servers)
+    remote_tools = set()
+    remote_mcp_servers = supervisor_instance.master_config.get('remote_mcp_servers', {}) or {}
+    for server_id, server_cfg in remote_mcp_servers.items():
+        if server_cfg.get('enabled', True):
+            server_tools = server_cfg.get('tools', {}) or {}
+            for tool_name in server_tools.keys():
+                remote_tools.add(tool_name)
 
     result = []
     for name, cfg in servers.items():
         svc_key = f"mcp_server_{name}"
         svc_state = state.get(svc_key, {})
         tc = cfg.get('tool_config', {}) or {}
+
+        # Count tools enabled for this server
         active_count = 0
         for tool_name, tool_cfg in tc.items():
-            if not isinstance(tool_cfg, dict) or not tool_cfg.get('enabled_in_mcp'):
+            if not isinstance(tool_cfg, dict) or not tool_cfg.get('enabled_in_mcp', False):
                 continue
-            if available_local_tools is None:
+
+            # Count if tool belongs to an enabled extension OR is from a remote MCP server
+            if tool_name in tool_to_ext or tool_name in remote_tools:
                 active_count += 1
-                continue
-            if tool_name in available_local_tools or tool_name in (available_remote_tools or set()):
-                active_count += 1
+
         result.append({
             'name': name,
             'enabled': cfg.get('enabled', True),
@@ -545,16 +570,25 @@ def mcp_server_tools(server_name: str):
             raise HTTPException(status_code=404, detail="Server not found")
         per_cfg = servers[server_name].get('tool_config', {}) or {}
 
+        # Build tool→extension mapping to filter out tools from disabled extensions
+        tool_to_ext = _build_tool_to_extension_map(supervisor_instance.master_config)
+
         all_tools = get_all_tools()
-        # Flatten tool names from extensions
+        # Flatten tool names from extensions (only enabled extensions)
         available: Dict[str, Dict[str, Any]] = {}
         for ext in all_tools.get('extensions', []):
+            ext_name = ext.get('name')
+
             for t in ext.get('tools', []):
-                available[t['name']] = {
-                    'source': f"ext:{ext['name']}",
-                    'docstring': t.get('docstring', ''),
-                }
-        # Remote servers
+                tool_name = t['name']
+                # Only include if tool belongs to an enabled extension
+                if tool_name in tool_to_ext:
+                    available[tool_name] = {
+                        'source': f"ext:{ext['name']}",
+                        'docstring': t.get('docstring', ''),
+                    }
+
+        # Remote servers (always included regardless of extension state)
         for srv in all_tools.get('remote_mcp_servers', []):
             tools = srv.get('tools', {}) or {}
             for tname, tcfg in tools.items():

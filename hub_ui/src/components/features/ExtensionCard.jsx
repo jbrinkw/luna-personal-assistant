@@ -47,8 +47,16 @@ export default function ExtensionCard({ extension, status }) {
 
         <div className="extension-card-body">
           <div className="extension-status">
-            <StatusIndicator status={status?.ui?.status || 'offline'} />
-            <span>{status?.ui?.status || 'stopped'}</span>
+            <StatusIndicator status={
+              status?.ui?.status ||
+              (status?.services?.length > 0 ? status.services[0].status : null) ||
+              (isEnabled ? 'active' : 'disabled')
+            } />
+            <span>{
+              status?.ui?.status ||
+              (status?.services?.length > 0 ? status.services[0].status : null) ||
+              (isEnabled ? 'active' : 'disabled')
+            }</span>
           </div>
 
           <div className="extension-stats">

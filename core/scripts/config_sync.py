@@ -122,29 +122,16 @@ def sync_extension_config(ext_name: str, ext_path: Path, master_data: Dict[str, 
 
 def sync_tool_config(ext_name: str, ext_path: Path, master_tools: Dict[str, Any]) -> bool:
     """
-    Sync tool config with master tool configs
-    
-    Updates tool settings from master_config.tool_configs
+    DEPRECATED: Tool config syncing is no longer used.
+
+    Tool enablement is now controlled per-MCP-server in master_config.mcp_servers[name].tool_config.
+    Extension-level tool_config.json files only store metadata (passthrough, etc.), not enablement.
+
+    This function is kept as a no-op for backward compatibility during migration.
+
+    Returns: False (no syncing performed)
     """
-    # Load extension's tool config
-    tool_config = load_tool_config(ext_path)
-    
-    if not tool_config:
-        # No tool config file, skip
-        return False
-    
-    # Update tools that exist in master config
-    updated = False
-    for tool_name, tool_settings in master_tools.items():
-        if tool_name in tool_config:
-            # Update this tool's settings
-            tool_config[tool_name] = tool_settings
-            updated = True
-    
-    if updated:
-        save_tool_config(ext_path, tool_config)
-    
-    return updated
+    return False
 
 
 def discover_filesystem_extensions(extensions_dir: Path) -> List[str]:
