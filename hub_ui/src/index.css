@@ -1841,7 +1841,7 @@ body {
 
 /* Queue Manager Styles */
 .queue-section {
-  background: #303134;
+  background: #28292c;
   border: 2px solid #3c4043;
   border-radius: 12px;
   padding: 24px;
@@ -1861,11 +1861,19 @@ body {
   margin: 0;
   font-size: 22px;
   color: #e8eaed;
+  font-weight: 600;
 }
 
 .queue-section-actions {
   display: flex;
   gap: 12px;
+  flex-wrap: wrap;
+}
+
+.queue-section-actions .btn {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  padding: 10px 20px;
 }
 
 .changes-list {
@@ -1973,6 +1981,15 @@ body {
   font-size: 14px;
 }
 
+.operation-item > *:last-child {
+  margin-left: auto;
+}
+
+.operation-item .btn {
+  flex-shrink: 0;
+  min-width: auto;
+}
+
 .operation-type {
   background: #8ab4f8;
   color: #202124;
@@ -1981,17 +1998,23 @@ body {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
+  flex-shrink: 0;
 }
 
 .operation-target {
   font-weight: 600;
   color: #e8eaed;
   font-family: 'Courier New', monospace;
+  flex-shrink: 0;
 }
 
 .operation-source {
   color: #9aa0a6;
   font-size: 13px;
+  flex-grow: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Restart Modal Styles */
