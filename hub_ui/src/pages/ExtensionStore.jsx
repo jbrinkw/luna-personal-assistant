@@ -161,20 +161,32 @@ export default function ExtensionStore() {
       return;
     }
 
-    // Check if extension has required secrets
-    if (storeExt.required_secrets && storeExt.required_secrets.length > 0) {
+    // Check if extension has required secrets (support both old and new formats)
+    const hasSecretDefinitions = storeExt.secret_definitions && Object.keys(storeExt.secret_definitions).length > 0;
+    const hasRequiredSecrets = storeExt.required_secrets && storeExt.required_secrets.length > 0;
+
+    if (hasSecretDefinitions || hasRequiredSecrets) {
       // Load existing secrets from .env
       try {
         const existingSecrets = await KeysAPI.list();
         const initialFormData = {};
         const initialVisibility = {};
-        
-        storeExt.required_secrets.forEach(secret => {
-          // Prefill with existing value if available
-          initialFormData[secret] = existingSecrets[secret] || '';
-          initialVisibility[secret] = false;
-        });
-        
+
+        // Support new format (secret_definitions with metadata)
+        if (hasSecretDefinitions) {
+          Object.keys(storeExt.secret_definitions).forEach(secretName => {
+            initialFormData[secretName] = existingSecrets[secretName] || storeExt.secret_definitions[secretName].default || '';
+            initialVisibility[secretName] = false;
+          });
+        }
+        // Fallback to old format (simple string array)
+        else {
+          storeExt.required_secrets.forEach(secret => {
+            initialFormData[secret] = existingSecrets[secret] || '';
+            initialVisibility[secret] = false;
+          });
+        }
+
         setSecretsFormData(initialFormData);
         setSecretsVisibility(initialVisibility);
         setSecretsModal(storeExt);
@@ -183,10 +195,19 @@ export default function ExtensionStore() {
         // Still open modal even if loading fails
         const initialFormData = {};
         const initialVisibility = {};
-        storeExt.required_secrets.forEach(secret => {
-          initialFormData[secret] = '';
-          initialVisibility[secret] = false;
-        });
+
+        if (hasSecretDefinitions) {
+          Object.keys(storeExt.secret_definitions).forEach(secretName => {
+            initialFormData[secretName] = storeExt.secret_definitions[secretName].default || '';
+            initialVisibility[secretName] = false;
+          });
+        } else {
+          storeExt.required_secrets.forEach(secret => {
+            initialFormData[secret] = '';
+            initialVisibility[secret] = false;
+          });
+        }
+
         setSecretsFormData(initialFormData);
         setSecretsVisibility(initialVisibility);
         setSecretsModal(storeExt);
@@ -296,7 +317,12 @@ export default function ExtensionStore() {
         addon.display_name?.toLowerCase().includes(term) ||
         addon.description?.toLowerCase().includes(term) ||
         addon.tags?.some(tag => tag.toLowerCase().includes(term)) ||
-        addon.provides_vars?.some(v => v.toLowerCase().includes(term))
+        addon.provides_vars?.some(v => v.toLowerCase().includes(term)) ||
+        (addon.secret_definitions && Object.entries(addon.secret_definitions).some(([name, def]) =>
+          name?.toLowerCase().includes(term) ||
+          def.label?.toLowerCase().includes(term) ||
+          def.help?.toLowerCase().includes(term)
+        ))
       );
     }
 
@@ -312,10 +338,10 @@ export default function ExtensionStore() {
 
     // No dependencies filter (only for extensions)
     if (filterNoDeps) {
-      addons = addons.filter(addon => 
-        addon.addon_type === 'service' || 
-        !addon.required_secrets || 
-        addon.required_secrets.length === 0
+      addons = addons.filter(addon =>
+        addon.addon_type === 'service' ||
+        ((!addon.secret_definitions || Object.keys(addon.secret_definitions).length === 0) &&
+         (!addon.required_secrets || addon.required_secrets.length === 0))
       );
     }
 
@@ -370,16 +396,15 @@ export default function ExtensionStore() {
 
     setSavingSecrets(true);
     try {
-      // Save all non-empty secrets to .env sequentially to avoid race conditions
+      // Save ALL secrets to .env (including empty ones as placeholders)
+      // This ensures they show up in Key Manager with "not set" indicator
       for (const [key, value] of Object.entries(secretsFormData)) {
-        if (value && value.trim()) {
-          await KeysAPI.set(key, value.trim());
-        }
+        await KeysAPI.set(key, value ? value.trim() : '');
       }
-      
+
       // Add extension to queue
       doInstallExtension(secretsModal);
-      
+
       // Close modal and reset
       setSecretsModal(null);
       setSecretsFormData({});
@@ -392,16 +417,30 @@ export default function ExtensionStore() {
     }
   };
 
-  const handleSecretsSkip = () => {
+  const handleSecretsSkip = async () => {
     if (!secretsModal) return;
-    
-    // Add extension to queue without saving secrets
-    doInstallExtension(secretsModal);
-    
-    // Close modal and reset
-    setSecretsModal(null);
-    setSecretsFormData({});
-    setSecretsVisibility({});
+
+    setSavingSecrets(true);
+    try {
+      // Write ALL required secrets as empty placeholders
+      // This ensures they show up in Key Manager even if user skips
+      for (const key of Object.keys(secretsFormData)) {
+        await KeysAPI.set(key, '');
+      }
+
+      // Add extension to queue
+      doInstallExtension(secretsModal);
+
+      // Close modal and reset
+      setSecretsModal(null);
+      setSecretsFormData({});
+      setSecretsVisibility({});
+    } catch (error) {
+      console.error('Failed to save placeholder secrets:', error);
+      alert(`Failed to save placeholder secrets: ${error.message}`);
+    } finally {
+      setSavingSecrets(false);
+    }
   };
 
   const handleSecretsCancel = () => {
@@ -540,9 +579,14 @@ export default function ExtensionStore() {
                 <span>• 📦 {addon.category}</span>
               </div>
 
-              {addon.required_secrets && addon.required_secrets.length > 0 && (
+              {/* Display requirements (support both formats) */}
+              {((addon.secret_definitions && Object.keys(addon.secret_definitions).length > 0) || (addon.required_secrets && addon.required_secrets.length > 0)) && (
                 <div className="store-card-requirements">
-                  <strong>Requires:</strong> {addon.required_secrets.join(', ')}
+                  <strong>Requires:</strong>{' '}
+                  {addon.secret_definitions
+                    ? Object.entries(addon.secret_definitions).map(([name, def]) => def.label || name).join(', ')
+                    : addon.required_secrets.join(', ')
+                  }
                 </div>
               )}
 
@@ -685,6 +729,7 @@ export default function ExtensionStore() {
                     required={field.required}
                     disabled={installing}
                     className="store-modal-input"
+                    autoComplete="off"
                   />
                 </div>
               ))}
@@ -725,48 +770,98 @@ export default function ExtensionStore() {
               <p className="store-modal-description">
                 This extension requires the following environment variables. You can configure them now or skip and add them later.
               </p>
-              
-              {secretsModal.required_secrets?.map(secret => (
-                <div key={secret} className="store-modal-field">
-                  <label className="store-modal-label">
-                    {secret}
-                  </label>
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      type={secretsVisibility[secret] ? "text" : "password"}
-                      value={secretsFormData[secret] || ''}
-                      onChange={(e) => setSecretsFormData({ ...secretsFormData, [secret]: e.target.value })}
-                      placeholder={`Enter ${secret}`}
-                      disabled={savingSecrets}
-                      className="store-modal-input"
-                      autoComplete="new-password"
-                      style={{ paddingRight: '40px' }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => toggleSecretVisibility(secret)}
-                      disabled={savingSecrets}
-                      style={{
-                        position: 'absolute',
-                        right: '8px',
-                        top: '50%',
-                        transform: 'translateY(-50%)',
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        padding: '4px 8px',
-                        fontSize: '16px',
-                        opacity: savingSecrets ? 0.5 : 0.7,
-                        transition: 'opacity 0.2s'
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-                      onMouseLeave={(e) => e.currentTarget.style.opacity = savingSecrets ? '0.5' : '0.7'}
-                    >
-                      {secretsVisibility[secret] ? '👁️' : '👁️‍🗨️'}
-                    </button>
+
+              {/* Support new format (secret_definitions with metadata) */}
+              {secretsModal.secret_definitions ? (
+                Object.entries(secretsModal.secret_definitions).map(([secretName, secretDef]) => (
+                  <div key={secretName} className="store-modal-field">
+                    <label className="store-modal-label">
+                      {secretDef.label || secretName}
+                      {secretDef.required && <span className="store-modal-required">*</span>}
+                    </label>
+                    {secretDef.help && (
+                      <p className="store-modal-help">{secretDef.help}</p>
+                    )}
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type={secretsVisibility[secretName] ? "text" : "password"}
+                        value={secretsFormData[secretName] || ''}
+                        onChange={(e) => setSecretsFormData({ ...secretsFormData, [secretName]: e.target.value })}
+                        placeholder={secretDef.placeholder || secretDef.default || `Enter ${secretDef.label || secretName}`}
+                        disabled={savingSecrets}
+                        className="store-modal-input"
+                        autoComplete="new-password"
+                        style={{ paddingRight: '40px' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => toggleSecretVisibility(secretName)}
+                        disabled={savingSecrets}
+                        style={{
+                          position: 'absolute',
+                          right: '8px',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: '4px 8px',
+                          fontSize: '16px',
+                          opacity: savingSecrets ? 0.5 : 0.7,
+                          transition: 'opacity 0.2s'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                        onMouseLeave={(e) => e.currentTarget.style.opacity = savingSecrets ? '0.5' : '0.7'}
+                      >
+                        {secretsVisibility[secretName] ? '👁️' : '👁️‍🗨️'}
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              ) : (
+                /* Fallback to old format (simple string array) */
+                secretsModal.required_secrets?.map(secret => (
+                  <div key={secret} className="store-modal-field">
+                    <label className="store-modal-label">
+                      {secret}
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type={secretsVisibility[secret] ? "text" : "password"}
+                        value={secretsFormData[secret] || ''}
+                        onChange={(e) => setSecretsFormData({ ...secretsFormData, [secret]: e.target.value })}
+                        placeholder={`Enter ${secret}`}
+                        disabled={savingSecrets}
+                        className="store-modal-input"
+                        autoComplete="new-password"
+                        style={{ paddingRight: '40px' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => toggleSecretVisibility(secret)}
+                        disabled={savingSecrets}
+                        style={{
+                          position: 'absolute',
+                          right: '8px',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: '4px 8px',
+                          fontSize: '16px',
+                          opacity: savingSecrets ? 0.5 : 0.7,
+                          transition: 'opacity 0.2s'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                        onMouseLeave={(e) => e.currentTarget.style.opacity = savingSecrets ? '0.5' : '0.7'}
+                      >
+                        {secretsVisibility[secret] ? '👁️' : '👁️‍🗨️'}
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
             
             <div className="modal-footer">
