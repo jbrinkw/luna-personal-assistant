@@ -338,6 +338,28 @@ def mcp_servers_list():
     if not supervisor_instance:
         raise HTTPException(status_code=500, detail="Supervisor not initialized")
 
+    available_local_tools = None
+    available_remote_tools = None
+    try:
+        from core.utils.tool_discovery import get_all_tools
+
+        all_tools = get_all_tools()
+        available_local_tools = {
+            tool['name']
+            for ext in all_tools.get('extensions', [])
+            for tool in ext.get('tools', [])
+        }
+        available_remote_tools = set()
+        for server in all_tools.get('remote_mcp_servers', []):
+            if not server.get('enabled', True):
+                continue
+            for tool_name, tool_cfg in (server.get('tools') or {}).items():
+                if tool_cfg.get('enabled', True):
+                    available_remote_tools.add(tool_name)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[MCP] Warning: failed to gather tool availability: {exc}", flush=True)
+        available_local_tools = available_remote_tools = None
+
     servers = supervisor_instance.master_config.get('mcp_servers', {}) or {}
     state = supervisor_instance.get_state().get('services', {})
 
@@ -346,7 +368,15 @@ def mcp_servers_list():
         svc_key = f"mcp_server_{name}"
         svc_state = state.get(svc_key, {})
         tc = cfg.get('tool_config', {}) or {}
-        active_count = sum(1 for v in tc.values() if isinstance(v, dict) and v.get('enabled_in_mcp'))
+        active_count = 0
+        for tool_name, tool_cfg in tc.items():
+            if not isinstance(tool_cfg, dict) or not tool_cfg.get('enabled_in_mcp'):
+                continue
+            if available_local_tools is None:
+                active_count += 1
+                continue
+            if tool_name in available_local_tools or tool_name in (available_remote_tools or set()):
+                active_count += 1
         result.append({
             'name': name,
             'enabled': cfg.get('enabled', True),
@@ -377,6 +407,14 @@ def mcp_server_create(req: MCPServerCreate):
         raise HTTPException(status_code=400, detail="Server name required")
     if name == 'main':
         raise HTTPException(status_code=400, detail="'main' server already exists")
+    
+    # Validate server name format - only allow alphanumeric, hyphens, and underscores
+    import re
+    if not re.match(r'^[a-zA-Z0-9_-]+$', name):
+        raise HTTPException(
+            status_code=400, 
+            detail="Server name can only contain letters, numbers, hyphens, and underscores (no spaces or special characters)"
+        )
 
     mcp_servers = supervisor_instance.master_config.setdefault('mcp_servers', {})
     if name in mcp_servers:
@@ -412,6 +450,15 @@ def mcp_server_update(server_name: str, req: MCPServerUpdateRequest):
             raise HTTPException(status_code=400, detail="Cannot rename 'main' MCP server")
         if req.name in mcp_servers:
             raise HTTPException(status_code=400, detail="Target name already exists")
+        
+        # Validate new server name format
+        import re
+        if not re.match(r'^[a-zA-Z0-9_-]+$', req.name):
+            raise HTTPException(
+                status_code=400,
+                detail="Server name can only contain letters, numbers, hyphens, and underscores (no spaces or special characters)"
+            )
+        
         mcp_servers[req.name] = cfg
         del mcp_servers[server_name]
         cfg['name'] = req.name
@@ -741,15 +788,75 @@ def regenerate_agent_api_key():
     """Regenerate the shared AGENT_API_KEY"""
     if not supervisor_instance:
         raise HTTPException(status_code=500, detail="Supervisor not initialized")
-    
+
     import secrets
     new_key = f"sk-luna-{secrets.token_urlsafe(32)}"
-    
+
     # Update .env file using supervisor's key management
     env_path = Path(supervisor_instance.repo_path) / ".env"
     supervisor_instance._set_env_var("AGENT_API_KEY", new_key)
-    
+
     return {"message": "API key regenerated", "api_key": new_key}
+
+
+# Service API Key Management
+@app.get('/service-keys/list')
+def list_service_api_keys():
+    """List all service API keys (masked)"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+
+    service_keys = supervisor_instance.master_config.get("service_api_keys", {})
+    return {
+        service: f"{key[:8]}...{key[-8:]}" if len(key) > 16 else "***"
+        for service, key in service_keys.items()
+    }
+
+
+@app.get('/service-keys/{extension_name}/{service_name}')
+def get_service_api_key(extension_name: str, service_name: str):
+    """Get full API key for a specific service"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+
+    service_key = f"{extension_name}.{service_name}"
+    api_key = supervisor_instance.master_config.get("service_api_keys", {}).get(service_key)
+
+    if not api_key:
+        raise HTTPException(404, f"No API key found for service {service_key}")
+
+    return {
+        "service": service_key,
+        "api_key": api_key,
+        "env_var": supervisor_instance._env_key_for_service(extension_name, service_name)
+    }
+
+
+@app.post('/service-keys/{extension_name}/{service_name}/regenerate')
+def regenerate_service_api_key(extension_name: str, service_name: str):
+    """Regenerate API key for a service"""
+    if not supervisor_instance:
+        raise HTTPException(status_code=500, detail="Supervisor not initialized")
+
+    service_key = f"{extension_name}.{service_name}"
+
+    new_key = supervisor_instance._generate_api_key()
+
+    if "service_api_keys" not in supervisor_instance.master_config:
+        supervisor_instance.master_config["service_api_keys"] = {}
+
+    supervisor_instance.master_config["service_api_keys"][service_key] = new_key
+    supervisor_instance.save_master_config()
+
+    env_key = supervisor_instance._env_key_for_service(extension_name, service_name)
+    supervisor_instance._set_env_var(env_key, new_key)
+
+    return {
+        "service": service_key,
+        "api_key": new_key,
+        "env_var": env_key,
+        "message": "API key regenerated. Restart Luna for changes to take effect."
+    }
 
 
 @app.patch('/config/master/extensions/{name}')

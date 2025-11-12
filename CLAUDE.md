@@ -1,6 +1,6 @@
 Luna Project Specification
 ==========================
-Updated: 2025-10-31
+Updated: 2025-11-09
 
 ---
 
@@ -89,7 +89,7 @@ All long-lived processes are started within the repository root (not `/opt/luna/
 
 ### 4.2 Supervisor Startup (Phases)
 1. **Update Queue Check**: if `core/update_queue.json` exists, copy `core/scripts/apply_updates.py` to `/tmp`, create `.luna_updating`, spawn the script, and exit. The bootstrap loop waits for the flag to disappear before relaunching.
-2. **Load/Create master_config**: ensures `core/master_config.json` exists, populating defaults (`deployment_mode`, `public_domain`, `extensions`, `tool_configs`, `port_assignments`, `mcp_servers`, `agent_presets`, `external_services`). Environment overrides (`DEPLOYMENT_MODE`, `PUBLIC_DOMAIN`) are applied after loading. Migration logic initializes `agent_presets: {}` if missing in existing configs.
+2. **Load/Create master_config**: ensures `core/master_config.json` exists, populating defaults (`deployment_mode`, `public_domain`, `extensions`, `tool_configs`, `port_assignments`, `mcp_servers`, `agent_presets`, `external_services`, `service_api_keys`). Environment overrides (`DEPLOYMENT_MODE`, `PUBLIC_DOMAIN`) are applied after loading. Migration logic initializes `agent_presets: {}` if missing in existing configs.
 3. **Config Sync**: invokes `config_sync.sync_all(repo_path)` to discover new extensions on disk, add them to `master_config`, and sync config/tool settings back to each extension.
 4. **State Reset**: rewrites `supervisor/state.json` to `{"services": {}}`.
 5. **Start Core Services** (in order):
@@ -102,6 +102,11 @@ All long-lived processes are started within the repository root (not `/opt/luna/
    - Allocate deterministic ports (`5200-5299` for UIs, `5300-5399` for services) via `assign_port`.
    - Start `ui/start.sh` if present, logging to `logs/<extension>_ui.log`.
    - Iterate `services/<name>/`, read `service_config.json`, start `start.sh`, log to `logs/<extension>__service_<name>.log`.
+   - **Service API Key Generation**: if `service_config.json` contains `public_exposure.require_api_key: true`, the supervisor:
+     - Generates a strong API key using `secrets.token_urlsafe(48)` if not already present
+     - Stores the key in `master_config.service_api_keys` (format: `{extension}.{service}: <key>`)
+     - Writes the key to `.env` as `SERVICE_{EXTENSION}_{SERVICE}_API_KEY`
+     - Saves `master_config.json` to persist the key
 7. **Load External Services**: load `.luna/external_services.json` and update `state.json` under `external_services`. (Note: auto-bootstrap from repo-root `*-docker.json` files is disabled; services must be installed via Hub UI or API upload.)
 8. **Health Monitoring**: spawn a background thread that every 30 seconds executes `_health_check_external_services()` to run defined health checks, update registry entries, and restart unhealthy services if `restart_on_failure` is true.
 9. **Operational Logs**: supervisor prints a startup summary including direct localhost URLs for quick debugging (Hub UI, auth, agent API, MCP, supervisor API).
@@ -127,8 +132,12 @@ All long-lived processes are started within the repository root (not `/opt/luna/
 - On success rewrites `master_config.json`, removes the queue, and clears `.luna_updating`.
 
 ### 4.4 Supervisor API (`supervisor/api.py`)
-- Exposes control endpoints for services, extensions, queue management, environment keys, external services, and system restart/shutdown.
+- Exposes control endpoints for services, extensions, queue management, environment keys, external services, service API keys, and system restart/shutdown.
 - Requires `SUPERVISOR_API_TOKEN` for mutating operations when configured (Caddy injects the header in proxied requests).
+- **Service API Key Management Endpoints**:
+  - `GET /api/supervisor/service-keys/list` → list all service API keys (masked)
+  - `GET /api/supervisor/service-keys/{extension}/{service}` → retrieve full API key for specific service
+  - `POST /api/supervisor/service-keys/{extension}/{service}/regenerate` → regenerate API key for service
 
 ---
 
@@ -144,19 +153,39 @@ All external traffic should flow through Caddy; direct localhost access is possi
 | `/api/mcp`, `/api/authorize`, `/api/token`, `/api/register` | MCP main (8766) | GitHub OAuth-protected hub (`main`) |
 | `/api/mcp-{name}/*`           | Named MCP hubs        | API key required (`Authorization: Bearer <key>`) |
 | `/api/supervisor/*`           | Supervisor API (9999) | Config/queue/env/external-service management |
-| `/api/<extension>/*`          | Extension service ports | Populated from `master_config.port_assignments.services` |
+| `/api/<extension>/*`          | Extension service ports | **Conditionally exposed** - only services with `public_exposure.enabled: true` in `service_config.json` |
 | `/ext/<extension>/`           | Extension UI ports    | Trailing slash enforced by default unless disabled in `config.json` |
 | `/ext_service/<slug>/`        | External service UI ports | Derived from `.luna/external_service_routes.json` |
 | `/*` (catch-all)              | Hub UI dev server (5173) | React/Vite frontend |
 
 Caddy decisions are governed by `core/utils/caddy_config_generator.py`, which inspects deployment mode (`ngrok`, `nip_io`, `custom_domain`), `public_domain`, and env vars (`AGENT_API_KEY`, `SUPERVISOR_API_TOKEN`, `MCP_AUTH_TOKEN`). The generated file is stored in `.luna/Caddyfile`.
 
+### 5.1 Authentication Patterns for HTTP Services
+
+Luna supports two distinct authentication patterns for services exposed through Caddy:
+
+**Pattern 1: Caddy-Injected Auth (Single Trusted Key)**
+- Used by: Agent API, Supervisor API
+- Caddy injects `Authorization: Bearer <KEY>` header when proxying requests
+- Services trust requests with the header implicitly
+- Client does not need to provide authentication
+- Best for: Internal Luna services with a single system-wide key
+
+**Pattern 2: Client-Provided Auth (Passthrough)**
+- Used by: Non-main MCP servers, Extension services with `public_exposure.require_api_key: true`
+- Caddy proxies requests without modification
+- Client must provide `Authorization: Bearer <key>` or `X-API-Key: <key>` header
+- Services validate the API key themselves using middleware
+- Best for: Multi-tenant services, public APIs, extension services with individual authentication
+
+Extension services can opt into Pattern 2 authentication by setting `public_exposure.require_api_key: true` in their `service_config.json`.
+
 ---
 
 6. Configuration & Environment Management
 -----------------------------------------
 ### 6.1 `master_config.json`
-Holds the authoritative view of extensions, tool configs, port assignments, and external service status. Example:
+Holds the authoritative view of extensions, tool configs, port assignments, service API keys, and external service status. Example:
 ```
 {
   "luna": {
@@ -232,6 +261,9 @@ Holds the authoritative view of extensions, tool configs, port assignments, and 
       "automation_memory.backend": 5300
     }
   },
+  "service_api_keys": {
+    "coachbyte.api": "Z1poYhMziq_iiqcx0zmfBwv5zD0dfFHNuCRWwl4kkOXTN7zi_o6XvLEjeAYeZB59"
+  },
   "external_services": {
     "postgres": {
       "installed": true,
@@ -242,6 +274,7 @@ Holds the authoritative view of extensions, tool configs, port assignments, and 
 ```
 
 - Every non-`main` MCP server entry includes an `api_key`. The supervisor generates these (strong random values) and mirrors them into `.env` as `MCP_SERVER_<NAME>_API_KEY`. The Hub UI surfaces the key for copying/regeneration; only the `main` server relies on GitHub OAuth.
+- `service_api_keys` stores API keys for extension services that have `public_exposure.require_api_key: true`. Keys are generated using `secrets.token_urlsafe(48)` and mirrored to `.env` as `SERVICE_{EXTENSION}_{SERVICE}_API_KEY`.
 
 ### 6.2 Config Sync (`core/scripts/config_sync.py`)
 - Discovers extension directories and ensures each has an entry in `master_config.extensions` with `enabled`/`source` metadata.
@@ -256,6 +289,11 @@ Managed exclusively through supervisor endpoints:
 - `POST /api/supervisor/keys/upload-env` → merge uploaded `.env` file.
 - `GET /api/supervisor/keys/required` → collect `required_secrets` from extension configs.
 Calls rewrite `.env` and reload it in memory via `dotenv.load_dotenv(..., override=True)`.
+
+**Auto-generated keys** (do not edit manually):
+- `AGENT_API_KEY`: Generated by Agent API on first run
+- `MCP_SERVER_{NAME}_API_KEY`: Generated for non-main MCP servers
+- `SERVICE_{EXTENSION}_{SERVICE}_API_KEY`: Generated for extension services with `public_exposure.require_api_key: true`
 
 ---
 
@@ -273,9 +311,38 @@ extensions/<name>/
 │   └── start.sh                # Receives port as $1; supervisor sets PATH to include .venv/bin and exports LUNA_PORTS
 └── services/
     └── <service>/
-        ├── service_config.json # {"name": "...", "requires_port": true, "health_check": "/healthz", "restart_on_failure": true}
+        ├── service_config.json # Service configuration (see section 7.4 for schema)
         └── start.sh            # Receives port if requires_port=true
 ```
+
+**service_config.json schema**:
+```json
+{
+  "name": "api",
+  "requires_port": true,
+  "health_check": "/health",
+  "restart_on_failure": true,
+  "public_exposure": {
+    "enabled": true,
+    "require_api_key": true,
+    "route_prefix": "/api/extension-name",
+    "strip_prefix": true,
+    "cors_enabled": true
+  }
+}
+```
+
+Fields:
+- `name`: Service identifier (required)
+- `requires_port`: Whether supervisor should allocate a port (default: true)
+- `health_check`: HTTP path for health checks (optional)
+- `restart_on_failure`: Auto-restart on crashes (default: false)
+- `public_exposure`: Controls Caddy routing (optional, defaults to `{"enabled": true}`)
+  - `enabled`: Whether to expose via Caddy (default: true). Set to `false` to keep service internal-only
+  - `require_api_key`: Generate and require API key authentication (default: false)
+  - `route_prefix`: Custom Caddy route (default: `/api/{extension}`)
+  - `strip_prefix`: Strip route prefix before proxying (default: false)
+  - `cors_enabled`: Add CORS headers (default: false)
 
 ### 7.2 Tool Conventions
 - Export a module-level `TOOLS` list containing callables.
@@ -288,6 +355,131 @@ extensions/<name>/
 - The Hub UI keeps a draft queue (`operations`, `master_config`) in memory; mutations (installs, updates, deletes) edit that draft.
 - `POST /api/supervisor/queue/save` persists the queue; empty drafts remove the queue (`DELETE /api/supervisor/queue/current`).
 - Once an operation is queued, the user must trigger a restart (`POST /api/supervisor/restart`). The supervisor spawns `apply_updates.py`, applies the queue, reruns config sync, and restarts services.
+
+### 7.4 Extension Service Authentication
+
+Extensions can create publicly-accessible authenticated API services using the `public_exposure.require_api_key` pattern.
+
+**Implementation Pattern:**
+
+1. **Service Configuration** (`services/api/service_config.json`):
+```json
+{
+  "name": "api",
+  "requires_port": true,
+  "health_check": "/health",
+  "restart_on_failure": true,
+  "public_exposure": {
+    "enabled": true,
+    "require_api_key": true,
+    "route_prefix": "/api/extension-public",
+    "strip_prefix": true,
+    "cors_enabled": true
+  }
+}
+```
+
+2. **Server Implementation** (`services/api/server.py`):
+```python
+import os
+import sys
+from pathlib import Path
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+# Add repo root to path
+REPO_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(REPO_ROOT))
+
+from core.utils.service_auth import APIKeyMiddleware, get_service_api_key
+
+app = FastAPI(title="Extension API")
+
+# Add CORS if needed
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy"}
+
+if __name__ == "__main__":
+    import argparse
+    import uvicorn
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, required=True)
+    args = parser.parse_args()
+
+    # Get API key from environment
+    api_key = get_service_api_key("extension_name", "api")
+    if not api_key:
+        print("[ERROR] SERVICE_EXTENSION_API_API_KEY not found")
+        sys.exit(1)
+
+    # Add auth middleware
+    app.add_middleware(APIKeyMiddleware, api_key=api_key)
+
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+```
+
+3. **Auth Middleware** (`core/utils/service_auth.py`):
+
+The reusable `APIKeyMiddleware` class provides:
+- Bearer token validation (`Authorization: Bearer <key>`)
+- Fallback to `X-API-Key` header
+- OPTIONS request passthrough for CORS
+- Constant-time comparison using `secrets.compare_digest`
+
+Helper function `get_service_api_key(extension_name, service_name)` retrieves the API key from environment variables following the naming convention `SERVICE_{EXTENSION}_{SERVICE}_API_KEY`.
+
+**Runtime Behavior:**
+
+1. Supervisor reads `service_config.json` during extension startup
+2. If `public_exposure.require_api_key: true`:
+   - Generates API key using `secrets.token_urlsafe(48)` (64-character URL-safe string)
+   - Stores in `master_config.service_api_keys["{extension}.{service}"]`
+   - Writes to `.env` as `SERVICE_{EXTENSION}_{SERVICE}_API_KEY`
+3. Caddy generator reads `public_exposure` settings:
+   - Creates route at `route_prefix` (or `/api/{extension}` if not specified)
+   - Proxies requests to service port WITHOUT injecting headers (Pattern 2: client-provided auth)
+   - Adds CORS headers if `cors_enabled: true`
+4. Service validates API key using `APIKeyMiddleware`
+
+**Client Usage:**
+
+```bash
+# Using Bearer token
+curl -H "Authorization: Bearer <api_key>" \
+     https://domain.com/api/extension-public/endpoint
+
+# Using X-API-Key header
+curl -H "X-API-Key: <api_key>" \
+     https://domain.com/api/extension-public/endpoint
+```
+
+**Key Management:**
+
+- View all service keys (masked): `GET /api/supervisor/service-keys/list`
+- Get specific key: `GET /api/supervisor/service-keys/{extension}/{service}`
+- Regenerate key: `POST /api/supervisor/service-keys/{extension}/{service}/regenerate`
+
+**Comparison: Pattern 1 vs Pattern 2**
+
+| Aspect | Pattern 1 (Caddy-Injected) | Pattern 2 (Client-Provided) |
+|--------|---------------------------|----------------------------|
+| Examples | Agent API, Supervisor API | MCP servers, Extension services |
+| Caddy behavior | Injects `Authorization` header | Proxies without modification |
+| Client auth | Not required | Must send API key |
+| Key scope | Single system-wide key | Per-service unique keys |
+| Use case | Internal Luna services | Public APIs, multi-tenant |
+| Configuration | N/A (hardcoded in Caddy) | `public_exposure.require_api_key: true` |
 
 ---
 
@@ -669,5 +861,6 @@ Discovered Agents card displays:
 7. **Logging Paths**: Core logs live in `logs/`; `.luna/` stores generated Caddy and external-service metadata.
 8. **Hub UI APIs**: Now call supervisor endpoints directly; `/api/extensions/...` (old spec) does not exist.
 9. **DEMO_MODE**: Mentioned in legacy docs but not implemented in current code paths.
+10. **Extension Service Authentication** (Added 2025-11-09): Extension services can now opt into authenticated public APIs via `public_exposure.require_api_key: true` in `service_config.json`. The supervisor auto-generates per-service API keys, stores them in `master_config.service_api_keys` and `.env`, and Caddy routes requests without injecting headers (Pattern 2: client-provided auth). A reusable `APIKeyMiddleware` class in `core/utils/service_auth.py` provides bearer token and X-API-Key validation. Services can also opt out of Caddy exposure entirely with `public_exposure.enabled: false` for internal-only operation.
 
 Keep this document synchronized with future changes to supervisor startup order, proxy generation, queue semantics, or API contracts to prevent the Hub UI, deployment scripts, and external integrations from drifting.

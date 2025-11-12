@@ -140,7 +140,8 @@ def get_all_tools() -> Dict[str, Any]:
                 'name': ext_name,
                 'enabled': ext_enabled,
                 'tool_count': len(tools_list),
-                'tools': tools_list
+                'tools': tools_list,
+                'load_errors': ext.get('load_errors', []),
             })
     
     # Get remote MCP servers

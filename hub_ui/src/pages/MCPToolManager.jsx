@@ -135,6 +135,11 @@ function MCPToolManager() {
       showToast('Enter a server name', 'error');
       return;
     }
+    // Validate server name format
+    if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+      showToast('Server name can only contain letters, numbers, hyphens, and underscores (no spaces)', 'error');
+      return;
+    }
     setCreatingLocal(true);
     try {
       let result;
@@ -205,6 +210,7 @@ function MCPToolManager() {
         await fetch(`/api/supervisor/mcp-servers/${encodeURIComponent(activeServer)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       }
       await loadServerTools(activeServer);
+      await loadLocalServers();
     } catch (err) {
       showToast(`Failed to update tool: ${err.message}`, 'error');
     }
@@ -260,6 +266,7 @@ function MCPToolManager() {
         });
       }
       await loadServerTools(activeServer);
+      await loadLocalServers();
       showToast(`${enabled ? 'Enabled' : 'Disabled'} all extension tools`);
     } catch (err) {
       showToast(`Failed to update tools: ${err.message}`, 'error');
@@ -287,6 +294,7 @@ function MCPToolManager() {
         });
       }
       await loadServerTools(activeServer);
+      await loadLocalServers();
       showToast(`${enabled ? 'Enabled' : 'Disabled'} all remote MCP tools`);
     } catch (err) {
       showToast(`Failed to update tools: ${err.message}`, 'error');
@@ -323,6 +331,7 @@ function MCPToolManager() {
         });
       }
       await loadServerTools(activeServer);
+      await loadLocalServers();
       showToast(`${enabled ? 'Enabled' : 'Disabled'} all tools globally`);
     } catch (err) {
       showToast(`Failed to update tools: ${err.message}`, 'error');
@@ -351,6 +360,7 @@ function MCPToolManager() {
         });
       }
       await loadServerTools(activeServer);
+      await loadLocalServers();
       showToast(`${enabled ? 'Enabled' : 'Disabled'} all tools in ${extName}`);
     } catch (err) {
       showToast(`Failed to update tools: ${err.message}`, 'error');
@@ -379,6 +389,7 @@ function MCPToolManager() {
         });
       }
       await loadServerTools(activeServer);
+      await loadLocalServers();
       showToast(`${enabled ? 'Enabled' : 'Disabled'} all tools in ${serverId}`);
     } catch (err) {
       showToast(`Failed to update tools: ${err.message}`, 'error');
@@ -538,6 +549,7 @@ function MCPToolManager() {
       if (activeServer) {
         await loadServerTools(activeServer);
       }
+      await loadLocalServers();
     } catch (err) {
       showToast(`Failed to update extension: ${err.message}`, 'error');
     }
@@ -880,6 +892,11 @@ function MCPToolManager() {
                         onClick={async () => {
                           const newName = (renameDraft || '').trim();
                           if (!activeServerInfo || !newName || newName === activeServerInfo.name) return;
+                          // Validate server name format
+                          if (!/^[a-zA-Z0-9_-]+$/.test(newName)) {
+                            showToast('Server name can only contain letters, numbers, hyphens, and underscores (no spaces)', 'error');
+                            return;
+                          }
                           try {
                             if (MCPApi.updateLocalServer) {
                               await MCPApi.updateLocalServer(activeServerInfo.name, { name: newName });

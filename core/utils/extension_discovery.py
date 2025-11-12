@@ -80,6 +80,8 @@ def discover_extensions(tool_root: Optional[str] = None) -> List[Dict[str, Any]]
         tools: List[Callable] = []
         system_prompt = ""
         
+        ext_errors: List[str] = []
+
         for tool_file in tool_files:
             try:
                 # Import the module
@@ -117,11 +119,13 @@ def discover_extensions(tool_root: Optional[str] = None) -> List[Dict[str, Any]]
                         except Exception:
                             pass
             
-            except Exception:
-                # Skip files that fail to load
+            except Exception as exc:  # noqa: BLE001
+                msg = f"[ExtensionDiscovery] Failed to load tools from {tool_file}: {exc}"
+                print(msg, flush=True)
+                ext_errors.append(msg)
                 continue
-        
-        if tools:  # Only add extensions that have at least one tool
+
+        if tools or ext_errors:
             extensions.append({
                 'name': ext_name,
                 'path': ext_dir,
@@ -129,6 +133,7 @@ def discover_extensions(tool_root: Optional[str] = None) -> List[Dict[str, Any]]
                 'system_prompt': system_prompt,
                 'tool_configs': tool_configs,
                 'config': ext_config,
+                'load_errors': ext_errors,
             })
     
     return extensions
@@ -289,4 +294,3 @@ def get_mcp_tools() -> List[Callable]:
                 mcp_tools.append(tool)
     
     return mcp_tools
-

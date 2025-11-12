@@ -139,8 +139,10 @@ def generate_caddyfile(repo_path, output_path=None):
 
     for name, cfg in additional_servers.items():
         port = cfg.get("port", 8766)
+        # Sanitize server name for URL path (replace spaces and special chars with hyphens)
+        url_safe_name = name.replace(" ", "-").replace("_", "-")
         lines.extend([
-            f"    handle /api/mcp-{name}/* {{",
+            f"    handle /api/mcp-{url_safe_name}/* {{",
             "        @options method OPTIONS",
             "        handle @options {",
             "            header Access-Control-Allow-Origin *",
@@ -153,7 +155,7 @@ def generate_caddyfile(repo_path, output_path=None):
             "        header Access-Control-Allow-Methods \"GET, POST, PUT, DELETE, OPTIONS\"",
             "        header Access-Control-Allow-Headers \"Authorization, Content-Type\"",
             "        header Access-Control-Allow-Credentials true",
-            f"        uri strip_prefix /api/mcp-{name}",
+            f"        uri strip_prefix /api/mcp-{url_safe_name}",
             f"        reverse_proxy 127.0.0.1:{port}",
             "    }",
             "    ",
@@ -248,22 +250,83 @@ def generate_caddyfile(repo_path, output_path=None):
     # Add extension services API routes first (before UIs, for proper precedence)
     extensions = master_config.get("extensions", {})
     service_port_assignments = master_config.get("port_assignments", {}).get("services", {})
-    
+    service_api_keys = master_config.get("service_api_keys", {})
+
+    # Read service_config.json to check public_exposure settings
     enabled_extension_services = []
     for ext_name, ext_config in extensions.items():
         if ext_config.get("enabled", False):
-            # Check for extension services
+            ext_path = repo_path / "extensions" / ext_name / "services"
+            if not ext_path.exists():
+                continue
+
             for service_key, service_port in service_port_assignments.items():
                 if service_key.startswith(f"{ext_name}."):
-                    enabled_extension_services.append((ext_name, service_key, service_port))
-    
+                    # Read service_config.json to check if publicly exposed
+                    service_name = service_key.split(".", 1)[1]
+                    service_config_path = ext_path / service_name / "service_config.json"
+
+                    public_exposure = {"enabled": True}  # Default: expose everything
+                    if service_config_path.exists():
+                        try:
+                            with open(service_config_path, 'r') as f:
+                                svc_cfg = json.load(f)
+                                public_exposure = svc_cfg.get("public_exposure", {"enabled": True})
+                        except Exception:
+                            pass
+
+                    # Only add to Caddy if public_exposure.enabled is True
+                    if public_exposure.get("enabled", True):
+                        enabled_extension_services.append((
+                            ext_name,
+                            service_key,
+                            service_port,
+                            public_exposure
+                        ))
+
     if enabled_extension_services:
         lines.append("    # Extension Service APIs")
-        for ext_name, service_key, service_port in sorted(enabled_extension_services):
+        for ext_name, service_key, service_port, public_exposure in sorted(enabled_extension_services):
+            route_prefix = public_exposure.get("route_prefix", f"/api/{ext_name}")
+            strip_prefix = public_exposure.get("strip_prefix", True)
+            cors_enabled = public_exposure.get("cors_enabled", False)
+
+            # CORS preflight handling
+            if cors_enabled:
+                lines.extend([
+                    f"    @{sanitize_label(ext_name)}_svc_options {{",
+                    f"        path {route_prefix}/*",
+                    "        method OPTIONS",
+                    "    }",
+                    f"    handle @{sanitize_label(ext_name)}_svc_options {{",
+                    "        header Access-Control-Allow-Origin *",
+                    "        header Access-Control-Allow-Methods \"GET, POST, PUT, DELETE, OPTIONS\"",
+                    "        header Access-Control-Allow-Headers \"Authorization, Content-Type\"",
+                    "        respond 200",
+                    "    }",
+                    "    ",
+                ])
+
             lines.extend([
-                f"    handle /api/{ext_name}/* {{",
-                f"        uri strip_prefix /api/{ext_name}",
-                f"        reverse_proxy 127.0.0.1:{service_port}",
+                f"    handle {route_prefix}/* {{",
+            ])
+
+            # Add CORS headers for actual requests
+            if cors_enabled:
+                lines.extend([
+                    "        header Access-Control-Allow-Origin *",
+                    "        header Access-Control-Allow-Methods \"GET, POST, PUT, DELETE, OPTIONS\"",
+                    "        header Access-Control-Allow-Headers \"Authorization, Content-Type\"",
+                ])
+
+            # Strip prefix if configured
+            if strip_prefix:
+                lines.append(f"        uri strip_prefix {route_prefix}")
+
+            # Just proxy - do NOT inject API key (client must provide it)
+            lines.append(f"        reverse_proxy 127.0.0.1:{service_port}")
+
+            lines.extend([
                 "    }",
                 "    ",
             ])

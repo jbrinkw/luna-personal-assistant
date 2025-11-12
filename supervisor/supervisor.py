@@ -269,12 +269,39 @@ class Supervisor:
         self.log("INFO", f"Saved master_config to {self.master_config_path}")
 
     def _env_key_for_server(self, server_name: str) -> str:
-        safe = server_name.upper().replace("-", "_")
+        import re
+        # Replace all non-alphanumeric characters (including spaces) with underscores
+        safe = re.sub(r'[^A-Za-z0-9]+', '_', server_name).upper().strip('_')
         return f"MCP_SERVER_{safe}_API_KEY"
+
+    def _env_key_for_service(self, extension_name: str, service_name: str) -> str:
+        """Generate environment variable name for extension service API key"""
+        import re
+        safe_ext = re.sub(r'[^A-Za-z0-9]+', '_', extension_name).upper().strip('_')
+        safe_svc = re.sub(r'[^A-Za-z0-9]+', '_', service_name).upper().strip('_')
+        return f"SERVICE_{safe_ext}_{safe_svc}_API_KEY"
 
     def _generate_api_key(self) -> str:
         # 48 bytes -> ~64 characters base64-url safe, strong enough for public exposure
         return secrets.token_urlsafe(48)
+
+    def _get_or_generate_service_api_key(self, extension_name: str, service_name: str) -> str:
+        """Get existing API key or generate new one for extension service"""
+        service_key = f"{extension_name}.{service_name}"
+
+        # Check master_config first
+        existing = self.master_config.get("service_api_keys", {}).get(service_key)
+        if existing:
+            return existing
+
+        # Check .env
+        env_key = self._env_key_for_service(extension_name, service_name)
+        existing_env = os.getenv(env_key)
+        if existing_env:
+            return existing_env
+
+        # Generate new key
+        return self._generate_api_key()
 
     def _set_env_var(self, key: str, value: str) -> None:
         env_path = self.repo_path / ".env"
@@ -981,10 +1008,27 @@ class Supervisor:
             if config_file.exists():
                 with open(config_file, 'r') as f:
                     service_config = json.load(f)
-            
+
             requires_port = service_config.get("requires_port", False)
             service_key = f"{extension_name}.{service_name}"
-            
+
+            # Handle API key generation for services with public_exposure.require_api_key
+            public_exposure = service_config.get("public_exposure", {})
+            if public_exposure.get("require_api_key", False):
+                api_key = self._get_or_generate_service_api_key(extension_name, service_name)
+
+                # Store API key in master_config for persistence
+                if "service_api_keys" not in self.master_config:
+                    self.master_config["service_api_keys"] = {}
+                self.master_config["service_api_keys"][service_key] = api_key
+                self.save_master_config()
+
+                # Also store in .env for easy access
+                env_key = self._env_key_for_service(extension_name, service_name)
+                self._set_env_var(env_key, api_key)
+
+                self.log("INFO", f"Service {service_key} will require API key: {env_key}")
+
             # Assign port if needed
             port = None
             if requires_port:

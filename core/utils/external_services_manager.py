@@ -806,10 +806,23 @@ class ExternalServicesManager:
         
         # Get user configuration
         config = self.get_service_config(service_name) or {}
-        
+
         # Build extended config with auto-assigned system variables
         extended_config = dict(config)
-        
+
+        # Load master_config to get deployment settings
+        master_config_path = self.repo_path / "core" / "master_config.json"
+        public_domain = ""
+        deployment_mode = ""
+        if master_config_path.exists():
+            try:
+                with open(master_config_path, 'r') as f:
+                    master_config = json.load(f)
+                    public_domain = master_config.get("public_domain", "")
+                    deployment_mode = master_config.get("deployment_mode", "")
+            except Exception as e:
+                print(f"[ExternalServicesManager] Warning: Could not load master_config for template vars: {e}")
+
         # Auto-assign common system variables (case variations for convenience)
         auto_vars = {
             'service_name': service_name,
@@ -822,6 +835,10 @@ class ExternalServicesManager:
             'DATA_DIR': str(data_dir),
             'repo_root': str(self.repo_path),
             'REPO_ROOT': str(self.repo_path),
+            'public_domain': public_domain,
+            'PUBLIC_DOMAIN': public_domain,
+            'deployment_mode': deployment_mode,
+            'DEPLOYMENT_MODE': deployment_mode,
         }
         
         # Add auto-vars only if not already in user config (user config takes precedence)
