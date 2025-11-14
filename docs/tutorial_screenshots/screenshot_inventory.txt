@@ -1,0 +1,460 @@
+LUNA DOCUMENTATION SCREENSHOT INVENTORY
+=======================================
+Generated: 2025-11-13
+Purpose: Detailed catalog of all screenshots for documentation planning
+
+This file documents every screenshot in the tutorial_screenshots directory with detailed descriptions
+of UI elements, functionality shown, and potential documentation use cases.
+
+================================================================================
+CORE LUNA HUB SCREENSHOTS
+================================================================================
+
+1. FILENAME: quick_chat_interface.png
+   LOCATION: docs/tutorial_screenshots/
+   DESCRIPTION:
+   - Shows the Quick Chat extension UI
+   - Left sidebar with mode selection (Agent Mode vs MCP Mode radio buttons)
+   - Agent selector dropdown showing "simple_agent"
+   - Chat conversation showing user asking "play spotify on my tv" and assistant response
+   - Response includes timing information (2.76s)
+   - Clean dark theme interface with message input at bottom
+   - "Refresh All" button in sidebar
+
+   DOCUMENTATION USE:
+   - Introduction to agent interaction
+   - Example of natural language commands
+   - Mode selection explanation
+   - Agent selection workflow
+
+2. FILENAME: core/hub_home_dashboard.png
+   LOCATION: docs/tutorial_screenshots/core/
+   DESCRIPTION:
+   - Main Luna Hub homepage/dashboard
+   - Top navigation bar with: User Guide & Docs, Update Manager, Healthy status indicator, Restart button
+   - QUICK ACTIONS section with 5 tiles:
+     * Browse Store (box icon)
+     * Tool Manager (toolbox icon)
+     * Manage Secrets (key icon)
+     * Infrastructure (construction icon)
+     * Extensions (gear icon)
+   - ACTIVE UIs section showing 5 running extension UIs:
+     * automation_memory (View UI button)
+     * quick_chat (View UI button)
+     * chefbyte (View UI button)
+     * coachbyte (View UI button)
+     * grocy (View UI button)
+   - HEALTH MONITOR section displaying:
+     * System Status with Agent API, MCP Server (main), MCP Server (gym_button) status
+     * 3 Active Agents count
+     * Extensions with tool counts (automation_memory: 14 tools, quick_chat, obsidian_sync: 5 tools, chefbyte: 29 tools, coachbyte: 10 tools)
+     * Each extension shows UI/backend/service indicators
+   - DISCOVERED AGENTS section:
+     * Built-in Agents: passthrough_agent, simple_agent
+     * Agent Presets: jarvis (base: passthrough_agent, 5 tools)
+
+   DOCUMENTATION USE:
+   - Primary entry point for all documentation
+   - Overview of system architecture
+   - Each numbered section could link to detailed pages
+   - Perfect for top-level navigation structure
+
+3. FILENAME: core/addon_store_browse.png
+   LOCATION: docs/tutorial_screenshots/core/
+   DESCRIPTION:
+   - Addon Store main browsing interface
+   - Filter tabs: All, Extensions, Services
+   - Search bar with placeholder "Search addons..."
+   - Category dropdown (All Categories) and filter checkboxes (Has UI, No Dependencies)
+   - Extension cards displaying:
+     * GeneralByte: minimal utilities including phone notifications, web search, weather (3 tools, utilities category)
+     * Home Assistant: control Home Assistant devices (5 tools, smart-home category)
+     * Obsidian Sync: vault syncing and note management (4 tools, 1 services, productivity category)
+   - Each card shows version, author (Jeremy Brinkworth), description, tool/service count, required secrets, tags
+   - Install/Reinstall buttons on cards
+
+   DOCUMENTATION USE:
+   - Store browsing workflow
+   - Extension discovery and selection
+   - Understanding extension metadata
+   - Installation process introduction
+
+4. FILENAME: core/addon_store_configure_extension.png
+   LOCATION: docs/tutorial_screenshots/core/
+   DESCRIPTION:
+   - Configuration modal for "GeneralByte" extension
+   - Shows required environment variables prompt
+   - Three input fields with eye icons for toggling visibility:
+     * HA_URL
+     * HA_TOKEN
+     * TAVILY_API_KEY
+   - Modal explains: "This extension requires the following environment variables. You can configure them now or skip and add them later."
+   - Three action buttons: Cancel, Skip, Continue
+   - Blurred store listing in background
+
+   DOCUMENTATION USE:
+   - Extension configuration workflow
+   - Secrets management during installation
+   - Environment variable setup
+   - Skip vs configure decision point
+
+5. FILENAME: core/key_manager_secrets.png
+   LOCATION: docs/tutorial_screenshots/core/
+   DESCRIPTION:
+   - Key Manager interface for managing API keys and secrets
+   - "Upload .env File" button in top right
+   - Custom Secrets section showing environment variables:
+     * AGENT_API_KEY (partially masked: sk-l...iXeA)
+     * ALLOWED_GITHUB_USERNAME (fully masked: ********)
+     * DATABASE_URL (partially masked: post...luna)
+     * DAY_START_TIME (fully masked: ********)
+   - Each secret has green status indicator, Edit and Delete buttons
+   - Clean table layout for secret management
+
+   DOCUMENTATION USE:
+   - Secrets management workflow
+   - Environment variable visibility
+   - Bulk import via .env file
+   - Individual secret editing
+
+6. FILENAME: core/infrastructure_external_services.png
+   LOCATION: docs/tutorial_screenshots/core/
+   DESCRIPTION:
+   - Infrastructure page for managing external services (Docker containers)
+   - "2 services installed" badge
+   - "+ Upload & Install Service" button
+   - Two service cards displayed:
+     * Postgres: Running status, installed 10/28/2025, auto-start checkbox, Stop/Restart/Logs/Delete buttons, Configuration collapsible
+     * Grocy: Running status, installed 11/8/2025, UI Path: /ext_service/grocy, auto-start checkbox, Stop/Restart/Logs/Delete/Open UI buttons, Configuration collapsible
+
+   DOCUMENTATION USE:
+   - External service management
+   - Docker container lifecycle
+   - Service configuration and logs
+   - Auto-start behavior
+
+7. FILENAME: core/extension_manager.png
+   LOCATION: docs/tutorial_screenshots/core/
+   DESCRIPTION:
+   - Extension Manager showing installed extensions grid
+   - Install options: "Install by Zip" and "Install by Git" buttons
+   - Extension cards in 3-column grid:
+     * automation_memory (v10-19-25): running, 14 tools, 1 services, Details/Delete buttons
+     * quick_chat (v11-04-25): running, 0 tools, 0 services, Details/Delete buttons
+     * obsidian_sync (v11-04-25): running, 5 tools, 1 services, Details/Delete buttons (highlighted with blue border)
+     * chefbyte (v1.0.0): running, 29 tools, 1 services
+     * coachbyte (v2025-01-07): running, 10 tools, 2 services
+     * home_assistant (v11-04-25): active, 5 tools, 0 services
+   - Each card shows toggle switch for enable/disable
+   - Version tags in corner of cards
+
+   DOCUMENTATION USE:
+   - Managing installed extensions
+   - Extension status monitoring
+   - Enable/disable workflow
+   - Installation methods (Zip vs Git)
+
+8. FILENAME: core/tool_mcp_manager.png
+   LOCATION: docs/tutorial_screenshots/core/
+   DESCRIPTION:
+   - Tool/MCP Manager interface with two mode tabs: MCP and Agent Presets
+   - Yellow warning banner: "Note: Changes require Luna restart to take effect"
+   - MCP server selector pills: "main" (75 tools active) and "gym_button" (1 tools active)
+   - Quick Actions for main: Enable All Tools, Disable All Tools
+   - Main MCP Server section explaining GitHub OAuth authentication
+   - Create New MCP Server section with name input and Create button
+   - Add Remote MCP Server section with URL input field and Add Server button (for Smithery MCP servers like Exa, Context7)
+   - Remote MCP Servers list (1): exa-search-server (2 tools active) with toggle, Enable/Disable/Delete buttons
+   - Local Extension Tools list (7): home_assistant, generalbyte, chefbyte, todo_list, automation_memory, coachbyte, obsidian_sync
+   - Each extension expandable with tool counts, enable/disable controls
+   - Shows 73 total tools active across extensions
+
+   DOCUMENTATION USE:
+   - MCP server management
+   - Tool enablement workflow
+   - Remote MCP integration (Smithery)
+   - Agent preset configuration
+   - Tool filtering and organization
+
+================================================================================
+EXTENSION: AUTOMATION_MEMORY
+================================================================================
+
+9. FILENAME: automation_memory/memories_tab.png
+   LOCATION: docs/tutorial_screenshots/automation_memory/
+   DESCRIPTION:
+   - Automation Memory extension UI showing Memories tab
+   - Green status banner: "Status: Connected"
+   - Three tabs: Memories (active), Task Flows, Scheduled Tasks
+   - Add New Memory section with large text area and "Add Memory" button
+   - Two memory cards displayed:
+     * Memory #2: "when referencing my smart home entities i may use a shorthand like lrl for living room light or brf for bed room fan for example" (Delete button)
+     * Memory #1: "my name is jeremy" (Delete button)
+   - Clean white interface with blue accents
+
+   DOCUMENTATION USE:
+   - Memory management workflow
+   - Creating persistent memories for agents
+   - Memory card display and deletion
+   - Database connection status
+
+10. FILENAME: automation_memory/task_flows_tab.png
+    LOCATION: docs/tutorial_screenshots/automation_memory/
+    DESCRIPTION:
+    - Task Flows tab showing automation workflow builder
+    - Recent Flow Executions section with "Show All (0)" and Cancel button
+    - Create new flow form with fields:
+      * Call Name (e.g., morning_routine)
+      * Agent selector (simple_agent)
+      * Prompts section with "Add Prompt" button
+      * "Save Flow" button
+    - Example saved flow card: "play spotify on my tv" (passthrough_agent tag)
+      * Shows 4 step sequence: 1. open Spotify on tv, 2. wait, 3. wait, 4. press the play button on my tv
+      * Run, Edit, Delete buttons
+
+    DOCUMENTATION USE:
+    - Task flow creation workflow
+    - Multi-step automation setup
+    - Agent selection for flows
+    - Flow execution and management
+
+11. FILENAME: automation_memory/scheduled_tasks_tab.png
+    LOCATION: docs/tutorial_screenshots/automation_memory/
+    DESCRIPTION:
+    - Scheduled Tasks tab for time-based automation
+    - Create schedule form:
+      * Time (HH:MM) input: 09:00 AM
+      * Days of Week checkboxes (Sun, Mon, Tue, Wed, Thu, Fri, Sat)
+      * Agent selector (simple_agent)
+      * Prompt textarea
+      * "Save Schedule" button
+      * Cancel button
+    - Example scheduled task: 07:30, passthrough_agent, Mon/Tue/Wed/Thu/Fri
+      * Task: "play spotify on the tv with the task flow and switch the playlist to morning vibes"
+      * Disable, Edit, Delete buttons
+
+    DOCUMENTATION USE:
+    - Scheduled task creation
+    - Cron-like scheduling UI
+    - Task editing and management
+    - Integration with task flows
+
+================================================================================
+EXTENSION: CHEFBYTE
+================================================================================
+
+12. FILENAME: chefbyte/walmart_manager.png
+    LOCATION: docs/tutorial_screenshots/chefbyte/
+    DESCRIPTION:
+    - Walmart Manager page for managing product links
+    - Top navigation: Scanner, ChefByte Home, Walmart Manager (active), Recipes
+    - "Update Missing Walmart Links" section showing 2 missing links
+    - "Load Next 5 Products" button
+    - Product search interface for "Pepperidge Farm Bread, Sourdough"
+      * Search button and "Not a Walmart Item" checkbox
+      * URL paste field
+      * Four product suggestion cards with images, names, prices ($3.84)
+      * Radio buttons for selection
+    - Second product search section for "Flour Tortillas"
+
+    DOCUMENTATION USE:
+    - Product linking workflow
+    - Walmart integration
+    - Missing link resolution
+    - Product search and selection
+
+13. FILENAME: chefbyte/recipe_browser.png
+    LOCATION: docs/tutorial_screenshots/chefbyte/
+    DESCRIPTION:
+    - Recipe Browser with advanced filtering
+    - Recipe Filters sidebar:
+      * "Can be made now" checkbox
+      * Carbs Percentile slider (Top 0%)
+      * Protein Percentile slider (Top 0%)
+      * Max Active cook time slider (45 min)
+      * Max Total cook time slider (45 min)
+      * "Search Recipes" button
+    - Results grid showing 16 recipes:
+      * McChicken: 550 cal, 53g carbs, 28.5g fats, 20g protein, Active: 3 min, Total: 17 min, "Add to Today" button
+      * Chicken Tender Meal: 170 cal, 17g carbs, 6g fats, 13g protein, "Add to Today" button
+      * Mayo Grilled Cheese: 470 cal, 50.5g carbs, 23g fats, 14g protein, Active: 10 min, Total: 10 min
+      * Dinty Moore Beef Stew: 200 cal, 17g carbs, 10g fats, 10g protein, Active: 1 min, Total: 5 min
+    - Recipe card numbers indicate prep complexity
+
+    DOCUMENTATION USE:
+    - Recipe filtering and search
+    - Nutritional information display
+    - Cook time estimation
+    - Meal planning workflow
+
+14. FILENAME: chefbyte/scanner_io_wizard.png
+    LOCATION: docs/tutorial_screenshots/chefbyte/
+    DESCRIPTION:
+    - ChefByte IO Wizard scanner interface
+    - "Consume: Add to Meal Plan" button (red) at top with navigation tabs
+    - Left panel: scan input field, All/Incomplete tabs
+      * One item listed: "Annie's Shells & White Cheddar" (Purchased: 1 container, 1 servings/container, Stock: 1, NEW badge, Edit Nutrition link)
+    - Right panel: action buttons and numpad
+      * "No item selected" message
+      * Three action buttons: Purchase, Consume, Add to Shopping
+      * Calculator-style numpad (7-9, 4-6, 1-3, ., 0, backspace)
+      * Large green "Complete" button at bottom
+
+    DOCUMENTATION USE:
+    - Barcode scanning workflow
+    - Inventory management
+    - Purchase/consume tracking
+    - Quick input interface
+
+15. FILENAME: chefbyte/scanner_io_wizard_with_items.png
+    LOCATION: docs/tutorial_screenshots/chefbyte/
+    DESCRIPTION:
+    - Same scanner interface with multiple items
+    - "Consume: Add to Meal Plan" button now green (active action)
+    - Left panel showing history:
+      * Gatorade Thirst Quencher, Glacier Freeze (Consumed: 1 container, Stock: 4→3, MP badge)
+      * Annie's Shells & White Cheddar (Consumed: 1 container, Stock: 2→1)
+      * Annie's Shells & White Cheddar (Purchased: 1 container, 1 servings/container, Stock: 1, NEW badge)
+      * Annie's Shells & White Cheddar (Purchased: 1 container, Stock: 1, Edit Nutrition link)
+    - Right panel showing selected item details:
+      * Annie's Shells & White Cheddar nutrition: 260 cal, 48g carbs, 3.5g fats, 9g protein, 1 serving/container
+      * Same action buttons and numpad
+
+    DOCUMENTATION USE:
+    - Multi-item workflow
+    - Nutrition tracking
+    - Stock level management
+    - Transaction history
+
+================================================================================
+DOCUMENTATION STRUCTURE RECOMMENDATIONS
+================================================================================
+
+Based on the screenshot inventory, here's a suggested documentation hierarchy:
+
+LEVEL 1 - HUB HOMEPAGE (hub_home_dashboard.png)
+Can be explained inline without drill-down:
+  - Health Monitor section (System Status, Active Agents, Extensions with tool counts)
+  - Active UIs section (links to running extension interfaces)
+  - Discovered Agents (Built-in vs Presets)
+
+Requires drill-down pages:
+  1. Browse Store → LEVEL 2
+  2. Tool Manager → LEVEL 2
+  3. Manage Secrets → LEVEL 2
+  4. Infrastructure → LEVEL 2
+  5. Extensions → LEVEL 2
+
+LEVEL 2 - CORE FEATURES
+
+A. Browse Store
+   - addon_store_browse.png (overview)
+   - addon_store_configure_extension.png (configuration workflow)
+   Sub-sections:
+   * Browsing and filtering extensions
+   * Understanding extension metadata
+   * Installation process
+   * Configuration and secrets
+
+B. Tool Manager
+   - tool_mcp_manager.png (main interface)
+   Sub-sections:
+   * MCP vs Agent Presets modes
+   * MCP server management (main, custom servers)
+   * Remote MCP integration (Smithery)
+   * Local extension tool toggles
+   * Agent preset creation and configuration
+
+C. Manage Secrets
+   - key_manager_secrets.png
+   Sub-sections:
+   * Adding individual secrets
+   * Uploading .env files
+   * Editing and deleting secrets
+   * Required vs optional secrets
+
+D. Infrastructure
+   - infrastructure_external_services.png
+   Sub-sections:
+   * Installing external services
+   * Managing Docker containers
+   * Service lifecycle (start/stop/restart)
+   * Viewing logs and configuration
+   * Auto-start behavior
+
+E. Extensions
+   - extension_manager.png
+   Sub-sections:
+   * Installing extensions (Zip vs Git)
+   * Managing installed extensions
+   * Enable/disable functionality
+   * Viewing extension details
+   * Uninstalling extensions
+
+LEVEL 3 - EXTENSION-SPECIFIC DOCS
+
+F. Quick Chat Extension
+   - quick_chat_interface.png
+   Sub-sections:
+   * Mode selection (Agent vs MCP)
+   * Agent selection
+   * Chat interaction patterns
+   * Response timing
+
+G. Automation Memory Extension
+   - memories_tab.png
+   - task_flows_tab.png
+   - scheduled_tasks_tab.png
+   Sub-sections:
+   * Creating and managing memories
+   * Building task flows
+   * Scheduling automated tasks
+   * Flow execution and monitoring
+
+H. ChefByte Extension
+   - walmart_manager.png
+   - recipe_browser.png
+   - scanner_io_wizard.png
+   - scanner_io_wizard_with_items.png
+   Sub-sections:
+   * Setting up product links
+   * Browsing and filtering recipes
+   * Scanning items for inventory
+   * Tracking purchases and consumption
+   * Meal planning workflow
+
+================================================================================
+KEY INSIGHTS FOR DOCUMENTATION DESIGN
+================================================================================
+
+1. MINIMAL DRILL-DOWN NEEDED:
+   - Health Monitor can be explained with 3-4 numbered callouts on homepage
+   - Active UIs is just a list with "View UI" buttons
+   - Discovered Agents is a simple informational section
+
+2. MAJOR DRILL-DOWN PAGES (5):
+   - Store
+   - Tool Manager
+   - Secrets
+   - Infrastructure
+   - Extensions
+
+3. EXTENSION DOCS:
+   - Each extension gets its own documentation section
+   - Screenshots should show complete workflows (like ChefByte's 4-screenshot workflow)
+   - Tab-based UIs (Automation Memory) need screenshot per tab
+
+4. NUMBERING STRATEGY:
+   - Homepage: Number each Quick Action tile (1-5)
+   - Store page: Number extension card, install button, filter controls
+   - Tool Manager: Number MCP selector, remote MCP section, local tools section
+   - Extension UIs: Number navigation tabs, main action areas, key controls
+
+5. PROGRESSIVE DISCLOSURE:
+   - Start with "what you see" (quick sentence + screenshot with numbers)
+   - Link to detailed explanation of each numbered item
+   - Only create drill-down page if >3 numbered items or complex workflow
+
+================================================================================
+END OF INVENTORY
+================================================================================

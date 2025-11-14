@@ -1,0 +1,47 @@
+{
+  "image": "walmart_manager.png",
+  "markers": [
+    {
+      "number": "1",
+      "label": "Missing Links Count",
+      "position": {
+        "x": 383,
+        "y": 441
+      },
+      "bounds": {
+        "x1": 270,
+        "y1": 425,
+        "x2": 496,
+        "y2": 456
+      }
+    },
+    {
+      "number": "2",
+      "label": "Not a Walmart Item Checkbox",
+      "position": {
+        "x": 2012,
+        "y": 524
+      },
+      "bounds": {
+        "x1": 1852,
+        "y1": 510,
+        "x2": 2172,
+        "y2": 538
+      }
+    },
+    {
+      "number": "3",
+      "label": "URL Paste vs Product Suggestions",
+      "position": {
+        "x": 1820,
+        "y": 639
+      },
+      "bounds": {
+        "x1": 1641,
+        "y1": 623,
+        "x2": 1999,
+        "y2": 654
+      }
+    }
+  ]
+}

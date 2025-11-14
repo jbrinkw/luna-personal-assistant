@@ -1,0 +1,61 @@
+{
+  "image": "scanner_io_wizard_with_items.png",
+  "markers": [
+    {
+      "number": "1",
+      "label": "Action Mode Selector",
+      "position": {
+        "x": 1166,
+        "y": 650
+      },
+      "bounds": {
+        "x1": 1047,
+        "y1": 636,
+        "x2": 1285,
+        "y2": 664
+      }
+    },
+    {
+      "number": "2",
+      "label": "All vs Incomplete Tabs",
+      "position": {
+        "x": 474,
+        "y": 336
+      },
+      "bounds": {
+        "x1": 349,
+        "y1": 320,
+        "x2": 598,
+        "y2": 351
+      }
+    },
+    {
+      "number": "3",
+      "label": "Status Badges (NEW/MP)",
+      "position": {
+        "x": 597,
+        "y": 530
+      },
+      "bounds": {
+        "x1": 460,
+        "y1": 514,
+        "x2": 734,
+        "y2": 545
+      }
+    },
+    {
+      "number": "4",
+      "label": "Transaction History",
+      "position": {
+        "x": 66,
+        "y": 1045
+      },
+      "bounds": {
+        "x1": -46,
+        "y1": 1029,
+        "x2": 178,
+        "y2": 1060
+      }
+    }
+  ]
+}

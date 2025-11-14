@@ -1,0 +1,19 @@
+{
+  "image": "addon_store_configure_extension.png",
+  "markers": [
+    {
+      "number": "1",
+      "label": "Skip vs Configure Workflow",
+      "position": {
+        "x": 1036,
+        "y": 1114
+      },
+      "bounds": {
+        "x1": 888,
+        "y1": 1098,
+        "x2": 1184,
+        "y2": 1129
+      }
+    }
+  ]
+}

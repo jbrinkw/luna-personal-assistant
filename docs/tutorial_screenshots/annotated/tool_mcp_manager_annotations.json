@@ -1,0 +1,47 @@
+{
+  "image": "tool_mcp_manager.png",
+  "markers": [
+    {
+      "number": "1",
+      "label": "MCP vs Agent Presets Mode Toggle",
+      "position": {
+        "x": 1931,
+        "y": 556
+      },
+      "bounds": {
+        "x1": 1747,
+        "y1": 540,
+        "x2": 2115,
+        "y2": 571
+      }
+    },
+    {
+      "number": "2",
+      "label": "Active Server Selector Pills",
+      "position": {
+        "x": 1105,
+        "y": 900
+      },
+      "bounds": {
+        "x1": 959,
+        "y1": 886,
+        "x2": 1250,
+        "y2": 914
+      }
+    },
+    {
+      "number": "3",
+      "label": "Add Remote MCP Server (Smithery)",
+      "position": {
+        "x": 645,
+        "y": 1595
+      },
+      "bounds": {
+        "x1": 460,
+        "y1": 1579,
+        "x2": 830,
+        "y2": 1610
+      }
+    }
+  ]
+}

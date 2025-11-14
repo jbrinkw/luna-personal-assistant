@@ -1,0 +1,173 @@
+{
+  "image": "hub_home_dashboard.png",
+  "markers": [
+    {
+      "number": "1",
+      "label": "Browse Store",
+      "position": {
+        "x": 194,
+        "y": 500
+      },
+      "bounds": {
+        "x1": 109,
+        "y1": 486,
+        "x2": 278,
+        "y2": 514
+      }
+    },
+    {
+      "number": "2",
+      "label": "Tool Manager",
+      "position": {
+        "x": 603,
+        "y": 502
+      },
+      "bounds": {
+        "x1": 518,
+        "y1": 486,
+        "x2": 687,
+        "y2": 517
+      }
+    },
+    {
+      "number": "3",
+      "label": "Manage Secrets",
+      "position": {
+        "x": 997,
+        "y": 500
+      },
+      "bounds": {
+        "x1": 901,
+        "y1": 484,
+        "x2": 1093,
+        "y2": 515
+      }
+    },
+    {
+      "number": "4",
+      "label": "Infrastructure",
+      "position": {
+        "x": 1392,
+        "y": 499
+      },
+      "bounds": {
+        "x1": 1305,
+        "y1": 485,
+        "x2": 1478,
+        "y2": 513
+      }
+    },
+    {
+      "number": "5",
+      "label": "Extensions",
+      "position": {
+        "x": 1811,
+        "y": 499
+      },
+      "bounds": {
+        "x1": 1739,
+        "y1": 485,
+        "x2": 1883,
+        "y2": 513
+      }
+    },
+    {
+      "number": "6",
+      "label": "Quick Chat",
+      "position": {
+        "x": 289,
+        "y": 724
+      },
+      "bounds": {
+        "x1": 217,
+        "y1": 709,
+        "x2": 361,
+        "y2": 739
+      }
+    },
+    {
+      "number": "7",
+      "label": "Built-in Agents",
+      "position": {
+        "x": 277,
+        "y": 1116
+      },
+      "bounds": {
+        "x1": 187,
+        "y1": 1100,
+        "x2": 366,
+        "y2": 1131
+      }
+    },
+    {
+      "number": "8",
+      "label": "Agent Presets",
+      "position": {
+        "x": 261,
+        "y": 1313
+      },
+      "bounds": {
+        "x1": 173,
+        "y1": 1297,
+        "x2": 348,
+        "y2": 1328
+      }
+    },
+    {
+      "number": "9",
+      "label": "Automation Memory UI",
+      "position": {
+        "x": 367,
+        "y": 672
+      },
+      "bounds": {
+        "x1": 239,
+        "y1": 656,
+        "x2": 494,
+        "y2": 687
+      }
+    },
+    {
+      "number": "10",
+      "label": "ChefByte UI",
+      "position": {
+        "x": 270,
+        "y": 781
+      },
+      "bounds": {
+        "x1": 188,
+        "y1": 765,
+        "x2": 352,
+        "y2": 796
+      }
+    },
+    {
+      "number": "11",
+      "label": "CoachByte UI",
+      "position": {
+        "x": 269,
+        "y": 838
+      },
+      "bounds": {
+        "x1": 180,
+        "y1": 822,
+        "x2": 357,
+        "y2": 853
+      }
+    },
+    {
+      "number": "12",
+      "label": "Grocy UI",
+      "position": {
+        "x": 235,
+        "y": 905
+      },
+      "bounds": {
+        "x1": 168,
+        "y1": 889,
+        "x2": 301,
+        "y2": 920
+      }
+    }
+  ]
+}

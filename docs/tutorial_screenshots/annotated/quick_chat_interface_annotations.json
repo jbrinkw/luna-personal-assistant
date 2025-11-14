@@ -1,0 +1,33 @@
+{
+  "image": "quick_chat_interface.png",
+  "markers": [
+    {
+      "number": "1",
+      "label": "Agent Mode vs MCP Mode Toggle",
+      "position": {
+        "x": 67,
+        "y": 493
+      },
+      "bounds": {
+        "x1": -106,
+        "y1": 477,
+        "x2": 240,
+        "y2": 508
+      }
+    },
+    {
+      "number": "2",
+      "label": "Response Time Tracker",
+      "position": {
+        "x": 995,
+        "y": 735
+      },
+      "bounds": {
+        "x1": 866,
+        "y1": 719,
+        "x2": 1124,
+        "y2": 750
+      }
+    }
+  ]
+}
