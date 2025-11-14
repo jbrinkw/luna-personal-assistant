@@ -67,13 +67,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Installation: installation.md
-  - User Guide:
-    - Visual User Guide: user-guide/visual-userguide.md
-    - Navigating the Interface: user-guide/navigating-interface.md
-    - Extensions: user-guide/extensions.md
-    - Apps/Services: user-guide/external-services.md
-    - Agent API: user-guide/agent-api.md
-    - MCP Servers: user-guide/mcp-servers.md
+  - User Guide: user-guide/visual-userguide.md
   - Featured Extensions: getting-started/featured-extensions.md
   - Developer Guide:
     - Creating Extensions: developer-guide/creating-extensions.md

@@ -9,7 +9,7 @@ Welcome to Luna! This visual guide walks you through the interface using annotat
 ## Hub Home Dashboard
 
 <div style="position: relative; display: inline-block;">
-  <img src="../tutorial_screenshots/annotated/hub_home_dashboard.png" usemap="#hub-home-map" style="max-width: 100%; height: auto;" />
+  <img src="/tutorial_screenshots/annotated/hub_home_dashboard.png" usemap="#hub-home-map" style="max-width: 100%; height: auto;" />
   <map name="hub-home-map">
     <area shape="rect" coords="109,486,278,514" href="#browse-store" alt="Browse Store" />
     <area shape="rect" coords="518,486,687,517" href="#tool-manager" alt="Tool Manager" />
@@ -130,7 +130,7 @@ The Quick Stats card helps you track your system's configuration:
 
 ## Extension Store - Browse
 
-![Extension Store Browse](../tutorial_screenshots/core/addon_store_browse.png)
+![Extension Store Browse](/tutorial_screenshots/core/addon_store_browse.png)
 
 ### About This Page
 
@@ -203,7 +203,7 @@ When you click an Install button:
 ## Extension Store - Configure
 
 <div style="position: relative; display: inline-block;">
-  <img src="../tutorial_screenshots/annotated/addon_store_configure_extension.png" usemap="#configure-map" style="max-width: 100%; height: auto;" />
+  <img src="/tutorial_screenshots/annotated/addon_store_configure_extension.png" usemap="#configure-map" style="max-width: 100%; height: auto;" />
   <map name="configure-map">
     <area shape="rect" coords="888,1098,1184,1129" href="#skip-vs-configure-workflow" alt="Skip vs Configure Workflow" />
   </map>
@@ -305,7 +305,7 @@ After clicking "Configure & Install" or "Skip":
 ## Tool & MCP Manager
 
 <div style="position: relative; display: inline-block;">
-  <img src="../tutorial_screenshots/annotated/tool_mcp_manager.png" usemap="#tool-manager-map" style="max-width: 100%; height: auto;" />
+  <img src="/tutorial_screenshots/annotated/tool_mcp_manager.png" usemap="#tool-manager-map" style="max-width: 100%; height: auto;" />
   <map name="tool-manager-map">
     <area shape="rect" coords="1747,540,2115,571" href="#mcp-vs-agent-presets-mode-toggle" alt="MCP vs Agent Presets Mode Toggle" />
     <area shape="rect" coords="959,886,1250,914" href="#active-server-selector-pills" alt="Active Server Selector Pills" />
@@ -426,7 +426,7 @@ These systems are independent - configuring one doesn't affect the other.
 
 ## Manage Secrets
 
-![Manage Secrets](../tutorial_screenshots/core/key_manager_secrets.png)
+![Manage Secrets](/tutorial_screenshots/core/key_manager_secrets.png)
 
 ### About This Page
 
@@ -473,7 +473,7 @@ The Manage Secrets page is where you securely store API keys, tokens, passwords,
 
 ## Infrastructure - External Services
 
-![Infrastructure](../tutorial_screenshots/core/infrastructure_external_services.png)
+![Infrastructure](/tutorial_screenshots/core/infrastructure_external_services.png)
 
 ### About This Page
 
@@ -527,7 +527,7 @@ Services show color-coded status:
 
 ## Extensions - Managing Installed Extensions
 
-![Extension Manager](../tutorial_screenshots/core/extension_manager.png)
+![Extension Manager](/tutorial_screenshots/core/extension_manager.png)
 
 ### About This Page
 
@@ -578,7 +578,7 @@ github:username/repo:path/to/extension
 ## Quick Chat - Testing Interface
 
 <div style="position: relative; display: inline-block;">
-  <img src="../tutorial_screenshots/annotated/quick_chat_interface.png" usemap="#quick-chat-map" style="max-width: 100%; height: auto;" />
+  <img src="/tutorial_screenshots/annotated/quick_chat_interface.png" usemap="#quick-chat-map" style="max-width: 100%; height: auto;" />
   <map name="quick-chat-map">
     <area shape="rect" coords="0,477,240,508" href="#agent-mode-vs-mcp-mode-toggle" alt="Agent Mode vs MCP Mode Toggle" />
     <area shape="rect" coords="866,719,1124,750" href="#response-time-tracker" alt="Response Time Tracker" />
@@ -658,19 +658,19 @@ For production, use Luna's Agent API with proper clients.
 
 ### Memories Tab
 
-![Memories Tab](../tutorial_screenshots/automation_memory/memories_tab.png)
+![Memories Tab](/tutorial_screenshots/automation_memory/memories_tab.png)
 
 Store and retrieve context that persists across conversations. Great for remembering user preferences, facts, and notes.
 
 ### Task Flows Tab
 
-![Task Flows Tab](../tutorial_screenshots/automation_memory/task_flows_tab.png)
+![Task Flows Tab](/tutorial_screenshots/automation_memory/task_flows_tab.png)
 
 Create multi-step task flows with tool calls. Chain together actions like "check weather, then set thermostat."
 
 ### Scheduled Tasks Tab
 
-![Scheduled Tasks Tab](../tutorial_screenshots/automation_memory/scheduled_tasks_tab.png)
+![Scheduled Tasks Tab](/tutorial_screenshots/automation_memory/scheduled_tasks_tab.png)
 
 Schedule recurring or one-time tasks with cron expressions. Example: "Check shopping list every Monday."
 
@@ -681,7 +681,7 @@ Schedule recurring or one-time tasks with cron expressions. Example: "Check shop
 ### Walmart Manager - Product Database
 
 <div style="position: relative; display: inline-block;">
-  <img src="../tutorial_screenshots/annotated/walmart_manager.png" usemap="#walmart-map" style="max-width: 100%; height: auto;" />
+  <img src="/tutorial_screenshots/annotated/walmart_manager.png" usemap="#walmart-map" style="max-width: 100%; height: auto;" />
   <map name="walmart-map">
     <area shape="rect" coords="270,425,496,456" href="#missing-links-count" alt="Missing Links Count" />
     <area shape="rect" coords="1852,510,2172,538" href="#not-a-walmart-item-checkbox" alt="Not a Walmart Item Checkbox" />
@@ -720,7 +720,7 @@ Two ways to link products:
 
 ### Recipe Browser
 
-![Recipe Browser](../tutorial_screenshots/chefbyte/recipe_browser.png)
+![Recipe Browser](/tutorial_screenshots/chefbyte/recipe_browser.png)
 
 Browse and search recipes with integrated nutrition data.
 
@@ -729,7 +729,7 @@ Browse and search recipes with integrated nutrition data.
 ### Scanner - Barcode Scanning & Inventory
 
 <div style="position: relative; display: inline-block;">
-  <img src="../tutorial_screenshots/annotated/scanner_io_wizard_with_items.png" usemap="#scanner-map" style="max-width: 100%; height: auto;" />
+  <img src="/tutorial_screenshots/annotated/scanner_io_wizard_with_items.png" usemap="#scanner-map" style="max-width: 100%; height: auto;" />
   <map name="scanner-map">
     <area shape="rect" coords="1047,636,1285,664" href="#action-mode-selector" alt="Action Mode Selector" />
     <area shape="rect" coords="349,320,598,351" href="#all-vs-incomplete-tabs" alt="All vs Incomplete Tabs" />

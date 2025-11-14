@@ -46,7 +46,7 @@ def generate_markdown(annotation_json_path, output_md_path=None):
     lines = []
     lines.append(f"# {page_title}\n")
     lines.append(f'<div style="position: relative; display: inline-block;">')
-    lines.append(f'  <img src="../tutorial_screenshots/annotated/{image_name}" usemap="#screenshot-map" style="max-width: 100%; height: auto;" />')
+    lines.append(f'  <img src="/tutorial_screenshots/annotated/{image_name}" usemap="#screenshot-map" style="max-width: 100%; height: auto;" />')
     lines.append(f'  <map name="screenshot-map">')
 
     # Add clickable areas

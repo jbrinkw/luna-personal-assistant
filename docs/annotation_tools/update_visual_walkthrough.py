@@ -34,7 +34,7 @@ def generate_image_map(image_name, markers, map_name):
     """Generate HTML image map markup"""
     lines = []
     lines.append(f'<div style="position: relative; display: inline-block;">')
-    lines.append(f'  <img src="../tutorial_screenshots/annotated/{image_name}" usemap="#{map_name}" style="max-width: 100%; height: auto;" />')
+    lines.append(f'  <img src="/tutorial_screenshots/annotated/{image_name}" usemap="#{map_name}" style="max-width: 100%; height: auto;" />')
     lines.append(f'  <map name="{map_name}">')
 
     # Sort markers by number
@@ -65,32 +65,32 @@ def update_walkthrough(doc_path="docs/user-guide/visual-userguide.md"):
     # Define replacements for each annotated screenshot
     replacements = {
         'hub_home_dashboard.png': {
-            'pattern': r'<div style="position: relative; display: inline-block;">\s*<img src="\.\./tutorial_screenshots/annotated/hub_home_dashboard\.png" usemap="#[^"]*"[^>]*>\s*<map name="[^"]*">.*?</map>\s*</div>',
+            'pattern': r'<div style="position: relative; display: inline-block;">\s*<img src="[^"]*hub_home_dashboard\.png" usemap="#[^"]*"[^>]*>\s*<map name="[^"]*">.*?</map>\s*</div>',
             'map_name': 'hub-home-map',
             'placeholder': '[CLICKABLE IMAGE MAP WITH 12 MARKERS - hub_home_dashboard.png]'
         },
         'addon_store_configure_extension.png': {
-            'pattern': r'<div style="position: relative; display: inline-block;">\s*<img src="\.\./tutorial_screenshots/annotated/addon_store_configure_extension\.png" usemap="#[^"]*"[^>]*>\s*<map name="[^"]*">.*?</map>\s*</div>',
+            'pattern': r'<div style="position: relative; display: inline-block;">\s*<img src="[^"]*addon_store_configure_extension\.png" usemap="#[^"]*"[^>]*>\s*<map name="[^"]*">.*?</map>\s*</div>',
             'map_name': 'configure-map',
             'placeholder': None
         },
         'tool_mcp_manager.png': {
-            'pattern': r'<div style="position: relative; display: inline-block;">\s*<img src="\.\./tutorial_screenshots/annotated/tool_mcp_manager\.png" usemap="#[^"]*"[^>]*>\s*<map name="[^"]*">.*?</map>\s*</div>',
+            'pattern': r'<div style="position: relative; display: inline-block;">\s*<img src="[^"]*tool_mcp_manager\.png" usemap="#[^"]*"[^>]*>\s*<map name="[^"]*">.*?</map>\s*</div>',
             'map_name': 'tool-manager-map',
             'placeholder': None
         },
         'quick_chat_interface.png': {
-            'pattern': r'<div style="position: relative; display: inline-block;">\s*<img src="\.\./tutorial_screenshots/annotated/quick_chat_interface\.png" usemap="#[^"]*"[^>]*>\s*<map name="[^"]*">.*?</map>\s*</div>',
+            'pattern': r'<div style="position: relative; display: inline-block;">\s*<img src="[^"]*quick_chat_interface\.png" usemap="#[^"]*"[^>]*>\s*<map name="[^"]*">.*?</map>\s*</div>',
             'map_name': 'quick-chat-map',
             'placeholder': None
         },
         'walmart_manager.png': {
-            'pattern': r'<div style="position: relative; display: inline-block;">\s*<img src="\.\./tutorial_screenshots/annotated/walmart_manager\.png" usemap="#[^"]*"[^>]*>\s*<map name="[^"]*">.*?</map>\s*</div>',
+            'pattern': r'<div style="position: relative; display: inline-block;">\s*<img src="[^"]*walmart_manager\.png" usemap="#[^"]*"[^>]*>\s*<map name="[^"]*">.*?</map>\s*</div>',
             'map_name': 'walmart-map',
             'placeholder': None
         },
         'scanner_io_wizard_with_items.png': {
-            'pattern': r'<div style="position: relative; display: inline-block;">\s*<img src="\.\./tutorial_screenshots/annotated/scanner_io_wizard_with_items\.png" usemap="#[^"]*"[^>]*>\s*<map name="[^"]*">.*?</map>\s*</div>',
+            'pattern': r'<div style="position: relative; display: inline-block;">\s*<img src="[^"]*scanner_io_wizard_with_items\.png" usemap="#[^"]*"[^>]*>\s*<map name="[^"]*">.*?</map>\s*</div>',
             'map_name': 'scanner-map',
             'placeholder': None
         }
