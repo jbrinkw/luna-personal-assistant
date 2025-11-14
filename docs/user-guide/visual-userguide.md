@@ -580,7 +580,7 @@ github:username/repo:path/to/extension
 <div style="position: relative; display: inline-block;">
   <img src="../tutorial_screenshots/annotated/quick_chat_interface.png" usemap="#quick-chat-map" style="max-width: 100%; height: auto;" />
   <map name="quick-chat-map">
-    <area shape="rect" coords="-106,477,240,508" href="#agent-mode-vs-mcp-mode-toggle" alt="Agent Mode vs MCP Mode Toggle" />
+    <area shape="rect" coords="0,477,240,508" href="#agent-mode-vs-mcp-mode-toggle" alt="Agent Mode vs MCP Mode Toggle" />
     <area shape="rect" coords="866,719,1124,750" href="#response-time-tracker" alt="Response Time Tracker" />
   </map>
 </div>
@@ -734,7 +734,7 @@ Browse and search recipes with integrated nutrition data.
     <area shape="rect" coords="1047,636,1285,664" href="#action-mode-selector" alt="Action Mode Selector" />
     <area shape="rect" coords="349,320,598,351" href="#all-vs-incomplete-tabs" alt="All vs Incomplete Tabs" />
     <area shape="rect" coords="460,514,734,545" href="#status-badges-new-mp" alt="Status Badges (NEW/MP)" />
-    <area shape="rect" coords="-46,1029,178,1060" href="#transaction-history" alt="Transaction History" />
+    <area shape="rect" coords="0,1029,178,1060" href="#transaction-history" alt="Transaction History" />
   </map>
 </div>
 
