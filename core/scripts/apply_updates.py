@@ -535,11 +535,13 @@ def phase_6_install_dependencies(repo_path):
                 for service_dir in services_dir.iterdir():
                     if not service_dir.is_dir():
                         continue
-                    
+
+                    service_name = service_dir.name
+
+                    # Python dependencies
                     service_requirements = service_dir / "requirements.txt"
                     if service_requirements.exists():
-                        service_name = service_dir.name
-                        log(f"Installing {ext_name}.{service_name} dependencies...")
+                        log(f"Installing {ext_name}.{service_name} Python dependencies...")
                         result = subprocess.run(
                             [pip_cmd, "install", "-r", str(service_requirements), "--break-system-packages"],
                             capture_output=True,
@@ -547,7 +549,40 @@ def phase_6_install_dependencies(repo_path):
                         )
                         if result.returncode != 0:
                             log(f"WARNING: {ext_name}.{service_name} pip install had errors")
-    
+                        else:
+                            log(f"{ext_name}.{service_name} Python dependencies installed")
+
+                    # Node.js dependencies
+                    service_package = service_dir / "package.json"
+                    if service_package.exists():
+                        log(f"Installing {ext_name}.{service_name} Node dependencies...")
+
+                        # Try pnpm first, fall back to npm
+                        if shutil.which('pnpm'):
+                            result = subprocess.run(
+                                ["pnpm", "install"],
+                                cwd=service_dir,
+                                capture_output=True,
+                                text=True
+                            )
+                            if result.returncode != 0:
+                                log(f"WARNING: {ext_name}.{service_name} pnpm install had errors: {result.stderr}")
+                            else:
+                                log(f"{ext_name}.{service_name} Node dependencies installed")
+                        elif shutil.which('npm'):
+                            result = subprocess.run(
+                                ["npm", "install"],
+                                cwd=service_dir,
+                                capture_output=True,
+                                text=True
+                            )
+                            if result.returncode != 0:
+                                log(f"WARNING: {ext_name}.{service_name} npm install had errors: {result.stderr}")
+                            else:
+                                log(f"{ext_name}.{service_name} Node dependencies installed")
+                        else:
+                            log(f"WARNING: Neither pnpm nor npm found, skipping {ext_name}.{service_name} Node dependencies")
+
     log("Dependency installation complete")
 
 
