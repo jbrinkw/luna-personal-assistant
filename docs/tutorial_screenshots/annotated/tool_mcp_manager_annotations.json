@@ -5,42 +5,54 @@
       "number": "1",
       "label": "MCP vs Agent Presets Mode Toggle",
       "position": {
-        "x": 1931,
-        "y": 556
+        "x": 2057,
+        "y": 576
       },
       "bounds": {
-        "x1": 1747,
-        "y1": 540,
-        "x2": 2115,
-        "y2": 571
+        "x1": 1869,
+        "y1": 551,
+        "x2": 2245,
+        "y2": 601
+      },
+      "size": {
+        "width": 376,
+        "height": 50
       }
     },
     {
       "number": "2",
       "label": "Active Server Selector Pills",
       "position": {
-        "x": 1105,
-        "y": 900
+        "x": 1160,
+        "y": 910
       },
       "bounds": {
-        "x1": 959,
-        "y1": 886,
-        "x2": 1250,
-        "y2": 914
+        "x1": 1010,
+        "y1": 885,
+        "x2": 1309,
+        "y2": 935
+      },
+      "size": {
+        "width": 299,
+        "height": 50
       }
     },
     {
       "number": "3",
       "label": "Add Remote MCP Server (Smithery)",
       "position": {
-        "x": 645,
-        "y": 1595
+        "x": 784,
+        "y": 1589
       },
       "bounds": {
-        "x1": 460,
-        "y1": 1579,
-        "x2": 830,
-        "y2": 1610
+        "x1": 595,
+        "y1": 1564,
+        "x2": 973,
+        "y2": 1614
+      },
+      "size": {
+        "width": 378,
+        "height": 50
       }
     }
   ]

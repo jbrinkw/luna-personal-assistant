@@ -2,53 +2,93 @@
 
 Welcome to Luna! This visual guide walks you through the interface using annotated screenshots. Click any numbered marker on the images to jump to its detailed explanation below.
 
-> **Note:** Prefer reading? Check out the [full text guide](navigating-interface.md) instead.
+<script>
+// Simple responsive image-map scaler.
+// Stores original coords in data-origCoords, then rescales on load + resize.
+(function() {
+  const scaleMaps = () => {
+    document.querySelectorAll('img[usemap]').forEach(img => {
+      const usemap = img.getAttribute('usemap');
+      if (!usemap) return;
+      const map = document.querySelector(`map[name="${usemap.replace('#','')}"]`);
+      if (!map) return;
+
+      const naturalWidth = img.naturalWidth || img.width;
+      const naturalHeight = img.naturalHeight || img.height;
+      if (!naturalWidth || !naturalHeight) return;
+
+      const scaleX = img.clientWidth / naturalWidth;
+      const scaleY = img.clientHeight / naturalHeight;
+
+      map.querySelectorAll('area').forEach(area => {
+        const orig = area.dataset.origCoords || area.getAttribute('coords');
+        area.dataset.origCoords = orig;
+        const coords = orig.split(',').map(Number);
+        const scaled = coords.map((c, i) => Math.round(c * (i % 2 ? scaleY : scaleX)));
+        area.coords = scaled.join(',');
+      });
+    });
+  };
+
+  const setup = () => {
+    scaleMaps();
+    window.addEventListener('resize', scaleMaps);
+    document.querySelectorAll('img[usemap]').forEach(img => {
+      if (!img.complete) {
+        img.addEventListener('load', scaleMaps, { once: true });
+      }
+    });
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setup);
+  } else {
+    setup();
+  }
+})();
+</script>
 
 ---
 
 ## Hub Home Dashboard
 
 <div style="position: relative; display: inline-block;">
-  <img src="/tutorial_screenshots/annotated/hub_home_dashboard.png" usemap="#hub-home-map" style="max-width: 100%; height: auto;" />
+  <img src="/tutorial_screenshots/annotated/hub_home_dashboard.png" usemap="#hub-home-map" style="max-width: 100%; height: auto;" width="2088" height="1423" />
   <map name="hub-home-map">
-    <area shape="rect" coords="109,486,278,514" href="#browse-store" alt="Browse Store" />
-    <area shape="rect" coords="518,486,687,517" href="#tool-manager" alt="Tool Manager" />
-    <area shape="rect" coords="901,484,1093,515" href="#manage-secrets" alt="Manage Secrets" />
-    <area shape="rect" coords="1305,485,1478,513" href="#infrastructure" alt="Infrastructure" />
-    <area shape="rect" coords="1739,485,1883,513" href="#extensions" alt="Extensions" />
-    <area shape="rect" coords="217,709,361,739" href="#quick-chat" alt="Quick Chat" />
-    <area shape="rect" coords="187,1100,366,1131" href="#built-in-agents" alt="Built-in Agents" />
-    <area shape="rect" coords="173,1297,348,1328" href="#agent-presets" alt="Agent Presets" />
-    <area shape="rect" coords="239,656,494,687" href="#automation-memory-ui" alt="Automation Memory UI" />
-    <area shape="rect" coords="188,765,352,796" href="#chefbyte-ui" alt="ChefByte UI" />
-    <area shape="rect" coords="180,822,357,853" href="#coachbyte-ui" alt="CoachByte UI" />
-    <area shape="rect" coords="168,889,301,920" href="#grocy-ui" alt="Grocy UI" />
+    <area shape="rect" coords="168,473,345,522" href="#extension-store-browse" alt="Browse Store" />
+    <area shape="rect" coords="555,476,732,525" href="#tool-mcp-manager" alt="Tool & MCP Manager" />
+    <area shape="rect" coords="946,477,1146,526" href="#manage-secrets" alt="Manage Secrets" />
+    <area shape="rect" coords="1367,471,1548,520" href="#infrastructure" alt="Infrastructure" />
+    <area shape="rect" coords="1772,470,1924,519" href="#extensions" alt="Extensions" />
+    <area shape="rect" coords="266,698,418,747" href="../getting-started/featured-extensions.md#quick-chat" alt="Quick Chat" />
+    <area shape="rect" coords="240,1095,427,1144" href="#built-in-agents" alt="Built-in Agents" />
+    <area shape="rect" coords="177,1325,360,1374" href="#agent-presets" alt="Agent Presets" />
+    <area shape="rect" coords="315,643,578,692" href="../getting-started/featured-extensions.md#automation-memory-extension" alt="Automation Memory UI" />
+    <area shape="rect" coords="253,753,425,802" href="../getting-started/featured-extensions.md#chefbyte-extension" alt="ChefByte UI" />
+    <area shape="rect" coords="242,816,427,865" href="../getting-started/featured-extensions.md#coachbyte-ui" alt="CoachByte UI" />
+    <area shape="rect" coords="237,880,378,929" href="#grocy-ui" alt="Grocy UI" />
   </map>
 </div>
 
-### 1. Browse Store {: #browse-store }
-
-Opens the Extension Store where you can discover and install new extensions from the Luna ecosystem. Extensions add new capabilities like smart home control, nutrition tracking, memory systems, and more.
-
-### 2. Tool Manager {: #tool-manager }
+### 2. Tool & MCP Manager {: #tool-manager }
 
 Configure which tools are available to your MCP servers and AI agent presets. This is where you control what your AI assistants can actually do - toggle tools on/off per server or create specialized agent configurations.
 
-### 3. Manage Secrets {: #manage-secrets }
+### 3. Manage Secrets
 
 Securely store API keys, tokens, and other environment variables needed by extensions and services. Values are encrypted and masked in the UI. Extensions will tell you which keys they need here.
 
-### 4. Infrastructure {: #infrastructure }
+### 4. Infrastructure
 
 Manage external services like Postgres, Grocy, and other Docker-based infrastructure components. Install, start, stop, and configure services that your extensions depend on.
 
-### 5. Extensions {: #extensions }
+### 5. Extensions
 
 View, enable/disable, configure, and uninstall your installed extensions. See which extensions are active, check their versions, and manage their lifecycle.
 
-### 6. Quick Chat {: #quick-chat }
+### 6. Quick Chat
 
-Test your agents and MCP servers with a simple chat interface. Great for debugging tool calls, testing new configurations, and verifying that your agents work correctly.
+Test your agents and MCP servers with a simple chat interface. Great for debugging tool calls, testing new configurations, and verifying that your agents work correctly. *See [Featured Extensions](../getting-started/featured-extensions.md#quick-chat) for detailed walkthrough with annotated screenshots.*
 
 ### 7. Built-in Agents {: #built-in-agents }
 
@@ -58,21 +98,21 @@ Shows the core agent implementations available in Luna (like `passthrough_agent`
 
 Custom agents you've created with filtered tool access. Each preset is based on a built-in agent but has its own tool configuration. Example: "smart_home_assistant" with only Home Assistant tools enabled.
 
-### 9. Automation Memory UI {: #automation-memory-ui }
+### 9. Automation Memory UI
 
-Opens the Automation Memory extension UI for managing persistent memories, task flows, and scheduled automations. This extension provides context-aware assistance by remembering information across conversations.
+Opens the Automation Memory extension UI for managing persistent memories, task flows, and scheduled automations. *See [Featured Extensions](../getting-started/featured-extensions.md#automation-memory-extension) for detailed walkthrough.*
 
 ### 10. ChefByte UI {: #chefbyte-ui }
 
-Opens the ChefByte extension UI for nutrition tracking, meal planning, Walmart product linking, and barcode scanning. Track what you eat and manage your grocery inventory.
+Opens the ChefByte extension UI for nutrition tracking, meal planning, Walmart product linking, and barcode scanning. *See [Featured Extensions](../getting-started/featured-extensions.md#chefbyte-extension) for detailed walkthrough with annotated screenshots.*
 
 ### 11. CoachByte UI {: #coachbyte-ui }
 
-Opens the CoachByte extension UI for fitness and workout tracking. Log exercises, track progress, and monitor your fitness goals.
+Opens the CoachByte extension UI for fitness and workout tracking. *See [Featured Extensions](../getting-started/featured-extensions.md#coachbyte-ui) for more information.*
 
 ### 12. Grocy UI {: #grocy-ui }
 
-Opens the Grocy web interface for grocery and household management. This is an external service that must be installed via Infrastructure first. Manage inventory, recipes, shopping lists, and more.
+Opens the Grocy web interface for grocery and household management. This is an external service that must be installed via Infrastructure first. Manage inventory, recipes, shopping lists, and more. Visit <a href="https://grocy.info/" target="_blank" rel="noopener noreferrer">grocy.info</a> to learn more.
 
 ---
 
@@ -86,7 +126,7 @@ The Dashboard is organized into several sections:
 
 - **Header:** Contains the Luna logo, navigation breadcrumbs, system controls (Restart button), and the Update Manager badge showing pending changes
 - **Quick Stats:** Card showing counts of installed extensions, available tools, configured agents, and running external services
-- **Quick Actions:** Navigation tiles for the most common tasks (Browse Store, Tool Manager, Manage Secrets, Infrastructure, Extensions, Quick Chat)
+- **Quick Actions:** Navigation tiles for the most common tasks (Browse Store, Tool Manager, Manage Secrets, Infrastructure, Extensions, [Quick Chat](../getting-started/featured-extensions.md#quick-chat))
 - **Discovered Agents:** Shows both built-in agents that come with Luna and custom agent presets you've created
 - **Active UIs:** Clickable links to extension web interfaces that are currently running
 
@@ -104,7 +144,7 @@ The Active UIs section dynamically updates based on which extensions you have in
 
 1. **First-time setup:** Click "Manage Secrets" to add required API keys, then "Browse Store" to install extensions, then "Restart" to apply changes
 2. **Configuring tools:** Click "Tool Manager" to enable/disable tools for your MCP servers or create agent presets
-3. **Testing changes:** Click "Quick Chat" to verify that your agents and tools work correctly after configuration
+3. **Testing changes:** Click [Quick Chat](../getting-started/featured-extensions.md#quick-chat) to verify that your agents and tools work correctly after configuration
 4. **Installing infrastructure:** Click "Infrastructure" to set up databases, Grocy, or other services that extensions depend on
 5. **Accessing extension features:** Click any Active UI tile to open that extension's web interface
 
@@ -121,14 +161,14 @@ The Quick Stats card helps you track your system's configuration:
 **Pro Tips:**
 
 - Bookmark the Dashboard URL - it's your starting point
-- Use Quick Chat frequently to test changes before committing to complex workflows
+- Use [Quick Chat](../getting-started/featured-extensions.md#quick-chat) frequently to test changes before committing to complex workflows
 - Agent Presets are powerful - create specialized agents for different tasks instead of one agent with all tools
 - Active UIs open in the same tab by default - right-click to open in new tab if you want to keep the Dashboard visible
 - The header is consistent across all pages, so you can always click "Luna" logo to return to Dashboard
 
 ---
 
-## Extension Store - Browse
+## Extension Store - Browse {: #extension-store-browse }
 
 ![Extension Store Browse](/tutorial_screenshots/core/addon_store_browse.png)
 
@@ -203,9 +243,9 @@ When you click an Install button:
 ## Extension Store - Configure
 
 <div style="position: relative; display: inline-block;">
-  <img src="/tutorial_screenshots/annotated/addon_store_configure_extension.png" usemap="#configure-map" style="max-width: 100%; height: auto;" />
+  <img src="/tutorial_screenshots/annotated/addon_store_configure_extension.png" usemap="#configure-map" style="max-width: 100%; height: auto;" width="2736" height="1483" />
   <map name="configure-map">
-    <area shape="rect" coords="888,1098,1184,1129" href="#skip-vs-configure-workflow" alt="Skip vs Configure Workflow" />
+    <area shape="rect" coords="1288,1170,1592,1220" href="#skip-vs-configure-workflow" alt="Skip vs Configure Workflow" />
   </map>
 </div>
 
@@ -302,14 +342,14 @@ After clicking "Configure & Install" or "Skip":
 
 ---
 
-## Tool & MCP Manager
+## Tool & MCP Manager {: #tool-mcp-manager }
 
 <div style="position: relative; display: inline-block;">
-  <img src="/tutorial_screenshots/annotated/tool_mcp_manager.png" usemap="#tool-manager-map" style="max-width: 100%; height: auto;" />
+  <img src="/tutorial_screenshots/annotated/tool_mcp_manager.png" usemap="#tool-manager-map" style="max-width: 100%; height: auto;" width="2348" height="4910" />
   <map name="tool-manager-map">
-    <area shape="rect" coords="1747,540,2115,571" href="#mcp-vs-agent-presets-mode-toggle" alt="MCP vs Agent Presets Mode Toggle" />
-    <area shape="rect" coords="959,886,1250,914" href="#active-server-selector-pills" alt="Active Server Selector Pills" />
-    <area shape="rect" coords="460,1579,830,1610" href="#add-remote-mcp-server-smithery" alt="Add Remote MCP Server (Smithery)" />
+    <area shape="rect" coords="1869,551,2245,601" href="#mcp-vs-agent-presets-mode-toggle" alt="MCP vs Agent Presets Mode Toggle" />
+    <area shape="rect" coords="1010,885,1309,935" href="#active-server-selector-pills" alt="Active Server Selector Pills" />
+    <area shape="rect" coords="595,1564,973,1614" href="#add-remote-mcp-server-smithery" alt="Add Remote MCP Server (Smithery)" />
   </map>
 </div>
 
@@ -420,11 +460,11 @@ These systems are independent - configuring one doesn't affect the other.
 - Create focused agent presets rather than giving every agent all tools
 - Use the "main" MCP server for personal use, create additional servers for sharing
 - Name presets descriptively (e.g., "smart_home_assistant" not "agent1")
-- Test tool configurations in Quick Chat before production use
+- Test tool configurations in [Quick Chat](../getting-started/featured-extensions.md#quick-chat) before production use
 
 ---
 
-## Manage Secrets
+## Manage Secrets {: #manage-secrets }
 
 ![Manage Secrets](/tutorial_screenshots/core/key_manager_secrets.png)
 
@@ -471,7 +511,7 @@ The Manage Secrets page is where you securely store API keys, tokens, passwords,
 
 ---
 
-## Infrastructure - External Services
+## Infrastructure - External Services {: #infrastructure }
 
 ![Infrastructure](/tutorial_screenshots/core/infrastructure_external_services.png)
 
@@ -525,7 +565,7 @@ Services show color-coded status:
 
 ---
 
-## Extensions - Managing Installed Extensions
+## Extensions - Managing Installed Extensions {: #extensions }
 
 ![Extension Manager](/tutorial_screenshots/core/extension_manager.png)
 
@@ -571,214 +611,7 @@ github:username/repo:path/to/extension
 - Read extension README before installing
 - Disable unused extensions
 - Keep extensions updated
-- Test in Quick Chat after installation
-
----
-
-## Quick Chat - Testing Interface
-
-<div style="position: relative; display: inline-block;">
-  <img src="/tutorial_screenshots/annotated/quick_chat_interface.png" usemap="#quick-chat-map" style="max-width: 100%; height: auto;" />
-  <map name="quick-chat-map">
-    <area shape="rect" coords="0,477,240,508" href="#agent-mode-vs-mcp-mode-toggle" alt="Agent Mode vs MCP Mode Toggle" />
-    <area shape="rect" coords="866,719,1124,750" href="#response-time-tracker" alt="Response Time Tracker" />
-  </map>
-</div>
-
-### 1. Agent Mode vs MCP Mode Toggle {: #agent-mode-vs-mcp-mode-toggle }
-
-Switch between two testing modes:
-
-**Agent Mode:**
-- Chat with Luna's built-in agents or custom presets
-- Full agent workflow with reasoning
-- Good for testing complete agent behavior
-
-**MCP Mode:**
-- Test MCP server tool calls directly
-- Direct tool invocation without agent reasoning
-- Good for debugging individual tools
-
-### 2. Response Time Tracker {: #response-time-tracker }
-
-Displays how long the agent or MCP server took to respond.
-
-**Shows:**
-- Total response time
-- Time breakdown for tool calls
-- Performance bottlenecks
-
-**Why it matters:**
-- Debug slow tools
-- Compare agent performance
-- Optimize configurations
-
----
-
-### About This Page
-
-Quick Chat is Luna's built-in testing interface for verifying that your agents, MCP servers, and tools work correctly. It's designed for debugging and experimentation, not production use.
-
-**When to Use Quick Chat:**
-
-- After installing an extension
-- After creating an agent preset
-- After adding a remote MCP server
-- For debugging tool failures
-
-**Common Testing Workflows:**
-
-**Testing a new extension:**
-1. Install extension and restart
-2. Go to Quick Chat
-3. Select agent with extension's tools
-4. Type message that triggers the tool
-5. Verify response
-
-**Testing an agent preset:**
-1. Create preset in Tool Manager
-2. Restart Luna
-3. Select preset in Quick Chat
-4. Try enabled and disabled tools
-5. Verify filtering works
-
-**Limitations:**
-
-Quick Chat is for testing only:
-- No authentication
-- No rate limiting
-- No persistence
-- Simple UI
-
-For production, use Luna's Agent API with proper clients.
-
----
-
-## Automation Memory Extension
-
-### Memories Tab
-
-![Memories Tab](/tutorial_screenshots/automation_memory/memories_tab.png)
-
-Store and retrieve context that persists across conversations. Great for remembering user preferences, facts, and notes.
-
-### Task Flows Tab
-
-![Task Flows Tab](/tutorial_screenshots/automation_memory/task_flows_tab.png)
-
-Create multi-step task flows with tool calls. Chain together actions like "check weather, then set thermostat."
-
-### Scheduled Tasks Tab
-
-![Scheduled Tasks Tab](/tutorial_screenshots/automation_memory/scheduled_tasks_tab.png)
-
-Schedule recurring or one-time tasks with cron expressions. Example: "Check shopping list every Monday."
-
----
-
-## ChefByte Extension
-
-### Walmart Manager - Product Database
-
-<div style="position: relative; display: inline-block;">
-  <img src="/tutorial_screenshots/annotated/walmart_manager.png" usemap="#walmart-map" style="max-width: 100%; height: auto;" />
-  <map name="walmart-map">
-    <area shape="rect" coords="270,425,496,456" href="#missing-links-count" alt="Missing Links Count" />
-    <area shape="rect" coords="1852,510,2172,538" href="#not-a-walmart-item-checkbox" alt="Not a Walmart Item Checkbox" />
-    <area shape="rect" coords="1641,623,1999,654" href="#url-paste-vs-product-suggestions" alt="URL Paste vs Product Suggestions" />
-  </map>
-</div>
-
-### 1. Missing Links Count {: #missing-links-count }
-
-Shows how many Grocy products don't have Walmart links yet.
-
-**Why it matters:**
-- Unlinked products won't have nutrition data
-- Shows how much work is left
-- Click to filter unlinked products
-
-### 2. Not a Walmart Item Checkbox {: #not-a-walmart-item-checkbox }
-
-Mark products that aren't sold at Walmart (homemade items, local produce).
-
-**How to use:**
-- Check this box to mark as "not linkable"
-- Won't count against missing links
-- Keeps database organized
-
-### 3. URL Paste vs Product Suggestions {: #url-paste-vs-product-suggestions }
-
-Two ways to link products:
-
-- **Paste Walmart URL:** Copy from walmart.com and paste directly
-- **Product Suggestions:** Type name and pick from autocomplete
-
-**Pro tip:** URL paste is faster if shopping on walmart.com. Suggestions better for bulk linking.
-
----
-
-### Recipe Browser
-
-![Recipe Browser](/tutorial_screenshots/chefbyte/recipe_browser.png)
-
-Browse and search recipes with integrated nutrition data.
-
----
-
-### Scanner - Barcode Scanning & Inventory
-
-<div style="position: relative; display: inline-block;">
-  <img src="/tutorial_screenshots/annotated/scanner_io_wizard_with_items.png" usemap="#scanner-map" style="max-width: 100%; height: auto;" />
-  <map name="scanner-map">
-    <area shape="rect" coords="1047,636,1285,664" href="#action-mode-selector" alt="Action Mode Selector" />
-    <area shape="rect" coords="349,320,598,351" href="#all-vs-incomplete-tabs" alt="All vs Incomplete Tabs" />
-    <area shape="rect" coords="460,514,734,545" href="#status-badges-new-mp" alt="Status Badges (NEW/MP)" />
-    <area shape="rect" coords="0,1029,178,1060" href="#transaction-history" alt="Transaction History" />
-  </map>
-</div>
-
-### 1. Action Mode Selector {: #action-mode-selector }
-
-Choose what happens when you scan a barcode:
-
-- **Add to Grocy:** Add product to inventory
-- **Track Nutrition:** Log as consumed, add to daily totals
-- **Both:** Add to inventory AND track nutrition
-
-**When to use each:**
-- Groceries coming home: "Add to Grocy"
-- Eating something: "Track Nutrition"
-- Meal prep: "Both"
-
-### 2. All vs Incomplete Tabs {: #all-vs-incomplete-tabs }
-
-Filter your scanned items:
-
-- **All:** Everything you've scanned
-- **Incomplete:** Items missing nutrition data or Walmart links
-
-**Use Case:** Focus on "Incomplete" to clean up database after bulk scanning.
-
-### 3. Status Badges (NEW/MP) {: #status-badges-new-mp }
-
-Quick visual indicators:
-
-- **NEW:** Product just added to Grocy by this scan
-- **MP:** "Missing Product" - not found in Grocy or Walmart databases
-
-**What to do with MP items:**
-- Manually add to Grocy first
-- Then rescan or link in Walmart Manager
-
-### 4. Transaction History {: #transaction-history }
-
-View past scans organized by date and time.
-
-**Features:**
-- Review yesterday's scans
-- Check nutrition totals by day
-- Undo accidental scans (coming soon)
+- Test in [Quick Chat](../getting-started/featured-extensions.md#quick-chat) after installation
 
 ---
 
@@ -788,7 +621,7 @@ Now that you've seen the interface, here's what to do next:
 
 1. **First-Time Setup:**
    - Add required API keys in [Manage Secrets](#manage-secrets)
-   - Install extensions from [Browse Store](#browse-store)
+   - Install extensions from [Browse Store](#extension-store-browse)
    - Restart Luna to apply changes
 
 2. **Configure Tools:**
@@ -797,13 +630,12 @@ Now that you've seen the interface, here's what to do next:
    - Add remote MCP servers from Smithery
 
 3. **Explore Extension UIs:**
-   - Open [Automation Memory](#automation-memory-ui) to set up recurring tasks
-   - Try [ChefByte](#chefbyte-ui) to scan groceries and track nutrition
-   - Check out [Quick Chat](#quick-chat) to test your agents
+   - Open [Automation Memory](../getting-started/featured-extensions.md#automation-memory-extension) to set up recurring tasks
+   - Try [ChefByte](../getting-started/featured-extensions.md#chefbyte-extension) to scan groceries and track nutrition
+   - Check out [Quick Chat](../getting-started/featured-extensions.md#quick-chat) to test your agents
 
 4. **Read More:**
    - [Full Interface Guide](navigating-interface.md) - Detailed text documentation
-   - [Extension Development](../developer-guide/creating-extensions.md) - Build your own
    - [API Reference](../reference/api.md) - Integrate with Luna programmatically
 
 ---

@@ -213,8 +213,6 @@ Ready to build your private AI platform? Check out the [Installation Guide](inst
 
 Want to explore what's possible? See [Featured Extensions](getting-started/featured-extensions.md) for detailed examples of ChefByte and Home Assistant integrations.
 
-Interested in building your own tools? Visit the [Developer Guide](developer-guide/creating-extensions.md) to learn how to create custom extensions.
-
 ---
 
 **Luna Hub is mission control for your personal AI ecosystem—bringing together tools, apps, and AI agents on your infrastructure, under your control.**

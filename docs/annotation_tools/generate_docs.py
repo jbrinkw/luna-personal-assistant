@@ -42,11 +42,20 @@ def generate_markdown(annotation_json_path, output_md_path=None):
     # Generate page title from filename
     page_title = image_name.rsplit('.', 1)[0].replace('_', ' ').title()
 
+    # Load image dimensions to include explicit width/height so image maps stay clickable when scaled
+    from PIL import Image
+    img_path = Path("docs/tutorial_screenshots/annotated") / image_name
+    if img_path.exists():
+        width, height = Image.open(img_path).size
+    else:
+        width = height = None
+
     # Build Markdown content
     lines = []
     lines.append(f"# {page_title}\n")
     lines.append(f'<div style="position: relative; display: inline-block;">')
-    lines.append(f'  <img src="/tutorial_screenshots/annotated/{image_name}" usemap="#screenshot-map" style="max-width: 100%; height: auto;" />')
+    size_attrs = f' width="{width}" height="{height}"' if width and height else ""
+    lines.append(f'  <img src="/tutorial_screenshots/annotated/{image_name}" usemap="#screenshot-map" style="max-width: 100%; height: auto;"{size_attrs} />')
     lines.append(f'  <map name="screenshot-map">')
 
     # Add clickable areas

@@ -5,56 +5,72 @@
       "number": "1",
       "label": "Action Mode Selector",
       "position": {
-        "x": 1166,
-        "y": 650
+        "x": 1246,
+        "y": 641
       },
       "bounds": {
-        "x1": 1047,
-        "y1": 636,
-        "x2": 1285,
-        "y2": 664
+        "x1": 1123,
+        "y1": 616,
+        "x2": 1369,
+        "y2": 666
+      },
+      "size": {
+        "width": 246,
+        "height": 50
       }
     },
     {
       "number": "2",
       "label": "All vs Incomplete Tabs",
       "position": {
-        "x": 474,
-        "y": 336
+        "x": 531,
+        "y": 353
       },
       "bounds": {
-        "x1": 349,
-        "y1": 320,
-        "x2": 598,
-        "y2": 351
+        "x1": 402,
+        "y1": 328,
+        "x2": 659,
+        "y2": 378
+      },
+      "size": {
+        "width": 257,
+        "height": 50
       }
     },
     {
       "number": "3",
       "label": "Status Badges (NEW/MP)",
       "position": {
-        "x": 597,
-        "y": 530
+        "x": 824,
+        "y": 1007
       },
       "bounds": {
-        "x1": 460,
-        "y1": 514,
-        "x2": 734,
-        "y2": 545
+        "x1": 683,
+        "y1": 982,
+        "x2": 965,
+        "y2": 1032
+      },
+      "size": {
+        "width": 282,
+        "height": 50
       }
     },
     {
       "number": "4",
       "label": "Transaction History",
       "position": {
-        "x": 66,
-        "y": 1045
+        "x": 740,
+        "y": 537
       },
       "bounds": {
-        "x1": 0,
-        "y1": 1029,
-        "x2": 178,
-        "y2": 1060
+        "x1": 624,
+        "y1": 512,
+        "x2": 856,
+        "y2": 562
+      },
+      "size": {
+        "width": 232,
+        "height": 50
       }
     }
   ]

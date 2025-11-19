@@ -5,28 +5,36 @@
       "number": "1",
       "label": "Agent Mode vs MCP Mode Toggle",
       "position": {
-        "x": 67,
-        "y": 493
+        "x": 186,
+        "y": 501
       },
       "bounds": {
-        "x1": 0,
-        "y1": 477,
-        "x2": 240,
-        "y2": 508
+        "x1": 8,
+        "y1": 476,
+        "x2": 363,
+        "y2": 526
+      },
+      "size": {
+        "width": 355,
+        "height": 50
       }
     },
     {
       "number": "2",
       "label": "Response Time Tracker",
       "position": {
-        "x": 995,
-        "y": 735
+        "x": 1128,
+        "y": 728
       },
       "bounds": {
-        "x1": 866,
-        "y1": 719,
-        "x2": 1124,
-        "y2": 750
+        "x1": 995,
+        "y1": 703,
+        "x2": 1261,
+        "y2": 753
+      },
+      "size": {
+        "width": 266,
+        "height": 50
       }
     }
   ]

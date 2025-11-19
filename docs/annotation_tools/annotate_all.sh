@@ -43,7 +43,14 @@ for item in "${screenshots[@]}"; do
   echo "========================================="
 
   # Check if marker file has any markers
-  marker_count=$(jq 'length' "$markers" 2>/dev/null || echo "0")
+  image_path="$REPO_ROOT/$image"
+  marker_path="$REPO_ROOT/$markers"
+  if [ ! -f "$marker_path" ]; then
+    echo "⚠ Marker file not found: $marker_path"
+    marker_count=0
+  else
+    marker_count=$(jq 'length' "$marker_path" 2>/dev/null || echo "0")
+  fi
   if [ "$marker_count" = "0" ]; then
     echo "⊘ No markers defined - skipping (visual reference only)"
     ((completed++))
@@ -52,7 +59,7 @@ for item in "${screenshots[@]}"; do
 
   # Check if already annotated
   filename=$(basename "$image")
-  json_file="docs/tutorial_screenshots/annotated/${filename%.*}_annotations.json"
+  json_file="$REPO_ROOT/docs/tutorial_screenshots/annotated/${filename%.*}_annotations.json"
 
   if [ -f "$json_file" ]; then
     echo "✓ Already annotated: $json_file"
@@ -64,8 +71,8 @@ for item in "${screenshots[@]}"; do
     fi
   fi
 
-  echo "Image: $image"
-  echo "Markers: $markers ($marker_count markers)"
+  echo "Image: $image_path"
+  echo "Markers: $marker_path ($marker_count markers)"
   echo ""
   echo "Starting annotation tool..."
   echo "Open: http://192.168.0.166:5555"
@@ -77,7 +84,7 @@ for item in "${screenshots[@]}"; do
   echo ""
 
   # Run annotation tool (will block until user kills it)
-  cd "$REPO_ROOT" && .venv/bin/python3 docs/annotation_tools/annotate_web.py "$image" "$markers"
+  cd "$REPO_ROOT" && .venv/bin/python3 docs/annotation_tools/annotate_web.py "$image_path" "$marker_path"
 
   # Check if annotation was saved
   if [ -f "$json_file" ]; then

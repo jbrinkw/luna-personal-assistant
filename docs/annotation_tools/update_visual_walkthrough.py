@@ -33,8 +33,17 @@ def load_annotations():
 def generate_image_map(image_name, markers, map_name):
     """Generate HTML image map markup"""
     lines = []
+    # Load image dimensions so image maps stay aligned on responsive layouts
+    from PIL import Image
+    img_path = Path("docs/tutorial_screenshots/annotated") / image_name
+    if img_path.exists():
+        width, height = Image.open(img_path).size
+        size_attrs = f' width="{width}" height="{height}"'
+    else:
+        size_attrs = ""
+
     lines.append(f'<div style="position: relative; display: inline-block;">')
-    lines.append(f'  <img src="/tutorial_screenshots/annotated/{image_name}" usemap="#{map_name}" style="max-width: 100%; height: auto;" />')
+    lines.append(f'  <img src="/tutorial_screenshots/annotated/{image_name}" usemap="#{map_name}" style="max-width: 100%; height: auto;"{size_attrs} />')
     lines.append(f'  <map name="{map_name}">')
 
     # Sort markers by number

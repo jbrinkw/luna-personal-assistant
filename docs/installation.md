@@ -920,6 +920,5 @@ Now that Luna Hub is installed and running:
 3. **Configure tools:** Visit `/tools` to enable/disable specific tools per MCP server
 4. **Create agent presets:** Build specialized agents for different use cases
 5. **Connect Claude Desktop:** Use Luna's tools directly in Claude Desktop via MCP
-6. **Build custom tools:** Follow the [Developer Guide](developer-guide/creating-extensions.md) to create your own extensions
 
 For detailed examples of what you can build with Luna Hub, see [Featured Extensions](getting-started/featured-extensions.md).

@@ -1,0 +1,188 @@
+CoachByte Screenshots Inventory
+================================
+Created: 2025-11-19
+Location: docs/tutorial_screenshots/coachbyte/
+
+This file documents all CoachByte screenshots for future reference when creating detailed guides.
+
+---
+
+1. workout_tracker_main.png
+   Original: Screenshot 2025-11-19 113102.png
+   Size: 167KB
+
+   Description:
+   Main workout tracking interface showing recent workout history.
+
+   Key Elements:
+   - Header: "Workout Tracker" with emoji icon
+   - Last updated timestamp: "Last updated: 11:30:49 AM"
+   - Two action buttons:
+     * "View PRs" (green button)
+     * "Edit Split" (blue button)
+   - Table with 3 columns:
+     * Date column (calendar icon)
+     * Summary column (memo icon)
+     * Actions column (lightning icon)
+   - 6 workout entries visible:
+     * Wed, Nov 19, 2025 - "No summary" - View Details button
+     * Wed, Nov 12, 2025 - "High volume pull day. Lats are fried. Good progression on lat pulldown." - View Details
+     * Tue, Nov 11, 2025 - "Incline bench going up nicely. Shoulders feeling good. Light pump work felt great." - View Details
+     * Sun, Nov 9, 2025 - "Tough leg day but got through it. Squats moving well at this weight." - View Details
+     * Sat, Nov 8, 2025 - "Great deadlift day! All sets felt smooth. Pull-ups getting easier." - View Details
+     * Fri, Nov 7, 2025 - "Solid push session. Bench felt strong, missed last rep on final set. Good pump on accessories." - View Details
+
+   Use Cases for Documentation:
+   - Showing workout history tracking
+   - Demonstrating summary logging feature
+   - Explaining navigation to detailed workout views
+   - Illustrating date-based workout organization
+
+---
+
+2. personal_records.png
+   Original: Screenshot 2025-11-19 113118.png
+   Size: 110KB
+
+   Description:
+   Personal Records (PRs) tracking page showing max lifts and rep maxes.
+
+   Key Elements:
+   - Header: "Personal Records" with trophy emoji, "Back" button (top right)
+   - Bench Press section:
+     * "1 rep: 255 lbs (estimated)" badge
+     * "4 reps: 225 lbs" badge
+     * "5 reps: 225 lbs" badge
+   - Deadlift section:
+     * "1 rep: 368 lbs (estimated)" badge
+     * "5 reps: 315 lbs" badge
+   - Tracked Exercises section (bottom):
+     * Description: "Add exercises to track all rep ranges for those exercises automatically."
+     * Input field: "Exercise name (e.g., Bench Press, Squat)"
+     * "Add" button (green)
+     * Currently Tracking (2 exercises):
+       - Bench Press [Remove button]
+       - Deadlift [Remove button]
+
+   Use Cases for Documentation:
+   - Demonstrating PR tracking feature
+   - Showing estimated 1RM calculations
+   - Explaining tracked exercises configuration
+   - Illustrating how to add/remove tracked exercises
+
+---
+
+3. weekly_split_editor.png
+   Original: Screenshot 2025-11-19 115133.png
+   Size: 131KB
+
+   Description:
+   Weekly workout split configuration interface for planning training programs.
+
+   Key Elements:
+   - Header: "Weekly Split" with "Back" button
+   - Sunday section:
+     * Single row with empty fields for adding exercises
+     * Columns: Exercise, Reps, Load (Relative), Rest, Order, Action
+     * Default values: 0 reps, 0 load, 60 rest, order 1, "Add" button
+   - Monday section (populated):
+     * Row 1: Bench Press | 5 reps | 0.85 load (checkbox checked) | 180 rest | order 1 | Remove
+       - Shows "85% → 275 (45,45,25)" calculation
+     * Row 2: Bench Press | 5 reps | 0.85 load (checked) | 180 rest | order 2 | Remove
+     * Row 3: Bench Press | 5 reps | 0.85 load (checked) | 180 rest | order 3 | Remove
+     * Row 4: Overhead Press | 8 reps | 0.75 load (checked) | 120 rest | order 4 | Remove
+     * Row 5: Overhead Press | 8 reps | 0.75 load (checked) | 120 rest | order 5 | Remove
+     * Row 6: Overhead Press | 8 reps | 0.75 load (checked) | 120 rest | order 6 | Remove
+     * Row 7: Incline Dumbbell Press | 10 reps | 70 load (checkbox unchecked) | 90 rest | order 7 | Remove
+     * Row 8: Incline Dumbbell Press | 10 reps | 70 load (unchecked) | 90 rest | order 8 | Remove
+
+   Use Cases for Documentation:
+   - Explaining workout program creation
+   - Demonstrating percentage-based loading (relative to 1RM)
+   - Showing absolute weight configuration
+   - Illustrating rest period customization
+   - Explaining exercise ordering within a day
+   - Demonstrating plate calculation for relative weights
+
+---
+
+4. active_workout.png
+   Original: Screenshot 2025-11-19 122243.png
+   Size: 187KB
+
+   Description:
+   Live workout tracking interface during an active training session.
+
+   Key Elements:
+   - Header: "Workout Day: 2025-11-19T05:00:00.000Z"
+   - Last updated: "Last updated: 12:22:28 PM"
+   - Buttons: "Back" (blue, top right), "Delete Day" (gray, top right)
+
+   - Next in Queue (green box):
+     * Exercise: "Squat"
+     * Details: "5 reps @ 85% → 275 (45,45,25)"
+     * Rest: "Rest: 240 seconds"
+     * Timer (top right): "Timer: 3:53 remaining" (in blue)
+
+   - Current set input area:
+     * Exercise field: "Squat"
+     * Reps Done: "5"
+     * Weight (lbs): "273"
+     * "Complete Set" button (green)
+
+   - Set Queue (16 remaining):
+     * Table columns: Exercise, Reps, Load, Rest, Order, Action
+     * Row 1: Squat | 5 | 0.85 (85% → 275 (45,45,25)) | 240 | 3 | Remove
+     * Row 2: Romanian Deadlift | 10 | 0.65 (65% → bar) | 120 | 4 | Remove
+     * Row 3: Romanian Deadlift | 10 | 0.65 (65% → bar) | 120 | 5 | Remove
+     * (More rows visible below)
+
+   - Completed Sets (2 done):
+     * Table columns: Exercise, Reps, Load, Time, Action
+     * Row 1: Squat | 5 | 275 (45,45,25) | 12:22 PM | Remove
+     * Row 2: Squat | 5 | 275 (45,45,25) | 12:22 PM | Remove
+
+   Use Cases for Documentation:
+   - Demonstrating live workout tracking
+   - Showing set queue management
+   - Explaining rest timer functionality
+   - Illustrating weight logging
+   - Showing completed set history
+   - Demonstrating exercise progression through a workout
+   - Explaining plate calculation display
+
+---
+
+Summary of Documentation Opportunities
+======================================
+
+The four screenshots provide comprehensive coverage of CoachByte's core features:
+
+1. **Workout History** (workout_tracker_main.png)
+   - Calendar view of past workouts
+   - Workout summaries
+   - Navigation to details
+
+2. **Progress Tracking** (personal_records.png)
+   - Personal record tracking
+   - Estimated maxes
+   - Exercise selection for tracking
+
+3. **Program Planning** (weekly_split_editor.png)
+   - Weekly workout split configuration
+   - Percentage-based and absolute loading
+   - Rest period management
+   - Exercise ordering
+
+4. **Live Tracking** (active_workout.png)
+   - Real-time set logging
+   - Rest timers
+   - Set queue visualization
+   - Completed set history
+
+These screenshots can be used to create:
+- Getting started guide
+- Feature walkthrough
+- Tutorial for setting up a training program
+- Guide for logging workouts
+- PR tracking explanation

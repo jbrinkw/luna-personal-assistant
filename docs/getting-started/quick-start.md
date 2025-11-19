@@ -282,14 +282,6 @@ Visit **Tools**, scroll to "Add Remote MCP Server", and connect:
 
 This extends Luna Hub with tools from the broader MCP ecosystem.
 
-### 6. Build Your Own Extension
-
-Ready to create custom tools? Follow the [Developer Guide](../developer-guide/creating-extensions.md) to:
-- Create a new extension from scratch
-- Add custom AI tools
-- Build web UIs for your extensions
-- Package and share your extensions
-
 ---
 
 ## Common Next Questions
@@ -356,7 +348,6 @@ Check the [Troubleshooting](../installation.md#troubleshooting) section in the I
 - **[Installation Guide](../installation.md)**: Detailed installation instructions, deployment modes, and advanced configuration
 - **[Featured Extensions](featured-extensions.md)**: Real-world examples of what you can build with Luna Hub
 - **[Navigating the Interface](../user-guide/navigating-interface.md)**: Deep dive into the Hub UI
-- **[Developer Guide](../developer-guide/creating-extensions.md)**: Build your own extensions and tools
 
 ---
 

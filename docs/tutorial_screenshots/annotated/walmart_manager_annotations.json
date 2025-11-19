@@ -5,42 +5,54 @@
       "number": "1",
       "label": "Missing Links Count",
       "position": {
-        "x": 383,
-        "y": 441
+        "x": 454,
+        "y": 431
       },
       "bounds": {
-        "x1": 270,
-        "y1": 425,
-        "x2": 496,
+        "x1": 337,
+        "y1": 406,
+        "x2": 571,
         "y2": 456
+      },
+      "size": {
+        "width": 234,
+        "height": 50
       }
     },
     {
       "number": "2",
       "label": "Not a Walmart Item Checkbox",
       "position": {
-        "x": 2012,
-        "y": 524
+        "x": 2132,
+        "y": 647
       },
       "bounds": {
-        "x1": 1852,
-        "y1": 510,
-        "x2": 2172,
-        "y2": 538
+        "x1": 1968,
+        "y1": 622,
+        "x2": 2296,
+        "y2": 672
+      },
+      "size": {
+        "width": 328,
+        "height": 50
       }
     },
     {
       "number": "3",
       "label": "URL Paste vs Product Suggestions",
       "position": {
-        "x": 1820,
-        "y": 639
+        "x": 671,
+        "y": 709
       },
       "bounds": {
-        "x1": 1641,
-        "y1": 623,
-        "x2": 1999,
-        "y2": 654
+        "x1": 488,
+        "y1": 684,
+        "x2": 854,
+        "y2": 734
+      },
+      "size": {
+        "width": 366,
+        "height": 50
       }
     }
   ]

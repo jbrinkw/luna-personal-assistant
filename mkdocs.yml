@@ -69,10 +69,6 @@ nav:
   - Installation: installation.md
   - User Guide: user-guide/visual-userguide.md
   - Featured Extensions: getting-started/featured-extensions.md
-  - Developer Guide:
-    - Creating Extensions: developer-guide/creating-extensions.md
-    - Tool Development: developer-guide/tool-development.md
-    - App/Service Integration: developer-guide/external-services.md
 
 plugins:
   - search

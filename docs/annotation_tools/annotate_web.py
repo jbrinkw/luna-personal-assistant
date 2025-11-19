@@ -238,16 +238,26 @@ HTML_TEMPLATE = """
         function save() {
             const positions = {};
             const canvasRect = canvas.getBoundingClientRect();
+            const naturalWidth = canvas.naturalWidth || canvas.width;
+            const naturalHeight = canvas.naturalHeight || canvas.height;
+            const scaleX = naturalWidth / canvasRect.width;
+            const scaleY = naturalHeight / canvasRect.height;
 
             document.querySelectorAll('.marker').forEach(marker => {
                 const num = marker.dataset.num;
                 const rect = marker.getBoundingClientRect();
 
-                // Get center of marker relative to image
-                const x = rect.left - canvasRect.left + 20; // 20 = radius
-                const y = rect.top - canvasRect.top + 20;
+                const width = rect.width;
+                const height = rect.height;
+                const centerX = rect.left - canvasRect.left + (width / 2);
+                const centerY = rect.top - canvasRect.top + (height / 2);
 
-                positions[num] = {x: Math.round(x), y: Math.round(y)};
+                positions[num] = {
+                    x: Math.round(centerX * scaleX),
+                    y: Math.round(centerY * scaleY),
+                    width: Math.round(width * scaleX),
+                    height: Math.round(height * scaleY)
+                };
             });
 
             fetch('/save', {
@@ -301,6 +311,8 @@ def save():
             "markers": []
         }
 
+        img_width, img_height = img.size
+
         # Draw markers with labels
         for num, pos in positions.items():
             x, y = pos['x'], pos['y']
@@ -314,24 +326,42 @@ def save():
             text_width = text_bbox[2] - text_bbox[0]
             text_height = text_bbox[3] - text_bbox[1]
 
-            # Draw rounded rectangle background
-            padding = 8
-            rect_height = text_height + (padding * 2)
-            rect_width = text_width + (padding * 2)
+            padding_x = 12
+            padding_y = 10
+            requested_width = pos.get('width')
+            requested_height = pos.get('height')
 
-            # White background with rounded corners
+            rect_width = requested_width if requested_width else text_width + (padding_x * 2)
+            rect_height = requested_height if requested_height else text_height + (padding_y * 2)
+
+            rect_width = max(rect_width, text_width + (padding_x * 2))
+            rect_height = max(rect_height, text_height + (padding_y * 2))
+
+            half_w = rect_width / 2
+            half_h = rect_height / 2
+
+            # Clamp within image bounds
+            x1 = max(0, x - half_w)
+            y1 = max(0, y - half_h)
+            x2 = min(img_width, x + half_w)
+            y2 = min(img_height, y + half_h)
+
+            effective_width = x2 - x1
+            effective_height = y2 - y1
+            radius = min(effective_height / 2, effective_width / 2)
+
+            # White outline background
+            outline_pad = 2
             draw.rounded_rectangle(
-                [x - rect_width/2 - 2, y - rect_height/2 - 2,
-                 x + rect_width/2 + 2, y + rect_height/2 + 2],
-                radius=rect_height/2,
+                [x1 - outline_pad, y1 - outline_pad, x2 + outline_pad, y2 + outline_pad],
+                radius=radius + outline_pad,
                 fill='white'
             )
 
             # Red background
             draw.rounded_rectangle(
-                [x - rect_width/2, y - rect_height/2,
-                 x + rect_width/2, y + rect_height/2],
-                radius=rect_height/2,
+                [x1, y1, x2, y2],
+                radius=radius,
                 fill='#EF4444',
                 outline='white',
                 width=3
@@ -348,10 +378,14 @@ def save():
                 "label": label,
                 "position": {"x": int(x), "y": int(y)},
                 "bounds": {
-                    "x1": int(x - rect_width/2),
-                    "y1": int(y - rect_height/2),
-                    "x2": int(x + rect_width/2),
-                    "y2": int(y + rect_height/2)
+                    "x1": int(x1),
+                    "y1": int(y1),
+                    "x2": int(x2),
+                    "y2": int(y2)
+                },
+                "size": {
+                    "width": int(effective_width),
+                    "height": int(effective_height)
                 }
             })
 

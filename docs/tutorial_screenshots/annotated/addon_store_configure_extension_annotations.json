@@ -5,14 +5,18 @@
       "number": "1",
       "label": "Skip vs Configure Workflow",
       "position": {
-        "x": 1036,
-        "y": 1114
+        "x": 1440,
+        "y": 1195
       },
       "bounds": {
-        "x1": 888,
-        "y1": 1098,
-        "x2": 1184,
-        "y2": 1129
+        "x1": 1288,
+        "y1": 1170,
+        "x2": 1592,
+        "y2": 1220
+      },
+      "size": {
+        "width": 304,
+        "height": 50
       }
     }
   ]
